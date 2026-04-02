@@ -1,0 +1,85 @@
+{
+  "last_updated": "2026-03-25",
+  "buyers": [
+    {
+      "id": "buyer_001",
+      "name": "Khalid Al-Mansoori",
+      "location": "Dubai",
+      "looking_for": {
+        "models": ["iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 15 Pro Max"],
+        "conditions": ["mint", "excellent"],
+        "storage_min": "256GB"
+      },
+      "max_budget": 3800,
+      "currency": "AED",
+      "preferred_payment": "bank_transfer",
+      "response_time": "under 1 hour",
+      "reliability_score": 0.95,
+      "notes": "Repeat buyer. Always pays promptly. Prefers meeting at Dubai Mall."
+    },
+    {
+      "id": "buyer_002",
+      "name": "Priya Sharma",
+      "location": "Abu Dhabi",
+      "looking_for": {
+        "models": ["iPhone 15", "iPhone 15 Pro", "iPhone 14 Pro Max"],
+        "conditions": ["good", "excellent"],
+        "storage_min": "128GB"
+      },
+      "max_budget": 2200,
+      "currency": "AED",
+      "preferred_payment": "cash",
+      "response_time": "2-4 hours",
+      "reliability_score": 0.85,
+      "notes": "Buys for personal use. Careful inspector. Asks a lot of questions about battery health."
+    },
+    {
+      "id": "buyer_003",
+      "name": "Omar Farouk",
+      "location": "Sharjah",
+      "looking_for": {
+        "models": ["iPhone 13", "iPhone 12", "iPhone 14 Pro Max"],
+        "conditions": ["good", "fair"],
+        "storage_min": "64GB"
+      },
+      "max_budget": 1200,
+      "currency": "AED",
+      "preferred_payment": "cash",
+      "response_time": "same day",
+      "reliability_score": 0.78,
+      "notes": "Budget buyer. Resells refurbished devices. Will negotiate hard but closes fast."
+    },
+    {
+      "id": "buyer_004",
+      "name": "Fatima Al-Hashimi",
+      "location": "Dubai",
+      "looking_for": {
+        "models": ["iPhone 16 Pro", "iPhone 16 Pro Max"],
+        "conditions": ["mint", "excellent"],
+        "storage_min": "512GB"
+      },
+      "max_budget": 4000,
+      "currency": "AED",
+      "preferred_payment": "bank_transfer",
+      "response_time": "under 30 minutes",
+      "reliability_score": 0.98,
+      "notes": "Premium buyer. Only wants top-condition devices. Willing to pay full asking price for mint units. Never haggles."
+    },
+    {
+      "id": "buyer_005",
+      "name": "Raj Patel",
+      "location": "Ajman",
+      "looking_for": {
+        "models": ["iPhone 15 Pro", "iPhone 15 Pro Max", "iPhone 15"],
+        "conditions": ["excellent", "good", "fair"],
+        "storage_min": "128GB"
+      },
+      "max_budget": 2600,
+      "currency": "AED",
+      "preferred_payment": "bank_transfer",
+      "response_time": "4-8 hours",
+      "reliability_score": 0.82,
+      "notes": "Buys for family members. Often looking for 2-3 devices at once. Flexible on condition if price is right."
+    }
+  ]
+}

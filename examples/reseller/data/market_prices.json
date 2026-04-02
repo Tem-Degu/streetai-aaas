@@ -1,0 +1,146 @@
+{
+  "currency": "AED",
+  "last_updated": "2026-03-25",
+  "market": "UAE",
+  "models": [
+    {
+      "model": "iPhone 12",
+      "release_year": 2020,
+      "storage_options": {
+        "64GB": 550,
+        "128GB": 650,
+        "256GB": 750
+      },
+      "condition_multipliers": {
+        "mint": 1.0,
+        "excellent": 0.9,
+        "good": 0.8,
+        "fair": 0.65,
+        "poor": 0.45
+      },
+      "notes": "Oldest model still worth individual resale. 5G capable. Prices have stabilized at floor."
+    },
+    {
+      "model": "iPhone 13",
+      "release_year": 2021,
+      "storage_options": {
+        "128GB": 850,
+        "256GB": 1000,
+        "512GB": 1150
+      },
+      "condition_multipliers": {
+        "mint": 1.0,
+        "excellent": 0.9,
+        "good": 0.8,
+        "fair": 0.65,
+        "poor": 0.45
+      },
+      "notes": "Strong budget option. High demand from price-conscious buyers."
+    },
+    {
+      "model": "iPhone 14 Pro Max",
+      "release_year": 2022,
+      "storage_options": {
+        "128GB": 1600,
+        "256GB": 1800,
+        "512GB": 2050,
+        "1TB": 2300
+      },
+      "condition_multipliers": {
+        "mint": 1.0,
+        "excellent": 0.9,
+        "good": 0.8,
+        "fair": 0.65,
+        "poor": 0.45
+      },
+      "notes": "Last Lightning Pro Max. Deep Purple color holds slight premium. Still strong resale."
+    },
+    {
+      "model": "iPhone 15",
+      "release_year": 2023,
+      "storage_options": {
+        "128GB": 1350,
+        "256GB": 1550,
+        "512GB": 1750
+      },
+      "condition_multipliers": {
+        "mint": 1.0,
+        "excellent": 0.9,
+        "good": 0.8,
+        "fair": 0.65,
+        "poor": 0.45
+      },
+      "notes": "Solid mid-range. USB-C transition model. Dynamic Island brought down from Pro."
+    },
+    {
+      "model": "iPhone 15 Pro",
+      "release_year": 2023,
+      "storage_options": {
+        "128GB": 1850,
+        "256GB": 2100,
+        "512GB": 2400,
+        "1TB": 2700
+      },
+      "condition_multipliers": {
+        "mint": 1.0,
+        "excellent": 0.9,
+        "good": 0.8,
+        "fair": 0.65,
+        "poor": 0.45
+      },
+      "notes": "Titanium build, A17 Pro, USB-C. Natural Titanium most popular. Strong resale."
+    },
+    {
+      "model": "iPhone 15 Pro Max",
+      "release_year": 2023,
+      "storage_options": {
+        "256GB": 2600,
+        "512GB": 2900,
+        "1TB": 3250
+      },
+      "condition_multipliers": {
+        "mint": 1.0,
+        "excellent": 0.9,
+        "good": 0.8,
+        "fair": 0.65,
+        "poor": 0.45
+      },
+      "notes": "Previous gen flagship. 5x telephoto. Titanium. Still commands premium prices."
+    },
+    {
+      "model": "iPhone 16 Pro",
+      "release_year": 2024,
+      "storage_options": {
+        "128GB": 2400,
+        "256GB": 2700,
+        "512GB": 3050,
+        "1TB": 3400
+      },
+      "condition_multipliers": {
+        "mint": 1.0,
+        "excellent": 0.9,
+        "good": 0.8,
+        "fair": 0.65,
+        "poor": 0.45
+      },
+      "notes": "A18 Pro chip. Strong demand from buyers who want Pro features without Max size."
+    },
+    {
+      "model": "iPhone 16 Pro Max",
+      "release_year": 2024,
+      "storage_options": {
+        "256GB": 3300,
+        "512GB": 3650,
+        "1TB": 4100
+      },
+      "condition_multipliers": {
+        "mint": 1.0,
+        "excellent": 0.9,
+        "good": 0.8,
+        "fair": 0.65,
+        "poor": 0.45
+      },
+      "notes": "Current flagship. Highest resale value. Desert Titanium and Natural Titanium most popular."
+    }
+  ]
+}

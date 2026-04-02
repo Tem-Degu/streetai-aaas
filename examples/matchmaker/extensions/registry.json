@@ -1,0 +1,150 @@
+[
+  {
+    "id": "restaurant_booking_v1",
+    "name": "Restaurant Booking API",
+    "description": "Check real-time availability and make reservations at Dubai restaurants. Covers major venues across DIFC, Marina, Downtown, and JBR.",
+    "version": "1.0",
+    "base_url": "https://api.dubaidining.example.com/v1",
+    "auth": {
+      "type": "api_key",
+      "header": "X-Dining-Key",
+      "note": "API key provisioned per agent. Contact registry admin for access."
+    },
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/venues",
+        "description": "Search available venues by area, cuisine, date, and party size.",
+        "parameters": {
+          "area": "string — Dubai area (e.g., DIFC, Marina, Downtown)",
+          "cuisine": "string — optional cuisine filter (e.g., Japanese, Italian, Mediterranean)",
+          "date": "string — YYYY-MM-DD format",
+          "time": "string — HH:MM 24-hour format",
+          "party_size": "integer — number of guests (default 2)"
+        },
+        "response": {
+          "venues": [
+            {
+              "venue_id": "string",
+              "name": "string",
+              "available_times": [
+                "string"
+              ],
+              "price_tier": "string — low/moderate/high",
+              "rating": "number"
+            }
+          ]
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/book",
+        "description": "Create a reservation at a specific venue.",
+        "parameters": {
+          "venue_id": "string — from venue search results",
+          "date": "string — YYYY-MM-DD",
+          "time": "string — HH:MM",
+          "party_size": "integer",
+          "guest_name": "string",
+          "special_requests": "string — optional (e.g., terrace seating, birthday)"
+        },
+        "response": {
+          "booking_id": "string",
+          "status": "confirmed | waitlisted",
+          "confirmation_message": "string"
+        }
+      },
+      {
+        "method": "DELETE",
+        "path": "/book/{booking_id}",
+        "description": "Cancel an existing reservation.",
+        "parameters": {
+          "booking_id": "string — from booking response"
+        },
+        "response": {
+          "status": "cancelled",
+          "refund_note": "string"
+        }
+      }
+    ],
+    "rate_limits": {
+      "requests_per_minute": 30,
+      "bookings_per_day": 10
+    },
+    "fallback": "If the API is unavailable, provide the venue phone number and links to OpenTable or SevenRooms for manual booking."
+  },
+  {
+    "id": "events_listing_v1",
+    "name": "Events Listing API",
+    "description": "Fetch upcoming events in Dubai including concerts, exhibitions, shows, brunches, and sporting events. Updated daily.",
+    "version": "1.0",
+    "base_url": "https://api.dubaievents.example.com/v1",
+    "auth": {
+      "type": "api_key",
+      "header": "X-Events-Key",
+      "note": "API key provisioned per agent. Contact registry admin for access."
+    },
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/events",
+        "description": "Search events by area, category, and date range.",
+        "parameters": {
+          "area": "string — optional Dubai area filter",
+          "category": "string — optional (concert, exhibition, show, brunch, sport, outdoor, comedy, food_festival)",
+          "date_from": "string — YYYY-MM-DD (defaults to today)",
+          "date_to": "string — YYYY-MM-DD (defaults to 14 days from now)",
+          "price_max": "number — optional max ticket price in AED",
+          "sort": "string — date | popularity | price (default: date)"
+        },
+        "response": {
+          "events": [
+            {
+              "event_id": "string",
+              "title": "string",
+              "description": "string",
+              "venue": "string",
+              "area": "string",
+              "date": "string",
+              "time": "string",
+              "price_range": "string — e.g., 150-300 AED",
+              "category": "string",
+              "url": "string — ticket or info link"
+            }
+          ],
+          "total": "integer",
+          "page": "integer"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/events/{event_id}",
+        "description": "Get detailed information about a specific event.",
+        "parameters": {
+          "event_id": "string"
+        },
+        "response": {
+          "event_id": "string",
+          "title": "string",
+          "description": "string",
+          "venue": "string",
+          "area": "string",
+          "date": "string",
+          "time": "string",
+          "duration": "string",
+          "price_range": "string",
+          "category": "string",
+          "dress_code": "string | null",
+          "age_restriction": "string | null",
+          "url": "string",
+          "good_for_dates": "boolean",
+          "notes": "string"
+        }
+      }
+    ],
+    "rate_limits": {
+      "requests_per_minute": 60
+    },
+    "fallback": "If the API is unavailable, recommend well-known recurring events: Friday brunches at popular venues, Alserkal Avenue gallery nights (first Thursday of each month), Dubai Opera schedule, and outdoor cinema at Rooftop and Gallery."
+  }
+]

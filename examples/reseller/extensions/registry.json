@@ -1,0 +1,76 @@
+{
+  "extensions": [
+    {
+      "id": "price_comparison",
+      "name": "UAE Price Comparison API",
+      "description": "Compares your iPhone valuation against live listings on 3 major UAE marketplaces: Dubizzle, Facebook Marketplace UAE, and noon Used. Returns price range (min, avg, max) and number of active listings for the same model, storage, and condition grade.",
+      "type": "api",
+      "endpoint": "/extensions/price-comparison/",
+      "method": "POST",
+      "request_schema": {
+        "model": "string — iPhone model name (e.g. 'iPhone 15 Pro')",
+        "storage": "string — storage tier (e.g. '256GB')",
+        "condition": "string — condition grade (mint, excellent, good, fair, poor)"
+      },
+      "response_schema": {
+        "model": "string",
+        "storage": "string",
+        "condition": "string",
+        "currency": "AED",
+        "sources": [
+          {
+            "platform": "string — marketplace name",
+            "min_price": "number",
+            "max_price": "number",
+            "avg_price": "number",
+            "active_listings": "number",
+            "last_scraped": "string — ISO date"
+          }
+        ],
+        "overall_min": "number",
+        "overall_max": "number",
+        "overall_avg": "number",
+        "total_listings": "number"
+      },
+      "use_cases": [
+        "Validate your valuation before quoting a seller",
+        "Justify pricing to skeptical sellers or aggressive buyers",
+        "Identify if a model is over- or under-supplied in the market"
+      ],
+      "rate_limit": "30 requests per hour",
+      "cost": "Free (included with agent)"
+    },
+    {
+      "id": "shipping_calculator",
+      "name": "UAE Shipping Cost Calculator",
+      "description": "Calculates shipping costs for phone-sized packages between any two UAE emirates. Supports standard (2-3 business days) and express (next business day) delivery. Includes insurance options for high-value devices.",
+      "type": "tool",
+      "endpoint": "/extensions/shipping-cost/",
+      "method": "POST",
+      "request_schema": {
+        "from_emirate": "string — sender emirate (Dubai, Abu Dhabi, Sharjah, Ajman, Ras Al Khaimah, Fujairah, Umm Al Quwain)",
+        "to_emirate": "string — recipient emirate",
+        "device_value": "number — declared value in AED (for insurance calculation)",
+        "service": "string — 'standard' or 'express'"
+      },
+      "response_schema": {
+        "from_emirate": "string",
+        "to_emirate": "string",
+        "service": "string",
+        "shipping_cost": "number — base shipping in AED",
+        "insurance_cost": "number — optional insurance in AED (1.5% of declared value)",
+        "total_with_insurance": "number",
+        "total_without_insurance": "number",
+        "estimated_delivery": "string — e.g. '2-3 business days'",
+        "carrier": "string — recommended carrier"
+      },
+      "use_cases": [
+        "Quote total cost when buyer and seller are in different emirates",
+        "Compare standard vs express to help buyer decide",
+        "Factor shipping into pricing for remote buyers"
+      ],
+      "rate_limit": "60 requests per hour",
+      "cost": "Free (included with agent)"
+    }
+  ]
+}

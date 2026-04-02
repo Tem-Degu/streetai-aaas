@@ -1,0 +1,56 @@
+[
+  {
+    "name": "LPM Restaurant & Bar",
+    "type": "restaurant",
+    "area": "DIFC",
+    "vibe": "Sophisticated French-Mediterranean. White tablecloths but not stuffy. Great people-watching from the terrace. The kind of place where conversation flows naturally because the ambiance does the heavy lifting.",
+    "price_range": "high",
+    "good_for": ["serious daters", "foodies", "professionals", "impressive first date"],
+    "notes": "Book at least 3 days ahead for dinner. Terrace tables are the best but go fast. Dress code is smart casual — no shorts or sandals. The tuna tartare is a safe crowd-pleaser to recommend."
+  },
+  {
+    "name": "Tom & Serg",
+    "type": "cafe",
+    "area": "Al Quoz",
+    "vibe": "Industrial-chic brunch spot in the arts district. Relaxed, creative, unpretentious. Draws a younger, artsy crowd. Great natural light for people who care about that sort of thing.",
+    "price_range": "moderate",
+    "good_for": ["creative types", "casual first dates", "weekend mornings", "coffee lovers"],
+    "notes": "No reservations — arrive before 10am on weekends to avoid the wait. Walk to Alserkal Avenue galleries afterward for a natural date extension. The shakshuka is legendary."
+  },
+  {
+    "name": "Kayak on Dubai Creek",
+    "type": "activity",
+    "area": "Old Dubai",
+    "vibe": "Adventurous and unique. Paddling through the historic creek at sunset with the old souks on either side. Physical enough to break the ice but calm enough for real conversation between strokes.",
+    "price_range": "low",
+    "good_for": ["active people", "adventurous daters", "culture lovers", "non-drinkers"],
+    "notes": "Book through Adventure HQ or Neverland Tours. Best at golden hour — start 90 minutes before sunset. Wear comfortable clothes. Not ideal for very hot months (June-September). Pair with dinner at Arabian Tea House afterward."
+  },
+  {
+    "name": "Zuma",
+    "type": "restaurant",
+    "area": "DIFC",
+    "vibe": "High-energy contemporary Japanese. Buzzing atmosphere, beautiful interior, see-and-be-seen crowd. The kind of place where the energy of the room elevates the date. Loud enough that silences are not awkward.",
+    "price_range": "high",
+    "good_for": ["social personalities", "confident daters", "Japanese food lovers", "Friday night dates"],
+    "notes": "Book well in advance — especially for Friday dinner. The robata counter seats are more intimate than they look. Brunch on Saturday is legendary but not a first-date setting — too chaotic. Better for a third or fourth date."
+  },
+  {
+    "name": "The Lighthouse at D3",
+    "type": "cafe",
+    "area": "Dubai Design District",
+    "vibe": "Airy, minimal, design-forward. Attracts a calm, creative crowd. Great for a long coffee that turns into lunch. The space itself is a conversation starter — lots of interesting design details to comment on.",
+    "price_range": "moderate",
+    "good_for": ["introverts", "design enthusiasts", "daytime dates", "first meetings"],
+    "notes": "Less crowded on weekday lunches. The outdoor area is nice in cooler months. Good for matches where both people are slightly nervous — the environment is calming without being sterile. Walk around D3 afterward."
+  },
+  {
+    "name": "Aprons & Hammers",
+    "type": "restaurant",
+    "area": "Dubai Marina",
+    "vibe": "Casual seafood spot right on the marina walk. Hands-on eating — you crack your own crab legs and wear a bib. Deliberately messy and fun. Impossible to be uptight here, which is exactly the point.",
+    "price_range": "moderate",
+    "good_for": ["breaking the ice", "playful personalities", "Marina residents", "casual daters"],
+    "notes": "No dress code to worry about. Walk along the marina promenade afterward — it is one of the best walks in Dubai, especially at night. The shared platters force interaction. Not ideal if either person is very image-conscious on first dates."
+  }
+]

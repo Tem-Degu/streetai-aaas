@@ -1,0 +1,30 @@
+# Workspaces (user data)
+Lyon/
+matchmaking/
+
+# Dev files
+dashboard/src/
+dashboard/node_modules/
+dashboard/package.json
+dashboard/package-lock.json
+dashboard/vite.config.js
+dashboard/.gitignore
+
+# Docs and examples (available on GitHub, not needed in npm package)
+docs/
+examples/
+AaaS.txt
+CONTEXT.md
+log.txt
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
