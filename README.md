@@ -1,36 +1,42 @@
 # AaaS: Agent as a Service
 
-**Turn domain knowledge into a service business. No code required.**
+**Turn what you know into a running business. No code required.**
 
-AaaS is an open protocol and CLI toolkit for building AI agents that provide real services to real people through conversation. Instead of writing software, you write a **skill** (a document that teaches an agent what it knows). The agent handles the rest: it builds its own database, tracks transactions, connects with other services, and delivers results.
+AaaS is an open protocol and toolkit for building AI agents that provide real services to real people through conversation. You don't write code. You don't design a UI. You describe what the agent should do, drop in your data, and connect it to a platform. The agent takes it from there.
+
+- **Describe the service** by writing a skill document, or just tell the agent what you want and let it write one for you.
+- **Build the database** by dropping JSON files into a folder, or by chatting with the agent and letting it organize the data itself. No schemas, no migrations, no code.
+- **Connect to users** on Telegram, Discord, Slack, WhatsApp, your own website, or a social platform like Truuze. The agent handles every conversation, tracks every transaction, and grows its own knowledge over time.
+
+The result is an agent that runs a service business on your behalf: it talks to customers, looks up data, proposes services, collects payments, delivers results, and remembers what it learned for next time.
 
 ```
-Traditional SaaS:  Developer writes code  ->  deploys app  ->  users interact with UI
-AaaS:              Anyone writes a skill  ->  agent reads it  ->  users interact through chat
+Traditional SaaS:  Developer writes code  ->  deploys app    ->  users interact with UI
+AaaS:              You share knowledge     ->  agent runs it  ->  users interact through chat
 ```
 
 ## How It Works
 
 An AaaS agent is built on seven pillars:
 
-| Pillar | What it is | Who creates it |
-|--------|-----------|----------------|
-| **Skill** | A document defining the service, domain knowledge, pricing, and boundaries | You |
-| **Soul** | The agent's personality, tone, and communication style | You |
-| **Data** | Structured data the agent needs (inventory, listings, contacts) | The agent (you can seed it) |
-| **Transactions** | Records of every service request from users | The agent |
-| **Extensions** | Other agents, APIs, and tools the agent can call for help | You define them, agent uses them |
-| **Memory** | Persistent facts the agent remembers across conversations | The agent |
-| **Connectors** | Platforms and channels the agent listens on | You configure them |
+| Pillar | What it is | How it gets created |
+|--------|-----------|---------------------|
+| **Skill** | The service definition: what the agent does, its domain knowledge, pricing, boundaries | You write it, or describe what you want and the agent writes it |
+| **Soul** | The agent's personality, tone, and communication style | You write it |
+| **Data** | Structured data the agent needs (inventory, listings, contacts, etc.) | Drop JSON files into the data folder, or send data to the agent in conversation and it stores it |
+| **Transactions** | Records of every service request from users | Created automatically by the agent |
+| **Extensions** | Other agents, APIs, and tools the agent can call for help | You register them, the agent calls them when needed |
+| **Memory** | Persistent facts the agent remembers across conversations | The agent saves what it learns |
+| **Connectors** | Platforms and channels the agent listens on | You pick the platforms, the agent serves on all of them |
 
 When a user messages your agent, it follows a structured lifecycle:
 
 ```
-Explore  ->  Create Service  ->  Create Transaction  ->  Deliver  ->  Complete
+Explore  ->  Propose Service  ->  Create Transaction  ->  Deliver  ->  Complete
 ```
 
-1. **Explore**: Understand what the user wants, check feasibility
-2. **Create Service**: Make a plan, calculate cost, get user approval
+1. **Explore**: Understand what the user wants, check the data, assess feasibility
+2. **Propose Service**: Make a plan, calculate cost, get user approval
 3. **Create Transaction**: Register the job, start tracking
 4. **Deliver Service**: Do the work, send the result
 5. **Complete Transaction**: Confirm satisfaction, release payment
