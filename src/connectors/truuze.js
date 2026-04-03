@@ -381,10 +381,19 @@ export default class TruuzeConnector extends BaseConnector {
 
     try {
       const result = await this.engine.processEvent(event);
+      const toolNames = (result.toolsUsed || []).map(t => typeof t === 'string' ? t : t.name);
       console.log('[truuze] Engine response: %d chars, tools: [%s]',
-        result.response?.length || 0, result.toolsUsed?.join(', ') || 'none');
-      // Only auto-send if the LLM didn't already use platform_request (avoid duplicates)
-      if (result.response && !result.toolsUsed?.includes('platform_request')) {
+        result.response?.length || 0, toolNames.join(', ') || 'none');
+      // Only skip auto-send if the agent used platform_request to POST a message (not just GET checks)
+      const sentMessage = (result.toolsUsed || []).some(t => {
+        if (typeof t === 'string') return false;
+        if (t.name !== 'platform_request') return false;
+        const args = t.arguments || {};
+        const method = (args.method || '').toUpperCase();
+        const url = (args.url || '');
+        return method === 'POST' && url.includes('/message/create');
+      });
+      if (result.response && !sentMessage) {
         await this._sendMessage(msg.chat_id, result.response);
         console.log('[truuze] Reply sent to chat %s', msg.chat_id);
       }
@@ -424,7 +433,15 @@ export default class TruuzeConnector extends BaseConnector {
 
     try {
       const result = await this.engine.processEvent(event);
-      if (result.response && !result.toolsUsed?.includes('platform_request')) {
+      const commentSent = (result.toolsUsed || []).some(t => {
+        if (typeof t === 'string') return false;
+        if (t.name !== 'platform_request') return false;
+        const args = t.arguments || {};
+        const method = (args.method || '').toUpperCase();
+        const url = (args.url || '');
+        return method === 'POST' && (url.includes('/comment/') || url.includes('/message/create'));
+      });
+      if (result.response && !commentSent) {
         await this._postComment(comment.voice_id, result.response, comment.comment_id);
         console.log('[truuze] Comment reply sent to voice %s', comment.voice_id);
       }
@@ -466,7 +483,15 @@ export default class TruuzeConnector extends BaseConnector {
 
     try {
       const result = await this.engine.processEvent(event);
-      if (result.response && !result.toolsUsed?.includes('platform_request')) {
+      const mentionSent = (result.toolsUsed || []).some(t => {
+        if (typeof t === 'string') return false;
+        if (t.name !== 'platform_request') return false;
+        const args = t.arguments || {};
+        const method = (args.method || '').toUpperCase();
+        const url = (args.url || '');
+        return method === 'POST' && (url.includes('/comment/') || url.includes('/message/create'));
+      });
+      if (result.response && !mentionSent) {
         await this._postComment(mention.voice_id, result.response, mention.reply_to);
         console.log('[truuze] Mention reply sent to voice %s', mention.voice_id);
       }

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Extensions - AaaS Documentation</title>
+  <meta name="description" content="Connect your AaaS agent to external APIs, payment providers, other agents, and tools. Supports Bearer, custom header, query, and Basic auth.">
+  <link rel="canonical" href="https://streetai.org/docs/extensions.html">
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<nav class="nav nav-scrolled">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo"><img src="/logo.png" alt="Street AI" class="nav-logo-img"></a>
+    <div class="nav-links">
+      <a href="/#how-it-works">How It Works</a>
+      <a href="/#quickstart">Quick Start</a>
+      <a href="/#platforms">Platforms</a>
+      <a href="/#docs">Docs</a>
+      <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank">GitHub</a>
+    </div>
+    <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="doc-page">
+  <div class="container">
+    <div class="doc-breadcrumb">
+      <a href="/">Home</a> <span>/</span> <a href="/#docs">Docs</a> <span>/</span> Extensions
+    </div>
+
+    <div class="doc-content">
+      <h1>Extensions</h1>
+      <p>Extensions let your agent call external APIs, other agents, human contacts, and local tools during conversations. When a user's request requires an external service, the agent calls the appropriate extension and uses the result.</p>
+
+      <h2>How they work</h2>
+      <ol>
+        <li>You register an extension in <code>extensions/registry.json</code> (or through the dashboard)</li>
+        <li>The agent automatically gets a tool it can call during conversations</li>
+        <li>When a user's request requires the extension, the agent calls it and incorporates the result into its response</li>
+      </ol>
+
+      <h2>Registering an extension</h2>
+      <pre><code>{
+  "extensions": [
+    {
+      "name": "weather",
+      "description": "Get current weather conditions for a city",
+      "type": "api",
+      "endpoint": "https://api.weather.com/v1/current",
+      "auth": {
+        "type": "bearer",
+        "apiKey": "YOUR_API_KEY"
+      },
+      "capabilities": ["current_weather", "forecast"],
+      "cost_model": "free"
+    }
+  ]
+}</code></pre>
+
+      <h2>Auth types</h2>
+      <p>The extension system supports four authentication methods:</p>
+      <table>
+        <tr><td><strong>Bearer</strong></td><td>Sends <code>Authorization: Bearer YOUR_KEY</code> header. The default if no type is specified.</td></tr>
+        <tr><td><strong>Custom Header</strong></td><td>Sends the key in a custom header (e.g. <code>X-API-Key</code>). Set <code>type: "header"</code> and <code>header: "X-API-Key"</code>.</td></tr>
+        <tr><td><strong>Query Parameter</strong></td><td>Appends the key to the URL (e.g. <code>?key=YOUR_KEY</code>). Set <code>type: "query"</code>.</td></tr>
+        <tr><td><strong>Basic Auth</strong></td><td>Base64-encoded <code>username:password</code>. Set <code>type: "basic"</code> and <code>apiKey: "user:pass"</code>.</td></tr>
+      </table>
+      <p>You can also add arbitrary custom headers via the <code>headers</code> object on any extension.</p>
+
+      <h2>Extension types</h2>
+      <table>
+        <tr><td><strong>API</strong></td><td>External REST APIs (Stripe, weather services, shipping, email, etc.)</td></tr>
+        <tr><td><strong>Agent</strong></td><td>Other AaaS agents. The agent can delegate sub-tasks to them.</td></tr>
+        <tr><td><strong>Human</strong></td><td>Human contacts the agent can escalate to when it needs help.</td></tr>
+        <tr><td><strong>Tool</strong></td><td>Local commands and scripts on the host machine.</td></tr>
+      </table>
+
+      <h2>Payment flow</h2>
+      <p>When your service involves payments through an external provider (Stripe, PayPal, etc.), the agent follows this pattern:</p>
+      <ol>
+        <li>Creates a payment link via the extension</li>
+        <li>Sends the link to the user and asks them to confirm when they have paid</li>
+        <li>Saves the payment session ID to memory</li>
+        <li>When the user confirms, verifies the payment status via the extension</li>
+        <li>If confirmed, proceeds with the service. If not, tells the user the payment was not found.</li>
+      </ol>
+      <p>This approach does not require webhooks or a public URL. The agent verifies payment status on demand by calling the payment provider's API.</p>
+
+      <h2>Managing extensions</h2>
+      <p>You can manage extensions through:</p>
+      <ul>
+        <li>The <strong>Extensions page</strong> in the dashboard (visual form with auth configuration and test button)</li>
+        <li>The CLI: <code>aaas extensions add --name weather --type api --endpoint URL</code></li>
+        <li>Editing <code>extensions/registry.json</code> directly</li>
+      </ul>
+
+      <h2>Referencing in your skill</h2>
+      <p>Tell the agent about its extensions in the SKILL.md so it knows when to use them:</p>
+      <pre><code>## Extensions Available
+
+- **weather** -- Check weather before recommending travel dates
+- **send_email** -- Send order confirmations and shipping notifications
+- **calculate_shipping** -- Get real-time shipping rates for purchases</code></pre>
+    </div>
+
+    <div class="doc-nav-bottom">
+      <a href="/docs/data.html" class="doc-nav-link">
+        <div class="doc-nav-label">Previous</div>
+        <div class="doc-nav-title">&larr; Managing Data</div>
+      </a>
+      <a href="/docs/dashboard.html" class="doc-nav-link next">
+        <div class="doc-nav-label">Next</div>
+        <div class="doc-nav-title">Dashboard &rarr;</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

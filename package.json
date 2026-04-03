@@ -1,6 +1,6 @@
 {
   "name": "@streetai/aaas",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent as a Service — turn expertise into an AI-powered service business, no code required",
   "type": "module",
   "main": "src/cli/index.js",

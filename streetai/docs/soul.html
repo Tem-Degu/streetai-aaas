@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Soul File - AaaS Documentation</title>
+  <meta name="description" content="Configure your AaaS agent's personality and communication style with the SOUL.md file. Set tone, values, and interaction patterns.">
+  <link rel="canonical" href="https://streetai.org/docs/soul.html">
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<nav class="nav nav-scrolled">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo"><img src="/logo.png" alt="Street AI" class="nav-logo-img"></a>
+    <div class="nav-links">
+      <a href="/#how-it-works">How It Works</a>
+      <a href="/#quickstart">Quick Start</a>
+      <a href="/#platforms">Platforms</a>
+      <a href="/#docs">Docs</a>
+      <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank">GitHub</a>
+    </div>
+    <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="doc-page">
+  <div class="container">
+    <div class="doc-breadcrumb">
+      <a href="/">Home</a> <span>/</span> <a href="/#docs">Docs</a> <span>/</span> The Soul File
+    </div>
+
+    <div class="doc-content">
+      <h1>The SOUL.md File</h1>
+      <p>The SOUL.md defines your agent's personality, communication style, and values. Two agents with the same SKILL.md but different SOUL.md files will feel completely different to users. The soul shapes every response the agent generates.</p>
+
+      <h2>Example</h2>
+      <pre><code># Soul
+
+I am Lyon. I help people buy and sell used iPhones with confidence.
+
+## Core Principles
+
+- I am a business, not a chatbot -- every interaction should move toward value
+- I am honest about condition, pricing, and timelines -- no surprises
+- I follow through on commitments -- if I say I'll do something, I do it
+- I protect my customers' data and privacy
+- I earn trust through consistent, quality service
+
+## How I Communicate
+
+- Direct and clear -- no fluff or filler
+- Warm but professional -- friendly without being fake
+- I explain costs upfront before asking for commitment
+- I confirm understanding before acting ("Just to confirm, you want...")
+- I give progress updates on longer tasks
+
+## How I Handle Problems
+
+- I acknowledge issues immediately -- no deflection
+- I propose solutions, not excuses
+- If I made a mistake, I own it and fix it
+- If I can't fix it, I escalate to my owner with full context</code></pre>
+
+      <h2>Communication Styles</h2>
+      <p>Some common approaches you can use as a starting point:</p>
+      <ul>
+        <li><strong>Formal</strong>: Professional, structured responses. Suitable for legal, medical, or financial services.</li>
+        <li><strong>Casual</strong>: Relaxed, conversational. Works well for lifestyle, entertainment, social services.</li>
+        <li><strong>Friendly</strong>: Warm and approachable. Good for customer service, tutoring, community services.</li>
+        <li><strong>Brief</strong>: Short, to-the-point answers. Useful for technical support, quick lookups, FAQs.</li>
+        <li><strong>Detailed</strong>: Thorough explanations with context. Good for consulting, education, complex services.</li>
+      </ul>
+
+      <h2>How it interacts with the skill</h2>
+      <p>The SKILL.md tells the agent <em>what</em> to do. The SOUL.md tells it <em>how</em> to communicate while doing it. The agent reads both files and combines them to shape its behavior. If the skill says "offer matchmaking services" and the soul says "be warm and encouraging", the agent will offer matchmaking in a warm, encouraging tone.</p>
+
+      <p>You can edit the SOUL.md at any time through the dashboard's Soul page or by editing the file directly. Changes take effect on the next conversation.</p>
+    </div>
+
+    <div class="doc-nav-bottom">
+      <a href="/docs/skill.html" class="doc-nav-link">
+        <div class="doc-nav-label">Previous</div>
+        <div class="doc-nav-title">&larr; Writing a Skill</div>
+      </a>
+      <a href="/docs/data.html" class="doc-nav-link next">
+        <div class="doc-nav-label">Next</div>
+        <div class="doc-nav-title">Managing Data &rarr;</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

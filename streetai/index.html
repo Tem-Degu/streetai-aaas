@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Street AI - AaaS: Agent as a Service (Open Source)</title>
+  <meta name="description" content="AaaS is an open-source protocol and CLI for building AI agents that provide real services through conversation. Supports Telegram, Discord, Slack, WhatsApp, and HTTP. No code required.">
+  <meta name="keywords" content="AaaS, Agent as a Service, AI agent, open source, CLI, chatbot, service agent, no-code, Telegram bot, Discord bot, Slack bot, WhatsApp bot, LLM, AI service">
+  <link rel="canonical" href="https://streetai.org/">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Street AI - AaaS: Agent as a Service">
+  <meta property="og:description" content="Open-source protocol and CLI for building AI agents that provide real services through conversation. No code required.">
+  <meta property="og:image" content="https://streetai.org/logo.png">
+  <meta property="og:url" content="https://streetai.org/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Street AI">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Street AI - AaaS: Agent as a Service">
+  <meta name="twitter:description" content="Open-source protocol and CLI for building AI service agents. No code required.">
+  <meta name="twitter:image" content="https://streetai.org/logo.png">
+
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "AaaS - Agent as a Service",
+    "alternateName": "Street AI AaaS",
+    "description": "An open-source protocol and CLI toolkit for building AI agents that provide real services to real people through conversation. Agents handle data, transactions, payments, memory, and deploy to Telegram, Discord, Slack, WhatsApp, and HTTP.",
+    "url": "https://streetai.org",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Windows, macOS, Linux",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "license": "https://opensource.org/licenses/MIT",
+    "codeRepository": "https://github.com/Tem-Degu/streetai-aaas",
+    "programmingLanguage": "JavaScript",
+    "runtimePlatform": "Node.js"
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Street AI",
+    "url": "https://streetai.org",
+    "logo": "https://streetai.org/logo.png"
+  }
+  </script>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <img src="/logo.png" alt="Street AI" class="nav-logo-img">
+    </a>
+    <div class="nav-links">
+      <a href="#how-it-works">How It Works</a>
+      <a href="#quickstart">Quick Start</a>
+      <a href="#platforms">Platforms</a>
+      <a href="#docs">Docs</a>
+      <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank">GitHub</a>
+    </div>
+    <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="container">
+    <p class="hero-badge">Open Source</p>
+    <h1 class="hero-title">Agent as a Service</h1>
+    <p class="hero-sub">An open-source protocol and CLI for building AI agents that provide real services to real people through conversation. Describe the service, drop in your data, connect to a platform. No code required.</p>
+    <div class="hero-actions">
+      <a href="#quickstart" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/Tem-Degu/streetai-aaas" class="btn btn-outline" target="_blank">View on GitHub</a>
+    </div>
+    <div class="hero-comparison">
+      <div class="comparison-row">
+        <span class="comparison-label">Traditional SaaS</span>
+        <span class="comparison-flow">Developer writes code <span class="arrow">&rarr;</span> deploys app <span class="arrow">&rarr;</span> users interact with UI</span>
+      </div>
+      <div class="comparison-row highlight">
+        <span class="comparison-label">AaaS</span>
+        <span class="comparison-flow">You share knowledge <span class="arrow">&rarr;</span> agent runs it <span class="arrow">&rarr;</span> users interact through chat</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- WHAT IS IT -->
+<section class="section" id="what-is-it">
+  <div class="container">
+    <h2 class="section-title">What is AaaS?</h2>
+    <p class="section-desc">AaaS (Agent as a Service) is an open-source protocol and CLI for creating AI agents that deliver real services through conversation. It handles the full lifecycle: data storage, transactions, payments, memory, and multi-platform deployment. The project is MIT-licensed and available on <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank">GitHub</a>.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">&#128221;</div>
+        <h3>Describe the service</h3>
+        <p>Write a skill document, or just tell the agent what you want and let it write one for you. Plain text, not code.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128451;</div>
+        <h3>Build the database</h3>
+        <p>Drop JSON files into a folder, or chat with the agent and let it organize the data itself. No schemas, no migrations.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128172;</div>
+        <h3>Connect to users</h3>
+        <p>Telegram, Discord, Slack, WhatsApp, your own website, or Truuze. The agent serves on all of them at once.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128176;</div>
+        <h3>Handle payments</h3>
+        <p>Integrate Stripe, PayPal, or any payment provider through extensions. The agent creates links, verifies payments, and delivers.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#129504;</div>
+        <h3>Learn over time</h3>
+        <p>The agent remembers user preferences, service patterns, and important context. Every interaction makes it smarter.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128200;</div>
+        <h3>Track everything</h3>
+        <p>Every service request is tracked from start to finish. Revenue, transactions, success rates, all visible in the dashboard.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section section-dark" id="how-it-works">
+  <div class="container">
+    <h2 class="section-title">How It Works</h2>
+    <p class="section-desc">An AaaS agent is built on seven pillars</p>
+    <div class="pillars-grid">
+      <div class="pillar">
+        <div class="pillar-name">Skill</div>
+        <div class="pillar-desc">The service definition: what the agent does, its domain knowledge, pricing, boundaries</div>
+        <div class="pillar-who">You write it, or the agent writes it for you</div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-name">Soul</div>
+        <div class="pillar-desc">The agent's personality, tone, and communication style</div>
+        <div class="pillar-who">You write it</div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-name">Data</div>
+        <div class="pillar-desc">Structured data: inventory, listings, contacts, FAQs, anything</div>
+        <div class="pillar-who">Drop files or let the agent build it from conversation</div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-name">Transactions</div>
+        <div class="pillar-desc">Records of every service request from users</div>
+        <div class="pillar-who">Created automatically by the agent</div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-name">Extensions</div>
+        <div class="pillar-desc">Other agents, APIs, and tools the agent can call</div>
+        <div class="pillar-who">You register them, the agent calls them when needed</div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-name">Memory</div>
+        <div class="pillar-desc">Persistent facts the agent remembers across conversations</div>
+        <div class="pillar-who">The agent saves what it learns</div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-name">Connectors</div>
+        <div class="pillar-desc">Platforms and channels the agent listens on</div>
+        <div class="pillar-who">You pick the platforms, the agent serves on all of them</div>
+      </div>
+    </div>
+
+    <h3 class="subsection-title">Service Lifecycle</h3>
+    <div class="lifecycle">
+      <div class="lifecycle-step">
+        <div class="step-num">1</div>
+        <div class="step-name">Explore</div>
+        <div class="step-desc">Understand what the user wants, check the data, assess feasibility</div>
+      </div>
+      <div class="lifecycle-arrow">&rarr;</div>
+      <div class="lifecycle-step">
+        <div class="step-num">2</div>
+        <div class="step-name">Propose</div>
+        <div class="step-desc">Make a plan, calculate cost, get user approval</div>
+      </div>
+      <div class="lifecycle-arrow">&rarr;</div>
+      <div class="lifecycle-step">
+        <div class="step-num">3</div>
+        <div class="step-name">Transact</div>
+        <div class="step-desc">Register the job, start tracking</div>
+      </div>
+      <div class="lifecycle-arrow">&rarr;</div>
+      <div class="lifecycle-step">
+        <div class="step-num">4</div>
+        <div class="step-name">Deliver</div>
+        <div class="step-desc">Do the work, send the result</div>
+      </div>
+      <div class="lifecycle-arrow">&rarr;</div>
+      <div class="lifecycle-step">
+        <div class="step-num">5</div>
+        <div class="step-name">Complete</div>
+        <div class="step-desc">Confirm satisfaction, release payment</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- QUICK START -->
+<section class="section" id="quickstart">
+  <div class="container">
+    <h2 class="section-title">Quick Start</h2>
+    <p class="section-desc">Get your first agent running in under 5 minutes</p>
+
+    <div class="steps">
+      <div class="step-card">
+        <div class="step-card-num">1</div>
+        <h3>Install</h3>
+        <pre><code>npm install -g @streetai/aaas</code></pre>
+        <p>Requires Node.js 18 or later.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-card-num">2</div>
+        <h3>Create a workspace</h3>
+        <pre><code>aaas init my-agent "My Service Name"
+cd my-agent</code></pre>
+        <p>This scaffolds the full AaaS structure: skill template, soul file, data directory, extensions, and configuration.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-card-num">3</div>
+        <h3>Add your LLM key</h3>
+        <pre><code>aaas config --provider anthropic --key sk-ant-...
+# or: openai, google, ollama, openrouter, azure</code></pre>
+        <p>Or configure it visually in the dashboard Settings page.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-card-num">4</div>
+        <h3>Write your skill</h3>
+        <p>Open <code>.aaas/skills/aaas/SKILL.md</code> and describe your service: what you offer, your domain knowledge, pricing, and boundaries. Or just chat with the agent and let it write the skill for you.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-card-num">5</div>
+        <h3>Add your data</h3>
+        <p>Drop JSON files into the <code>data/</code> folder, or tell the agent about your data in conversation and it will organize it. For example, a product catalog, a list of contacts, or a set of FAQs.</p>
+        <pre><code># Drop a file directly
+echo '[{"name": "Item 1", "price": 25}]' > data/products.json
+
+# Or add records via CLI
+echo '{"name": "Item 2", "price": 30}' | aaas data add products.json</code></pre>
+        <p>You can also use the Data page in the dashboard to create, edit, and upload files visually. The agent can search, add, update, and delete records on its own during conversations.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-card-num">6</div>
+        <h3>Add extensions (optional)</h3>
+        <p>If your agent needs to call external APIs (payments, weather, shipping, email), register them as extensions. The agent will call them automatically when needed.</p>
+        <pre><code>aaas extensions add --name stripe --type api \
+  --endpoint https://api.stripe.com/v1</code></pre>
+        <p>Or use the Extensions page in the dashboard, which has a full form for auth configuration, custom headers, and a test button. Extensions support Bearer tokens, custom headers, query parameters, and Basic auth.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-card-num">7</div>
+        <h3>Test it</h3>
+        <pre><code># Chat in the terminal
+aaas chat
+
+# Or open the web dashboard
+aaas dashboard</code></pre>
+      </div>
+
+      <div class="step-card">
+        <div class="step-card-num">8</div>
+        <h3>Deploy</h3>
+        <pre><code># Connect to any platform
+aaas connect http --port 3300
+aaas connect telegram --token YOUR_TOKEN
+
+# Start serving
+aaas run</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PLATFORMS -->
+<section class="section section-dark" id="platforms">
+  <div class="container">
+    <h2 class="section-title">Deploy Anywhere</h2>
+    <p class="section-desc">Connect to one platform or all of them. The agent serves on every connected channel simultaneously.</p>
+
+    <div class="platforms-grid">
+      <div class="platform-card">
+        <h3>HTTP API</h3>
+        <pre><code>aaas connect http --port 3300</code></pre>
+        <p>REST API with CORS enabled. Includes an embeddable chat widget for websites.</p>
+      </div>
+      <div class="platform-card">
+        <h3>Telegram</h3>
+        <pre><code>aaas connect telegram --token BOT_TOKEN</code></pre>
+        <p>Create a bot via @BotFather, paste the token, done. Responds to DMs and group mentions.</p>
+      </div>
+      <div class="platform-card">
+        <h3>Discord</h3>
+        <pre><code>aaas connect discord --token BOT_TOKEN</code></pre>
+        <p>Create an app at discord.com/developers, enable Message Content Intent, invite to your server.</p>
+      </div>
+      <div class="platform-card">
+        <h3>Slack</h3>
+        <pre><code>aaas connect slack --bot-token xoxb-... --app-token xapp-...</code></pre>
+        <p>Create an app at api.slack.com, enable Socket Mode and Event Subscriptions. Replies in threads.</p>
+      </div>
+      <div class="platform-card">
+        <h3>WhatsApp</h3>
+        <pre><code>aaas connect whatsapp --access-token TOKEN --phone-number-id ID</code></pre>
+        <p>Uses the WhatsApp Business Cloud API via Meta for Developers. Requires a public HTTPS webhook.</p>
+      </div>
+      <div class="platform-card">
+        <h3>Truuze</h3>
+        <pre><code>aaas connect truuze --token trz_prov_xxx</code></pre>
+        <p>Social platform built for AI agents. Your agent gets a full profile, can post, follow people, and earn currency.</p>
+      </div>
+    </div>
+
+    <div class="widget-section">
+      <h3 class="subsection-title">Chat Widget</h3>
+      <p>The fastest way to add your agent to any website. One line of HTML:</p>
+      <pre><code>&lt;script src="http://your-server:3300/widget.js"
+  data-agent="My Agent"
+  data-title="Chat with us"
+  data-color="#e11d48"
+  data-greeting="Hi! How can I help?"&gt;
+&lt;/script&gt;</code></pre>
+      <p>Renders a floating chat button. Handles conversation history, typing indicators, and mobile responsiveness. No build step, no framework, no dependencies.</p>
+    </div>
+  </div>
+</section>
+
+<!-- WORKSPACE -->
+<section class="section" id="workspace">
+  <div class="container">
+    <h2 class="section-title">Workspace Structure</h2>
+    <p class="section-desc">Every agent lives in a workspace folder that contains everything it needs</p>
+
+    <div class="workspace-layout">
+      <pre class="workspace-tree"><code>my-agent/
+├── skills/
+│   └── aaas/
+│       └── SKILL.md          &larr; Your service definition
+├── SOUL.md                    &larr; Personality &amp; tone
+├── data/                      &larr; Your service database
+│   ├── products.json          &larr; Drop JSON files here
+│   └── database.sqlite        &larr; Or use SQLite
+├── transactions/
+│   ├── active/                &larr; Jobs in progress
+│   └── archive/               &larr; Completed jobs
+├── extensions/
+│   └── registry.json          &larr; API integrations
+├── deliveries/                &larr; Files delivered to users
+├── memory/
+│   └── facts.json             &larr; What the agent has learned
+└── .aaas/
+    ├── config.json            &larr; LLM provider settings
+    ├── connections/           &larr; Platform configs
+    └── sessions/              &larr; Conversation history</code></pre>
+
+      <div class="workspace-explain">
+        <div class="explain-item">
+          <strong>SKILL.md</strong>
+          <p>The most important file. Defines your service catalog, domain knowledge, pricing rules, and boundaries. The agent reads this to understand what it can do.</p>
+        </div>
+        <div class="explain-item">
+          <strong>SOUL.md</strong>
+          <p>Shapes how the agent communicates. Formal or casual, brief or detailed, warm or professional.</p>
+        </div>
+        <div class="explain-item">
+          <strong>data/</strong>
+          <p>Your service database. Drop JSON files (product listings, user records, FAQs) or use SQLite for larger datasets. The agent can also build data from conversations.</p>
+        </div>
+        <div class="explain-item">
+          <strong>transactions/</strong>
+          <p>Every service job tracked as a JSON file. Active jobs in <code>active/</code>, completed ones move to <code>archive/</code>. Full audit trail.</p>
+        </div>
+        <div class="explain-item">
+          <strong>memory/</strong>
+          <p>The agent extracts useful facts from conversations and stores them here. User preferences, patterns, important context.</p>
+        </div>
+        <div class="explain-item">
+          <strong>extensions/</strong>
+          <p>Connect to external APIs (payments, weather, shipping) or other agents. Register once, the agent calls them when needed.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DOCS -->
+<section class="section section-dark" id="docs">
+  <div class="container">
+    <h2 class="section-title">Documentation</h2>
+    <p class="section-desc">Everything you need to build and deploy AaaS agents</p>
+
+    <div class="docs-grid">
+      <a href="/docs/skill.html" class="docs-card">
+        <h3>Writing a Skill</h3>
+        <p>The SKILL.md is the heart of your agent. Learn how to define services, domain knowledge, pricing, and boundaries.</p>
+        <span class="docs-card-arrow">Read more &rarr;</span>
+      </a>
+      <a href="/docs/soul.html" class="docs-card">
+        <h3>The Soul File</h3>
+        <p>Shape your agent's personality, communication style, and values. Make it sound like you want it to.</p>
+        <span class="docs-card-arrow">Read more &rarr;</span>
+      </a>
+      <a href="/docs/data.html" class="docs-card">
+        <h3>Managing Data</h3>
+        <p>Drop JSON files, use SQLite, or let the agent build its database from conversations. No code needed.</p>
+        <span class="docs-card-arrow">Read more &rarr;</span>
+      </a>
+      <a href="/docs/extensions.html" class="docs-card">
+        <h3>Extensions</h3>
+        <p>Connect your agent to external APIs, other agents, payment providers, and tools.</p>
+        <span class="docs-card-arrow">Read more &rarr;</span>
+      </a>
+      <a href="/docs/dashboard.html" class="docs-card">
+        <h3>Dashboard</h3>
+        <p>A web interface to monitor transactions, manage data, test conversations, and configure your agent.</p>
+        <span class="docs-card-arrow">Read more &rarr;</span>
+      </a>
+      <a href="/docs/llm.html" class="docs-card">
+        <h3>LLM Configuration</h3>
+        <p>Set up Anthropic, OpenAI, Google, Ollama, OpenRouter, or Azure. Switch providers at any time.</p>
+        <span class="docs-card-arrow">Read more &rarr;</span>
+      </a>
+      <a href="/docs/cli.html" class="docs-card">
+        <h3>CLI Reference</h3>
+        <p>Complete reference for all aaas commands: workspace, config, data, extensions, deployment, and more.</p>
+        <span class="docs-card-arrow">Read more &rarr;</span>
+      </a>
+    </div>
+
+  </div>
+</section>
+
+<!-- EXAMPLE -->
+<section class="section" id="example">
+  <div class="container">
+    <h2 class="section-title">Example: AaaS in Action</h2>
+
+    <div class="example-card">
+      <h3>Dubai Date Matchmaker</h3>
+      <p>Sarah lives in Dubai and knows the dating scene inside out. She doesn't know how to code, but she wants to turn that knowledge into a service.</p>
+      <ol>
+        <li>She installs AaaS and creates an agent workspace</li>
+        <li>She writes the matchmaking skill: what the agent does, Dubai dating knowledge, pricing, boundaries</li>
+        <li>She seeds the database with initial profiles and venue data</li>
+        <li>She connects the agent to Telegram and her website</li>
+      </ol>
+      <p>The agent is now live. When Ahmed messages asking for help finding a date, the agent explores his preferences, proposes a service tier, collects payment, delivers curated matches with compatibility scores, and logs the completed transaction. Sarah earns money while the agent does the work.</p>
+      <p>Every interaction makes the service better: more profiles in the database means better matches, which means more satisfied users, which means more word of mouth.</p>
+    </div>
+
+    <div class="example-card">
+      <h3>More use cases</h3>
+      <div class="use-cases">
+        <div class="use-case">
+          <strong>Used phone marketplace</strong>
+          <p>Agent helps buyers browse inventory and sellers list devices. Handles pricing, condition grading, and buyer-seller matching.</p>
+        </div>
+        <div class="use-case">
+          <strong>Travel concierge</strong>
+          <p>Books trips based on your curated destination guides. Checks weather, calculates costs, handles logistics.</p>
+        </div>
+        <div class="use-case">
+          <strong>Tutoring service</strong>
+          <p>Teaches students based on your course materials. Tracks progress, assigns exercises, adapts to learning pace.</p>
+        </div>
+        <div class="use-case">
+          <strong>Local food ordering</strong>
+          <p>Manages menus, takes orders, coordinates deliveries. Remembers customer preferences for repeat orders.</p>
+        </div>
+        <div class="use-case">
+          <strong>Freelance consulting</strong>
+          <p>Qualifies leads, schedules appointments, handles intake. The agent does the screening, you do the consulting.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PHILOSOPHY -->
+<section class="section section-dark" id="philosophy">
+  <div class="container">
+    <h2 class="section-title">Philosophy</h2>
+    <div class="philosophy-grid">
+      <div class="philosophy-card">
+        <h3>The skill is the software</h3>
+        <p>A traditional service app requires developers, designers, infrastructure, and maintenance. AaaS requires one document written by someone who understands the domain. The agent interprets the skill and builds everything else.</p>
+      </div>
+      <div class="philosophy-card">
+        <h3>The agent decides how</h3>
+        <p>The protocol defines what an agent must do (track transactions, respect escrow, protect privacy) but not how. The agent creates its own database schema, its own workflows, its own communication style.</p>
+      </div>
+      <div class="philosophy-card">
+        <h3>Transactions create accountability</h3>
+        <p>Every service interaction is tracked from request to completion with a clear audit trail. Users can rate, dispute, and track. Agents build reputation over time.</p>
+      </div>
+      <div class="philosophy-card">
+        <h3>Extensions create an economy</h3>
+        <p>When agents can call other agents and APIs, every agent becomes both a provider and a consumer. A matchmaker pays a restaurant booking agent which pays a transport agent. Each built by a different person, each earning per transaction.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <img src="/logo.png" alt="Street AI" class="footer-logo">
+      <p>Open-source project. MIT License.</p>
+    </div>
+    <div class="footer-links">
+      <div class="footer-col">
+        <h4>Project</h4>
+        <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank">GitHub</a>
+        <a href="https://www.npmjs.com/package/@streetai/aaas" target="_blank">npm</a>
+        <a href="#docs">Documentation</a>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <a href="#quickstart">Quick Start</a>
+        <a href="#platforms">Platforms</a>
+        <a href="#example">Examples</a>
+      </div>
+      <div class="footer-col">
+        <h4>Community</h4>
+        <a href="https://github.com/Tem-Degu/streetai-aaas/issues" target="_blank">Report a Bug</a>
+        <a href="https://github.com/Tem-Degu/streetai-aaas/discussions" target="_blank">Discussions</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div class="container">&copy; 2026 Street AI. All rights reserved.</div>
+  </div>
+</footer>
+
+<script>
+// Smooth scroll
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.querySelector('.nav-links').classList.remove('open');
+    }
+  });
+});
+
+// Nav background on scroll
+window.addEventListener('scroll', () => {
+  document.querySelector('.nav').classList.toggle('nav-scrolled', window.scrollY > 40);
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CLI Reference - AaaS Documentation</title>
+  <meta name="description" content="Complete CLI reference for the aaas command. Workspace management, configuration, data, extensions, transactions, and platform deployment.">
+  <link rel="canonical" href="https://streetai.org/docs/cli.html">
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<nav class="nav nav-scrolled">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo"><img src="/logo.png" alt="Street AI" class="nav-logo-img"></a>
+    <div class="nav-links">
+      <a href="/#how-it-works">How It Works</a>
+      <a href="/#quickstart">Quick Start</a>
+      <a href="/#platforms">Platforms</a>
+      <a href="/#docs">Docs</a>
+      <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank">GitHub</a>
+    </div>
+    <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="doc-page">
+  <div class="container">
+    <div class="doc-breadcrumb">
+      <a href="/">Home</a> <span>/</span> <a href="/#docs">Docs</a> <span>/</span> CLI Reference
+    </div>
+
+    <div class="doc-content">
+      <h1>CLI Reference</h1>
+      <p>Complete reference for all <code>aaas</code> commands. Install with <code>npm install -g @streetai/aaas</code>.</p>
+
+      <h2>Workspace commands</h2>
+      <pre><code>aaas init &lt;dir&gt; [name] [desc]    # Create a new workspace
+aaas status                       # Show workspace status and config
+aaas chat                         # Chat with the agent in terminal
+aaas dashboard [--port 3400]      # Open the web dashboard</code></pre>
+
+      <h2>Configuration</h2>
+      <pre><code>aaas config --provider &lt;name&gt; --key &lt;key&gt;   # Set provider and API key
+aaas config --model &lt;model-id&gt;               # Set the model
+aaas config --show                           # View current configuration
+aaas config --remove &lt;provider&gt;              # Remove a provider's credentials</code></pre>
+      <p>Supported providers: <code>anthropic</code>, <code>openai</code>, <code>google</code>, <code>ollama</code>, <code>openrouter</code>, <code>azure</code>.</p>
+
+      <h2>Content management</h2>
+      <pre><code>aaas skill                        # View SKILL.md contents
+aaas skill --validate             # Check skill file for common issues
+
+aaas data list                    # List all data files
+aaas data view &lt;file&gt;             # Print file contents
+aaas data create &lt;filename&gt;       # Create a new data file
+aaas data add &lt;file&gt;              # Add record from stdin
+aaas data remove &lt;file&gt; &lt;index&gt;   # Remove a record by index
+
+aaas logs                         # View recent agent activity
+aaas logs --days 5                # Show last 5 days</code></pre>
+
+      <h2>Extensions</h2>
+      <pre><code>aaas extensions list              # List registered extensions
+aaas extensions add --name weather --type api --endpoint URL
+aaas extensions test &lt;name&gt;       # Test an extension connection
+aaas extensions remove &lt;name&gt;     # Remove an extension</code></pre>
+
+      <h2>Transactions</h2>
+      <pre><code>aaas transactions list            # List active transactions
+aaas transactions list --all      # Include archived transactions
+aaas transactions list --status completed
+aaas transactions view &lt;id&gt;       # View a specific transaction
+aaas transactions stats           # Show transaction statistics</code></pre>
+
+      <h2>Platform deployment</h2>
+      <pre><code># Connect to platforms
+aaas connect http --port 3300
+aaas connect telegram --token YOUR_BOT_TOKEN
+aaas connect discord --token YOUR_BOT_TOKEN
+aaas connect slack --bot-token xoxb-... --app-token xapp-...
+aaas connect whatsapp --access-token TOKEN --phone-number-id ID --verify-token SECRET
+aaas connect truuze --token trz_prov_xxx
+
+# Manage connections
+aaas connections                  # List all connected platforms
+aaas disconnect &lt;platform&gt;        # Remove a platform connection
+
+# Run the agent
+aaas run                          # Start on all connected platforms
+aaas run --daemon                 # Start in the background
+aaas stop                         # Stop a running agent</code></pre>
+    </div>
+
+    <div class="doc-nav-bottom">
+      <a href="/docs/llm.html" class="doc-nav-link">
+        <div class="doc-nav-label">Previous</div>
+        <div class="doc-nav-title">&larr; LLM Configuration</div>
+      </a>
+      <div></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

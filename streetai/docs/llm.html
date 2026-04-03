@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Configuration - AaaS Documentation</title>
+  <meta name="description" content="Configure LLM providers for your AaaS agent. Supports Anthropic Claude, OpenAI GPT, Google Gemini, Ollama, OpenRouter, and Azure.">
+  <link rel="canonical" href="https://streetai.org/docs/llm.html">
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<nav class="nav nav-scrolled">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo"><img src="/logo.png" alt="Street AI" class="nav-logo-img"></a>
+    <div class="nav-links">
+      <a href="/#how-it-works">How It Works</a>
+      <a href="/#quickstart">Quick Start</a>
+      <a href="/#platforms">Platforms</a>
+      <a href="/#docs">Docs</a>
+      <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank">GitHub</a>
+    </div>
+    <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="doc-page">
+  <div class="container">
+    <div class="doc-breadcrumb">
+      <a href="/">Home</a> <span>/</span> <a href="/#docs">Docs</a> <span>/</span> LLM Configuration
+    </div>
+
+    <div class="doc-content">
+      <h1>LLM Configuration</h1>
+      <p>AaaS supports multiple LLM providers. You can switch providers or models at any time without changing your skill, data, or any other files.</p>
+
+      <h2>Supported providers</h2>
+      <table>
+        <tr><td><strong>Anthropic</strong></td><td>Claude Opus, Sonnet, Haiku</td><td>Strong reasoning, reliable tool use</td></tr>
+        <tr><td><strong>OpenAI</strong></td><td>GPT-4o, GPT-4 Turbo, o1, o3</td><td>Wide compatibility</td></tr>
+        <tr><td><strong>Google</strong></td><td>Gemini 2.5 Pro, Flash</td><td>Fast responses, good multilingual support</td></tr>
+        <tr><td><strong>Ollama</strong></td><td>Llama, Mistral, Phi, Qwen</td><td>Free, runs entirely on your hardware</td></tr>
+        <tr><td><strong>OpenRouter</strong></td><td>All of the above and more</td><td>Single API key, access to many models</td></tr>
+        <tr><td><strong>Azure</strong></td><td>GPT-4o, GPT-4 Turbo</td><td>Enterprise compliance, data residency</td></tr>
+      </table>
+
+      <h2>Configuration via CLI</h2>
+      <pre><code># Set provider and key in one command
+aaas config --provider anthropic --key sk-ant-api03-...
+
+# Set model separately
+aaas config --model claude-sonnet-4-20250514
+
+# View current settings
+aaas config --show
+
+# Remove a provider's credentials
+aaas config --remove anthropic</code></pre>
+      <p>You can also configure everything visually in the dashboard Settings page.</p>
+
+      <h2>Environment variables</h2>
+      <p>Environment variables take priority over stored keys:</p>
+      <pre><code>export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
+export GOOGLE_API_KEY=AIza...</code></pre>
+
+      <h2>API key storage</h2>
+      <p>Keys configured via CLI or dashboard are stored in <code>~/.aaas/credentials.json</code> (your home directory, shared across all workspaces). Environment variables always take priority over stored keys.</p>
+
+      <h2>Choosing a model</h2>
+      <ul>
+        <li><strong>Production services</strong>: Claude Sonnet 4 or GPT-4o. Good balance of quality and speed.</li>
+        <li><strong>Complex reasoning</strong>: Claude Opus 4 or o1. Better at multi-step planning and nuanced decisions.</li>
+        <li><strong>High-volume / low-cost</strong>: Claude Haiku 4.5 or GPT-4o Mini. Fast and affordable for high-traffic agents.</li>
+        <li><strong>Privacy</strong>: Ollama with a local model. Nothing leaves your machine.</li>
+      </ul>
+    </div>
+
+    <div class="doc-nav-bottom">
+      <a href="/docs/dashboard.html" class="doc-nav-link">
+        <div class="doc-nav-label">Previous</div>
+        <div class="doc-nav-title">&larr; Dashboard</div>
+      </a>
+      <a href="/docs/cli.html" class="doc-nav-link next">
+        <div class="doc-nav-label">Next</div>
+        <div class="doc-nav-title">CLI Reference &rarr;</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

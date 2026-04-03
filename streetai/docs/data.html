@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Managing Data - AaaS Documentation</title>
+  <meta name="description" content="Manage your AaaS agent's service database. Use JSON files, SQLite, or let the agent build data from conversations. No code required.">
+  <link rel="canonical" href="https://streetai.org/docs/data.html">
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<nav class="nav nav-scrolled">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo"><img src="/logo.png" alt="Street AI" class="nav-logo-img"></a>
+    <div class="nav-links">
+      <a href="/#how-it-works">How It Works</a>
+      <a href="/#quickstart">Quick Start</a>
+      <a href="/#platforms">Platforms</a>
+      <a href="/#docs">Docs</a>
+      <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank">GitHub</a>
+    </div>
+    <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="doc-page">
+  <div class="container">
+    <div class="doc-breadcrumb">
+      <a href="/">Home</a> <span>/</span> <a href="/#docs">Docs</a> <span>/</span> Managing Data
+    </div>
+
+    <div class="doc-content">
+      <h1>Managing Data</h1>
+      <p>Your agent's service database lives in the <code>data/</code> folder. This is where you store product listings, user records, FAQs, or any structured information your agent needs. You can build this database without writing any code.</p>
+
+      <h2>JSON Files</h2>
+      <p>The simplest approach. Drop JSON files in the <code>data/</code> folder:</p>
+      <pre><code>// data/products.json
+[
+  {
+    "id": "iphone-15-pro-001",
+    "model": "iPhone 15 Pro",
+    "storage": "256GB",
+    "color": "Natural Titanium",
+    "condition": "Excellent",
+    "battery_health": 94,
+    "price": 950,
+    "available": true,
+    "listed_by": "ahmed",
+    "listed_at": "2026-03-15"
+  },
+  {
+    "id": "iphone-14-002",
+    "model": "iPhone 14",
+    "storage": "128GB",
+    "color": "Blue",
+    "condition": "Good",
+    "battery_health": 87,
+    "price": 520,
+    "available": true,
+    "listed_by": "maria",
+    "listed_at": "2026-03-20"
+  }
+]</code></pre>
+      <p>You can have as many JSON files as you want. The agent searches across all of them.</p>
+
+      <h2>SQLite Database</h2>
+      <p>For larger datasets or when you need relationships between tables, use SQLite:</p>
+      <pre><code>-- The agent can create and manage tables using the run_query tool
+CREATE TABLE products (
+  id TEXT PRIMARY KEY,
+  model TEXT,
+  storage TEXT,
+  condition TEXT,
+  price REAL,
+  available BOOLEAN DEFAULT 1
+);</code></pre>
+      <p>Place a <code>database.sqlite</code> file in <code>data/</code> or let the agent create one through conversations.</p>
+
+      <h2>Ways to add data</h2>
+      <ul>
+        <li><strong>Drop files</strong>: Create JSON files and place them in the <code>data/</code> folder directly</li>
+        <li><strong>Dashboard</strong>: Use the Data page in the web dashboard to create and edit files visually</li>
+        <li><strong>Upload</strong>: Drag and drop files into the Data page</li>
+        <li><strong>Conversation</strong>: Tell the agent to add records during chat. It will create or update data files on its own</li>
+        <li><strong>CLI</strong>: Use <code>echo '{"key":"val"}' | aaas data add file.json</code> to add records from the command line</li>
+      </ul>
+
+      <h2>Agent data tools</h2>
+      <p>The agent has access to these tools automatically during conversations:</p>
+      <table>
+        <tr><td><code>search_data</code></td><td>Search across all JSON files and SQLite tables</td></tr>
+        <tr><td><code>add_data_record</code></td><td>Add a new record to a JSON file or table</td></tr>
+        <tr><td><code>update_data_record</code></td><td>Modify an existing record</td></tr>
+        <tr><td><code>delete_data_record</code></td><td>Remove a record</td></tr>
+        <tr><td><code>run_query</code></td><td>Execute raw SQL queries (admin mode only)</td></tr>
+        <tr><td><code>list_tables</code></td><td>Show all SQLite tables and their structure</td></tr>
+      </table>
+      <p>These tools are available by default. You do not need to configure or enable them.</p>
+    </div>
+
+    <div class="doc-nav-bottom">
+      <a href="/docs/soul.html" class="doc-nav-link">
+        <div class="doc-nav-label">Previous</div>
+        <div class="doc-nav-title">&larr; The Soul File</div>
+      </a>
+      <a href="/docs/extensions.html" class="doc-nav-link next">
+        <div class="doc-nav-label">Next</div>
+        <div class="doc-nav-title">Extensions &rarr;</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

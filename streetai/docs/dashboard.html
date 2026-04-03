@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - AaaS Documentation</title>
+  <meta name="description" content="Use the AaaS web dashboard to monitor transactions, manage data, test conversations, and configure your AI service agent.">
+  <link rel="canonical" href="https://streetai.org/docs/dashboard.html">
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<nav class="nav nav-scrolled">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo"><img src="/logo.png" alt="Street AI" class="nav-logo-img"></a>
+    <div class="nav-links">
+      <a href="/#how-it-works">How It Works</a>
+      <a href="/#quickstart">Quick Start</a>
+      <a href="/#platforms">Platforms</a>
+      <a href="/#docs">Docs</a>
+      <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank">GitHub</a>
+    </div>
+    <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="doc-page">
+  <div class="container">
+    <div class="doc-breadcrumb">
+      <a href="/">Home</a> <span>/</span> <a href="/#docs">Docs</a> <span>/</span> Dashboard
+    </div>
+
+    <div class="doc-content">
+      <h1>The Dashboard</h1>
+      <p>The dashboard is a web interface for managing your agent. It provides a visual way to set up, test, monitor, and configure your service without using the command line.</p>
+
+      <h2>Opening the dashboard</h2>
+      <pre><code># Open the dashboard for a single workspace
+cd my-agent
+aaas dashboard
+
+# Open the hub dashboard (manage all agents)
+cd parent-folder
+aaas dashboard</code></pre>
+
+      <h2>Pages</h2>
+      <table>
+        <tr><td><strong>Overview</strong></td><td>Revenue, active/completed transactions, connected platforms, memory stats, recent activity</td></tr>
+        <tr><td><strong>Chat</strong></td><td>Talk to your agent as a customer or admin. Test how it handles different requests</td></tr>
+        <tr><td><strong>Skill</strong></td><td>Edit your SKILL.md with a live editor</td></tr>
+        <tr><td><strong>Soul</strong></td><td>Edit personality and communication style</td></tr>
+        <tr><td><strong>Data</strong></td><td>Browse, create, edit, and upload data files. Supports JSON and SQLite</td></tr>
+        <tr><td><strong>Transactions</strong></td><td>View all active and archived transactions with status filters and revenue breakdowns</td></tr>
+        <tr><td><strong>Extensions</strong></td><td>Add, remove, test, and manage API integrations with full auth configuration</td></tr>
+        <tr><td><strong>Memory</strong></td><td>See what the agent has learned from conversations. Delete incorrect facts</td></tr>
+        <tr><td><strong>Connections</strong></td><td>See which platforms are connected and their status</td></tr>
+        <tr><td><strong>Deploy</strong></td><td>Connect to platforms, configure profiles, view API endpoints, start/stop the agent</td></tr>
+        <tr><td><strong>Settings</strong></td><td>Configure LLM provider, model, and API keys</td></tr>
+      </table>
+
+      <h2>Hub mode</h2>
+      <p>When you run <code>aaas dashboard</code> from a folder that contains multiple agent workspaces, the dashboard opens in hub mode. This gives you:</p>
+      <ul>
+        <li>An agent list showing all workspaces with their status (running/stopped)</li>
+        <li>Quick stats per agent: data files, memory facts, active transactions</li>
+        <li>One-click access to open any agent's full dashboard</li>
+        <li>The ability to create new workspaces directly from the hub</li>
+        <li>Shared LLM settings that get exported to new agents</li>
+      </ul>
+
+      <h2>Chat modes</h2>
+      <p>The Chat page has two modes:</p>
+      <ul>
+        <li><strong>User mode</strong>: Talk to the agent as a regular customer would. Useful for testing the user experience end to end.</li>
+        <li><strong>Admin mode</strong>: Talk to the agent with elevated permissions. The agent can run SQL queries, modify data directly, and access internal tools. Useful for setup and debugging.</li>
+      </ul>
+    </div>
+
+    <div class="doc-nav-bottom">
+      <a href="/docs/extensions.html" class="doc-nav-link">
+        <div class="doc-nav-label">Previous</div>
+        <div class="doc-nav-title">&larr; Extensions</div>
+      </a>
+      <a href="/docs/llm.html" class="doc-nav-link next">
+        <div class="doc-nav-label">Next</div>
+        <div class="doc-nav-title">LLM Configuration &rarr;</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

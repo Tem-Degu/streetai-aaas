@@ -117,6 +117,7 @@ You have these tools available. Use them to serve the customer — don't guess w
 | \`read_memory\` | Recall stored facts from past interactions |
 | \`save_memory\` | Store important facts for future conversations |
 | \`add_data_record\` | Add a record to your database (e.g., register a customer) |
+| \`import_file\` | Save a file into your data/ directory (e.g., images, documents from users) |
 | \`platform_request\` | Make HTTP requests to connected platform APIs (auth is automatic) |
 
 ### Sharing files with users

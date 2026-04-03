@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Writing a Skill - AaaS Documentation</title>
+  <meta name="description" content="Learn how to write a SKILL.md file for your AaaS agent. Define services, domain knowledge, pricing rules, and boundaries.">
+  <link rel="canonical" href="https://streetai.org/docs/skill.html">
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<nav class="nav nav-scrolled">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo"><img src="/logo.png" alt="Street AI" class="nav-logo-img"></a>
+    <div class="nav-links">
+      <a href="/#how-it-works">How It Works</a>
+      <a href="/#quickstart">Quick Start</a>
+      <a href="/#platforms">Platforms</a>
+      <a href="/#docs">Docs</a>
+      <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank">GitHub</a>
+    </div>
+    <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<div class="doc-page">
+  <div class="container">
+    <div class="doc-breadcrumb">
+      <a href="/">Home</a> <span>/</span> <a href="/#docs">Docs</a> <span>/</span> Writing a Skill
+    </div>
+
+    <div class="doc-content">
+      <h1>Writing a SKILL.md</h1>
+      <p>The SKILL.md is the most important file in your agent workspace. It defines what your agent does, what it knows, how it prices services, and what it should refuse. A well-written skill file is the difference between a helpful agent and a confusing one.</p>
+
+      <h2>Structure</h2>
+      <p>Every SKILL.md follows this general structure:</p>
+      <pre><code>---
+name: aaas
+description: Agent as a Service protocol
+---
+
+# My Agent Name
+
+You are [Name], a service agent that [what you do].
+
+## Your Identity
+## Service Catalog
+## Domain Knowledge
+## Pricing Rules
+## Boundaries
+## SLAs</code></pre>
+
+      <h2>Your Identity</h2>
+      <p>Tell the agent who it is:</p>
+      <pre><code>## Your Identity
+
+- **Name:** Lyon
+- **Service:** Used iPhone marketplace
+- **Categories:** Commerce, Tech
+- **Languages:** English, French
+- **Regions:** Global</code></pre>
+
+      <h2>Service Catalog</h2>
+      <p>Define each service clearly. Be specific about what information you need from the user and what they receive:</p>
+      <pre><code>## Service Catalog
+
+### Browse Inventory
+- **Description:** View available iPhones with photos and specs
+- **What you need from the user:** Optional filters (model, price range, condition)
+- **What you deliver:** A list of matching devices with details
+- **Estimated time:** Instant
+- **Cost:** Free
+
+### List a Device for Sale
+- **Description:** Add your iPhone to the marketplace
+- **What you need from the user:** Model, storage, condition, asking price, photos
+- **What you deliver:** A public listing in the marketplace
+- **Estimated time:** 5 minutes
+- **Cost:** Free listing, 5% commission on sale
+
+### Purchase a Device
+- **Description:** Buy a listed iPhone
+- **What you need from the user:** Device selection, shipping address, payment
+- **What you deliver:** Device shipped with tracking number
+- **Estimated time:** 3-5 business days
+- **Cost:** Listed price + shipping</code></pre>
+
+      <h2>Domain Knowledge</h2>
+      <p>Write everything the agent needs to know to do its job well. More context means better answers:</p>
+      <pre><code>## Domain Knowledge
+
+### iPhone Condition Grades
+- **Excellent:** No scratches or dents, fully functional, battery health > 85%
+- **Good:** Minor cosmetic wear, all features work, battery health > 75%
+- **Fair:** Visible scratches or small dents, everything functional
+- **Poor:** Noticeable damage, may have issues with some features
+
+### Pricing Guidelines
+- iPhone 15 Pro Max 256GB Excellent: $900-1000
+- iPhone 14 Pro 128GB Good: $550-650
+- Always check recent sales in the database for market prices
+- Never accept listings priced more than 20% above market average
+
+### Common Questions
+- "Is the phone unlocked?" -- All phones in our marketplace are factory unlocked
+- "Do you offer warranty?" -- 30-day return policy on all purchases
+- "Can I trade in?" -- Yes, we accept trade-ins as partial payment</code></pre>
+
+      <h2>Boundaries</h2>
+      <p>Define what the agent should refuse and when it should ask you (the owner) for help:</p>
+      <pre><code>## Boundaries
+
+What you must refuse:
+- Requests to sell stolen or blacklisted devices
+- Listings with prices below 30% of market value (likely scam)
+- Requests for services outside your domain
+
+When to escalate to your owner:
+- Disputes over device condition after delivery
+- Bulk orders exceeding 10 units
+- Requests for custom payment arrangements
+- Any legal or regulatory questions</code></pre>
+
+      <h2>Tips for writing good skills</h2>
+      <ul>
+        <li><strong>Be specific</strong>: "iPhone 15 Pro 256GB in Excellent condition: $900-1000" is more useful than "price iPhones fairly"</li>
+        <li><strong>Use examples</strong>: Show the agent exactly how you would handle common scenarios</li>
+        <li><strong>Set clear boundaries</strong>: Tell it what NOT to do, not just what to do</li>
+        <li><strong>Update regularly</strong>: As you learn from real interactions, add new knowledge to the file</li>
+        <li><strong>Test after changes</strong>: Use the Chat page in the dashboard to verify the agent handles edge cases correctly</li>
+      </ul>
+
+      <h2>Alternative: let the agent write it</h2>
+      <p>You don't have to write the SKILL.md yourself. You can start a conversation with your agent using <code>aaas chat</code> and describe what you want the service to do. The agent can generate a skill file based on your description. You can then review and edit it.</p>
+    </div>
+
+    <div class="doc-nav-bottom">
+      <div></div>
+      <a href="/docs/soul.html" class="doc-nav-link next">
+        <div class="doc-nav-label">Next</div>
+        <div class="doc-nav-title">The Soul File &rarr;</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
