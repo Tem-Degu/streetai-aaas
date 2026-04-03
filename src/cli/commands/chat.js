@@ -90,7 +90,8 @@ export async function chatCommand(opts) {
 
       // Show tools used if any
       if (result.toolsUsed.length > 0) {
-        console.log(chalk.gray(`  [tools: ${result.toolsUsed.join(', ')} | tokens: ${result.tokensUsed}]`));
+        const names = result.toolsUsed.map(t => typeof t === 'string' ? t : t.name);
+        console.log(chalk.gray(`  [tools: ${names.join(', ')} | tokens: ${result.tokensUsed}]`));
       }
 
       console.log('');

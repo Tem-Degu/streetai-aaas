@@ -2,12 +2,16 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { getWorkspacePaths, readJson, readText, writeJson, listFiles, fileStats, formatBytes } from '../utils/workspace.js';
 import { getProviderCredential, setProviderCredential, removeProviderCredential, listProviders, maskApiKey } from '../auth/credentials.js';
 import { listConnections, loadConnection, saveConnection, removeConnection } from '../auth/connections.js';
 import { AgentEngine } from '../engine/index.js';
 import { createProvider } from '../engine/providers/index.js';
+
+const __api_dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function apiRouter(workspace) {
   const router = express.Router();
@@ -999,11 +1003,19 @@ export function apiRouter(workspace) {
     const connections = listConnections(workspace);
     const pidFile = path.join(workspace, '.aaas', 'agent.pid');
     const hasPid = fs.existsSync(pidFile);
-    let cliRunning = false;
+    let daemonRunning = false;
+    let daemonPid = null;
 
     if (hasPid) {
       const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim());
-      try { process.kill(pid, 0); cliRunning = true; } catch { /* stale */ }
+      try {
+        process.kill(pid, 0);
+        daemonRunning = true;
+        daemonPid = pid;
+      } catch {
+        // Stale PID file, clean up
+        try { fs.unlinkSync(pidFile); } catch { /* ignore */ }
+      }
     }
 
     const platforms = connections.map(({ platform, config }) => {
@@ -1013,15 +1025,16 @@ export function apiRouter(workspace) {
       return {
         platform,
         config,
-        status: connector?.status || (cliRunning ? 'cli-managed' : 'stopped'),
+        status: connector?.status || (daemonRunning ? 'daemon' : 'stopped'),
         error: connector?.error || null,
         hasSkill,
       };
     });
 
-    res.json({ platforms, cliRunning });
+    res.json({ platforms, cliRunning: daemonRunning, daemonRunning, daemonPid });
   });
 
+  // Start a single platform in-process (legacy, for quick testing)
   router.post('/deploy/:platform/start', async (req, res) => {
     const { platform } = req.params;
     const connections = listConnections(workspace);
@@ -1048,6 +1061,7 @@ export function apiRouter(workspace) {
     }
   });
 
+  // Stop a single platform in-process
   router.post('/deploy/:platform/stop', async (req, res) => {
     const { platform } = req.params;
     const connector = activeConnectors[platform];
@@ -1060,6 +1074,83 @@ export function apiRouter(workspace) {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Start agent as a background process (survives dashboard close)
+  router.post('/deploy/agent/start-daemon', async (req, res) => {
+    const pidFile = path.join(workspace, '.aaas', 'agent.pid');
+
+    // Check if already running
+    if (fs.existsSync(pidFile)) {
+      const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim());
+      try {
+        process.kill(pid, 0);
+        return res.json({ ok: true, pid, message: 'Agent already running in background.' });
+      } catch {
+        fs.unlinkSync(pidFile); // stale
+      }
+    }
+
+    try {
+      const workerPath = path.join(__api_dirname, '..', 'cli', 'agent-worker.js');
+      const logPath = path.join(workspace, '.aaas', 'agent.log');
+
+      fs.mkdirSync(path.dirname(logPath), { recursive: true });
+      const out = fs.openSync(logPath, 'a');
+      const err = fs.openSync(logPath, 'a');
+
+      const child = spawn(process.execPath, [workerPath, workspace], {
+        detached: true,
+        stdio: ['ignore', out, err],
+        cwd: workspace,
+      });
+
+      child.unref();
+
+      // Wait briefly for PID file to confirm worker started
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      if (fs.existsSync(pidFile)) {
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim());
+        res.json({ ok: true, pid, message: 'Agent started in background.' });
+      } else {
+        // Check log for errors
+        const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf-8').slice(-500) : '';
+        res.status(500).json({ error: 'Agent failed to start.', log });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Stop the background agent process
+  router.post('/deploy/agent/stop-daemon', (req, res) => {
+    const pidFile = path.join(workspace, '.aaas', 'agent.pid');
+
+    if (!fs.existsSync(pidFile)) {
+      return res.json({ ok: true, message: 'Agent not running.' });
+    }
+
+    const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim());
+
+    try {
+      process.kill(pid, 'SIGTERM');
+      try { fs.unlinkSync(pidFile); } catch { /* ignore */ }
+      res.json({ ok: true, message: `Agent stopped (PID ${pid}).` });
+    } catch {
+      try { fs.unlinkSync(pidFile); } catch { /* ignore */ }
+      res.json({ ok: true, message: 'Agent was not running. Cleaned up.' });
+    }
+  });
+
+  // Get background agent log
+  router.get('/deploy/agent/log', (req, res) => {
+    const logPath = path.join(workspace, '.aaas', 'agent.log');
+    if (!fs.existsSync(logPath)) return res.json({ log: '' });
+    const content = fs.readFileSync(logPath, 'utf-8');
+    // Return last 100 lines
+    const lines = content.split('\n').slice(-100).join('\n');
+    res.json({ log: lines });
   });
 
   // ─── Platform Skills ──────────────────────────

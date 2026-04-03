@@ -1,10 +1,14 @@
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import { requireWorkspace, readJson } from '../../utils/workspace.js';
 import { getProviderCredential } from '../../auth/credentials.js';
 import { AgentEngine } from '../../engine/index.js';
 import { loadAllConnectors } from '../../connectors/index.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function runCommand(opts) {
   const ws = requireWorkspace();
@@ -39,7 +43,32 @@ export async function runCommand(opts) {
     }
   }
 
-  // 4. Initialize engine
+  // 4. Daemon mode — spawn detached worker process
+  if (opts.daemon) {
+    const workerPath = path.join(__dirname, '..', 'agent-worker.js');
+    const logPath = path.join(ws, '.aaas', 'agent.log');
+
+    // Ensure log directory exists
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+
+    const out = fs.openSync(logPath, 'a');
+    const err = fs.openSync(logPath, 'a');
+
+    const child = spawn(process.execPath, [workerPath, ws], {
+      detached: true,
+      stdio: ['ignore', out, err],
+      cwd: ws,
+    });
+
+    child.unref();
+
+    console.log(chalk.green(`\n  Agent started in background (PID ${child.pid})`));
+    console.log(chalk.gray(`  Log: ${logPath}`));
+    console.log(chalk.gray('  Run "aaas stop" to stop the agent.\n'));
+    return;
+  }
+
+  // 5. Foreground mode — run directly in this process
   console.log(chalk.gray('\n  Starting agent...'));
 
   let engine;
@@ -52,7 +81,7 @@ export async function runCommand(opts) {
     return;
   }
 
-  // 5. Load and start connectors
+  // 6. Load and start connectors
   const connectors = await loadAllConnectors(ws, engine);
 
   if (connectors.length === 0) {
@@ -79,22 +108,15 @@ export async function runCommand(opts) {
     return;
   }
 
-  // 6. Write PID file
+  // 7. Write PID file
   fs.mkdirSync(path.dirname(pidFile), { recursive: true });
   fs.writeFileSync(pidFile, String(process.pid));
 
-  // 7. Status summary
+  // 8. Status summary
   console.log(chalk.blue(`\n  ${engine.agentName} running with ${connected.length} connection(s)`));
-
-  if (opts.daemon) {
-    console.log(chalk.gray(`  PID: ${process.pid}`));
-    console.log(chalk.gray('  Run "aaas stop" to stop the agent.\n'));
-    return;
-  }
-
   console.log(chalk.gray('  Press Ctrl+C to stop.\n'));
 
-  // 8. Graceful shutdown
+  // 9. Graceful shutdown
   const shutdown = async () => {
     console.log(chalk.gray('\n  Shutting down...'));
     for (const connector of connectors) {

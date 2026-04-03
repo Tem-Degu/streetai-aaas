@@ -61,6 +61,7 @@ export default class HTTPConnector extends BaseConnector {
           userName: userName || 'User',
           type: 'message',
           content: message,
+          metadata: { mode: 'customer' },
         });
 
         res.json({

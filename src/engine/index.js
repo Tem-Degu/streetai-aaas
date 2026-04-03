@@ -177,7 +177,7 @@ export class AgentEngine {
     } catch (e) { /* debug logging should never break chat */ }
 
     // 7. Call LLM with tool loop
-    const ADMIN_ONLY_TOOLS = ['read_skill', 'write_skill', 'read_soul', 'write_soul', 'read_data_file', 'write_data_file', 'read_extensions', 'add_extension', 'remove_extension', 'import_file', 'run_query', 'list_tables'];
+    const ADMIN_ONLY_TOOLS = ['read_skill', 'write_skill', 'read_soul', 'write_soul', 'read_data_file', 'write_data_file', 'read_extensions', 'add_extension', 'remove_extension', 'run_query', 'list_tables'];
     let tools = this.toolRegistry.getToolDefinitions();
     if (mode !== 'admin') {
       tools = tools.filter(t => !ADMIN_ONLY_TOOLS.includes(t.name));
@@ -235,7 +235,7 @@ export class AgentEngine {
       currentMessages.push(assistantMsg);
 
       for (const tc of result.toolCalls) {
-        toolsUsed.push(tc.name);
+        toolsUsed.push({ name: tc.name, arguments: tc.arguments });
         const toolResult = await this.toolRegistry.executeTool(tc.name, tc.arguments);
 
         // Reload skill/soul if they were just modified
