@@ -15,11 +15,18 @@ function getDb(paths) {
   return dbCache[dbPath];
 }
 
+const DDL_PATTERN = /^\s*(CREATE|DROP|ALTER|TRUNCATE|RENAME)\s/i;
+
 /**
  * Execute a SQL query against the workspace SQLite database.
+ * @param {string} opts.mode - 'admin' or 'customer'. Customer mode blocks DDL.
  */
-export function runQuery(paths, { sql, params }) {
+export function runQuery(paths, { sql, params, mode }) {
   if (!sql) return JSON.stringify({ error: 'sql is required.' });
+
+  if (mode === 'customer' && DDL_PATTERN.test(sql)) {
+    return JSON.stringify({ error: 'Table management (CREATE, DROP, ALTER) is not available in customer mode. Use SELECT, INSERT, UPDATE, or DELETE.' });
+  }
 
   const db = getDb(paths);
   const trimmed = sql.trim().toUpperCase();

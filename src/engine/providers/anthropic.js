@@ -8,28 +8,38 @@ export default class AnthropicProvider extends BaseProvider {
 
   listModels() {
     return [
+      'claude-opus-4-6',
+      'claude-sonnet-4-6',
+      'claude-sonnet-4-5-20250929',
+      'claude-haiku-4-5-20251001',
       'claude-opus-4-20250514',
       'claude-sonnet-4-20250514',
-      'claude-haiku-4-5-20251001',
     ];
   }
 
-  async chat(messages, options = {}) {
+  async _chat(messages, options = {}) {
     // Anthropic requires system message separate from messages
     const { system, conversation } = extractSystem(messages);
 
     const body = {
       model: this.model,
-      max_tokens: options.maxTokens || 4096,
+      max_tokens: options.maxTokens || 16384,
       messages: conversation,
     };
 
-    if (system) body.system = system;
+    if (system) {
+      body.system = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
+    }
     if (options.temperature !== undefined) body.temperature = options.temperature;
 
     // Add tools
     if (options.tools?.length > 0) {
-      body.tools = translateToolsForProvider('anthropic', options.tools);
+      const tools = translateToolsForProvider('anthropic', options.tools);
+      // Cache tools (they come before system in Anthropic's cache prefix)
+      if (tools.length > 0) {
+        tools[tools.length - 1].cache_control = { type: 'ephemeral' };
+      }
+      body.tools = tools;
     }
 
     const res = await fetch(API_URL, {
@@ -38,6 +48,7 @@ export default class AnthropicProvider extends BaseProvider {
         'Content-Type': 'application/json',
         'x-api-key': this.apiKey,
         'anthropic-version': API_VERSION,
+        'anthropic-beta': 'prompt-caching-2024-07-31',
       },
       body: JSON.stringify(body),
     });
@@ -124,6 +135,8 @@ function parseResponse(data) {
     usage: {
       inputTokens: data.usage?.input_tokens || 0,
       outputTokens: data.usage?.output_tokens || 0,
+      cacheCreationInputTokens: data.usage?.cache_creation_input_tokens || 0,
+      cacheReadInputTokens: data.usage?.cache_read_input_tokens || 0,
     },
   };
 }

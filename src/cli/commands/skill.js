@@ -1,5 +1,8 @@
+import fs from 'fs';
+import path from 'path';
+import { spawnSync } from 'child_process';
 import chalk from 'chalk';
-import { requireWorkspace, getWorkspacePaths, readText, fileStats, formatBytes } from '../../utils/workspace.js';
+import { requireWorkspace, getWorkspacePaths, readText, fileStats, formatBytes, getPlatformSkillPath } from '../../utils/workspace.js';
 
 const REQUIRED_SECTIONS = [
   { name: 'Identity', patterns: ['your identity', '## identity'] },
@@ -10,6 +13,47 @@ const REQUIRED_SECTIONS = [
   { name: 'SLAs', patterns: ['sla', 'service level'] },
   { name: 'AaaS Protocol', patterns: ['aaas protocol', 'how you work', 'phase 1: explore', 'step 1: explore'] }
 ];
+
+function pickEditor() {
+  return process.env.VISUAL || process.env.EDITOR || (process.platform === 'win32' ? 'notepad' : 'vi');
+}
+
+export function skillEditCommand(platform) {
+  const ws = requireWorkspace();
+  const file = platform ? getPlatformSkillPath(ws, platform) : getWorkspacePaths(ws).skill;
+  if (!fs.existsSync(file)) {
+    console.error(chalk.red(`\n  Skill not found: ${file}\n  Use "aaas skill new ${platform || '<platform>'}" to create one.\n`));
+    return;
+  }
+  const editor = pickEditor();
+  const result = spawnSync(editor, [file], { stdio: 'inherit', shell: process.platform === 'win32' });
+  if (result.error) console.error(chalk.red(`\n  Failed to open editor (${editor}): ${result.error.message}\n`));
+}
+
+export function skillNewCommand(platform) {
+  const ws = requireWorkspace();
+  const plat = platform || 'aaas';
+  const dir = path.join(ws, 'skills', plat);
+  const file = path.join(dir, 'SKILL.md');
+  if (fs.existsSync(file)) {
+    console.error(chalk.red(`\n  Skill already exists: ${file}\n  Use "aaas skill edit${plat !== 'aaas' ? ' ' + plat : ''}" to edit it.\n`));
+    return;
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  const template = `---
+name: ${plat}
+description: Skill for ${plat}
+---
+
+# ${plat} Skill
+
+[Describe what this skill does]
+`;
+  fs.writeFileSync(file, template);
+  console.log(chalk.green(`\n  Created ${path.relative(ws, file)}\n`));
+  const editor = pickEditor();
+  spawnSync(editor, [file], { stdio: 'inherit', shell: process.platform === 'win32' });
+}
 
 export function skillCommand(opts) {
   const ws = requireWorkspace();

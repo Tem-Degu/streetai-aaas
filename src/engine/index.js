@@ -8,8 +8,11 @@ import { ToolRegistry } from './tools/index.js';
 import { SessionManager } from './sessions/index.js';
 import { compressSession } from './sessions/compress.js';
 import { MemoryManager } from './memory/index.js';
-import { readJson } from '../utils/workspace.js';
+import { readJson, writeJson } from '../utils/workspace.js';
 import { buildBasePrompt } from './base-prompt.js';
+import { saveTransactionView } from './tools/workspace.js';
+import { loadConnection, saveConnection } from '../auth/connections.js';
+import crypto from 'crypto';
 
 const MAX_TOOL_ROUNDS = 10;
 
@@ -60,7 +63,7 @@ export class AgentEngine {
     // Initialize subsystems
     const budgets = this.config.context?.budgets;
     this.contextAssembler = new ContextAssembler(budgets);
-    this.toolRegistry = new ToolRegistry(this.workspace, this.paths);
+    this.toolRegistry = new ToolRegistry(this.workspace, this.paths, this.config);
     this.sessionManager = new SessionManager(this.workspace);
     this.memoryManager = new MemoryManager(this.workspace);
 
@@ -83,10 +86,54 @@ export class AgentEngine {
 
     const { platform, userId, userName, content, metadata } = event;
 
-    // 0. Handle /admin and /customer mode commands
+    // 0. Handle /admin and /customer mode commands + owner verification
     const trimmed = (content || '').trim().toLowerCase();
+
+    // Check for verification code response
+    if (platform !== 'local') {
+      const pendingCode = this.sessionManager.getSessionMeta(platform, userId, 'pendingAdminCode');
+      if (pendingCode && trimmed === pendingCode) {
+        // Verification successful — save owner ID to connection config
+        const conn = loadConnection(this.workspace, platform) || {};
+        conn.ownerId = userId;
+        saveConnection(this.workspace, platform, conn);
+        this.sessionManager.setSessionMeta(platform, userId, 'pendingAdminCode', null);
+        this.sessionManager.setSessionMeta(platform, userId, 'mode', 'admin');
+        return { response: 'Owner verified. Switched to **Admin** mode.', toolsUsed: [], tokensUsed: 0 };
+      }
+    }
+
     if (trimmed === '/admin' || trimmed === '/customer') {
-      const isOwner = metadata?.is_owner || platform === 'local';
+      // Re-read the saved connection config so verification done earlier in
+      // this same process is honored even if the connector's in-memory
+      // snapshot is stale.
+      const savedConn = platform !== 'local' ? loadConnection(this.workspace, platform) : null;
+      const isOwner =
+        metadata?.is_owner ||
+        platform === 'local' ||
+        (savedConn?.ownerId && savedConn.ownerId === userId);
+
+      if (trimmed === '/admin' && !isOwner && platform !== 'local') {
+        // Generate a 6-character verification code
+        const code = crypto.randomBytes(3).toString('hex');
+        this.sessionManager.setSessionMeta(platform, userId, 'pendingAdminCode', code);
+
+        // Save code to a file the dashboard can read
+        const verifyDir = path.join(this.workspace, '.aaas', 'verify');
+        fs.mkdirSync(verifyDir, { recursive: true });
+        writeJson(path.join(verifyDir, `${platform}.json`), {
+          code,
+          userId,
+          platform,
+          requestedAt: new Date().toISOString(),
+        });
+
+        return {
+          response: `To verify you are the owner, check your dashboard for the verification code and type it here.\n\nOpen the dashboard and go to **Deploy** to find the code.`,
+          toolsUsed: [], tokensUsed: 0,
+        };
+      }
+
       if (!isOwner) {
         return { response: 'Only the owner can switch modes.', toolsUsed: [], tokensUsed: 0 };
       }
@@ -177,7 +224,7 @@ export class AgentEngine {
     } catch (e) { /* debug logging should never break chat */ }
 
     // 7. Call LLM with tool loop
-    const ADMIN_ONLY_TOOLS = ['read_skill', 'write_skill', 'read_soul', 'write_soul', 'read_data_file', 'write_data_file', 'read_extensions', 'add_extension', 'remove_extension', 'run_query', 'list_tables'];
+    const ADMIN_ONLY_TOOLS = ['read_skill', 'write_skill', 'read_soul', 'write_soul', 'read_data_file', 'write_data_file', 'read_extensions', 'add_extension', 'remove_extension'];
     let tools = this.toolRegistry.getToolDefinitions();
     if (mode !== 'admin') {
       tools = tools.filter(t => !ADMIN_ONLY_TOOLS.includes(t.name));
@@ -236,7 +283,9 @@ export class AgentEngine {
 
       for (const tc of result.toolCalls) {
         toolsUsed.push({ name: tc.name, arguments: tc.arguments });
-        const toolResult = await this.toolRegistry.executeTool(tc.name, tc.arguments);
+        // Inject mode into run_query so it can block DDL in customer mode
+        const toolArgs = tc.name === 'run_query' ? { ...tc.arguments, mode } : tc.arguments;
+        const toolResult = await this.toolRegistry.executeTool(tc.name, toolArgs);
 
         // Reload skill/soul if they were just modified
         if (tc.name === 'write_skill') {
@@ -245,6 +294,8 @@ export class AgentEngine {
           this.agentName = nameMatch ? nameMatch[1].trim() : path.basename(this.workspace);
         } else if (tc.name === 'write_soul') {
           this.soul = readText(this.paths.soul) || '';
+        } else if (tc.name === 'create_transaction') {
+          this._maybeGenerateTransactionView(tc.arguments);
         }
 
         currentMessages.push({
@@ -323,5 +374,46 @@ export class AgentEngine {
         this.memoryManager.pruneOldest(maxFacts);
       })
       .catch(() => { /* non-critical */ });
+  }
+
+  /**
+   * Auto-generate transaction view config after the first transaction.
+   * Fire-and-forget: if it fails, the dashboard falls back to scanning.
+   */
+  _maybeGenerateTransactionView(transaction) {
+    // Skip if config already exists
+    if (fs.existsSync(this.paths.transactionView)) return;
+
+    const skill = this.skill || '';
+    const txnJson = JSON.stringify(transaction, null, 2);
+
+    const prompt = `You are a UI configuration generator. Given a service description and a sample transaction, generate a JSON configuration for how to display transactions in a dashboard.
+
+SERVICE DESCRIPTION:
+${skill.slice(0, 2000)}
+
+SAMPLE TRANSACTION:
+${txnJson}
+
+Generate a JSON object with these fields:
+- "table_columns": array of field names to show as columns in the transactions table. Always include "service", "status", "cost". Add 2-3 of the most important custom fields from the transaction.
+- "detail_sections": array of {title, fields} objects grouping related fields into named sections for a detail view. Cover all meaningful fields from the transaction.
+- "labels": object mapping field names to human-readable display labels (e.g. "match_score" → "Compatibility Score").
+- "formats": object mapping field names to format hints. Valid formats: "currency", "percentage", "date", "datetime", "rating", "boolean", "list".
+
+Respond with ONLY the JSON object, no markdown fences, no explanation.`;
+
+    this.provider.chat([
+      { role: 'system', content: 'You output only valid JSON. No markdown, no explanation.' },
+      { role: 'user', content: prompt },
+    ], { maxTokens: 1500 }).then(result => {
+      let text = (result.content || '').trim();
+      // Strip markdown fences if present
+      text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      try {
+        const config = JSON.parse(text);
+        saveTransactionView(this.paths, config);
+      } catch { /* parse failed — dashboard will use scanning fallback */ }
+    }).catch(() => { /* non-critical */ });
   }
 }

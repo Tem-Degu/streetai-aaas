@@ -1,5 +1,47 @@
+import fs from 'fs';
+import path from 'path';
 import { WebSocket } from 'ws';
 import { BaseConnector } from './index.js';
+import { readFileBuffer } from './media.js';
+import { writePlatformSkill } from '../utils/workspace.js';
+
+const DISCORD_MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024; // Discord caps user uploads at 25 MB by default; cap higher for boosted servers
+
+const DISCORD_SKILL = `---
+name: discord
+description: Sending files to users via the Discord connector
+---
+
+# Discord Connector — Sending Files
+
+You can attach images, audio, video, and arbitrary files to your Discord
+messages. The connector uploads them as multipart attachments — you just embed
+the file in your reply as markdown using a **workspace-relative** path.
+
+## How to send a file
+
+1. Place (or generate) the file inside your workspace, e.g. \`data/photos/foo.png\`.
+2. Embed it in your reply using markdown:
+
+   - Image:    \`![caption](data/photos/foo.png)\`
+   - Audio:    \`[song.mp3](data/audio/song.mp3)\`
+   - Video:    \`[clip.mp4](data/video/clip.mp4)\`
+   - File:     \`[notes.pdf](data/files/notes.pdf)\`
+
+3. The connector strips the markdown ref out of the text and attaches the
+   file(s) to the Discord message via multipart upload. Images render inline
+   in Discord; other files appear as attachments.
+
+## Rules
+
+- **Paths must be workspace-relative.** Absolute or out-of-workspace paths are
+  silently dropped.
+- Discord per-message attachment size limit: **25 MB total** (free server boost
+  level). Larger files will be rejected.
+- You can attach multiple files in one reply — they all ride along with the
+  first message chunk.
+- Text replies use Discord markdown and are split at 2000 chars.
+`;
 
 /**
  * Discord connector — connects the agent to a Discord bot.
@@ -23,6 +65,7 @@ export default class DiscordConnector extends BaseConnector {
 
   async connect() {
     this.status = 'connecting';
+    writePlatformSkill(this.engine?.workspace, 'discord', DISCORD_SKILL);
 
     // Verify the bot token
     try {
@@ -146,7 +189,7 @@ export default class DiscordConnector extends BaseConnector {
         }
         break;
 
-      case 'MESSAGE_CREATE':
+      case 'MESSAGE_CREATE': {
         // Ignore messages from the bot itself
         if (data.author.id === this.botUser.id) return;
         // Ignore messages from other bots
@@ -155,32 +198,53 @@ export default class DiscordConnector extends BaseConnector {
         // Only respond to DMs or messages that mention the bot
         const isDM = !data.guild_id;
         const isMentioned = data.mentions?.some(m => m.id === this.botUser.id);
+        if (!isDM && !isMentioned) return;
 
-        if (isDM || isMentioned) {
-          // Strip the bot mention from the message
-          let content = data.content;
-          if (isMentioned) {
-            content = content.replace(new RegExp(`<@!?${this.botUser.id}>`, 'g'), '').trim();
-          }
-          if (!content) return;
-
-          this.handleEvent({
-            platform: 'discord',
-            userId: data.author.id,
-            userName: data.author.global_name || data.author.username || 'User',
-            type: 'message',
-            content,
-            metadata: {
-              channelId: data.channel_id,
-              messageId: data.id,
-              guildId: data.guild_id || null,
-              isDM,
-            },
-          }).catch(err => {
-            console.error('[discord] Error processing message:', err.message);
-          });
+        // Strip the bot mention from the message
+        let textPart = data.content || '';
+        if (isMentioned) {
+          textPart = textPart.replace(new RegExp(`<@!?${this.botUser.id}>`, 'g'), '').trim();
         }
+
+        const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+        if (!textPart && attachments.length === 0) return;
+
+        const userName = data.author.global_name || data.author.username || 'User';
+
+        // Download attachments + dispatch async so we don't block the WS read loop
+        (async () => {
+          try {
+            let content = textPart || '';
+            if (attachments.length > 0) {
+              const safeUser = String(data.author.username || userName).replace(/[^a-zA-Z0-9._-]/g, '_');
+              const savedFiles = await this._downloadMedia(attachments, safeUser);
+              if (savedFiles.length > 0) {
+                const fileList = savedFiles.map(f => `${f.type}: ${f.path}`).join(', ');
+                content = content
+                  ? `${content}\n\n[Attached files: ${fileList}]`
+                  : `[Attached files: ${fileList}]`;
+              }
+            }
+
+            await this.handleEvent({
+              platform: 'discord',
+              userId: data.author.id,
+              userName,
+              type: 'message',
+              content,
+              metadata: {
+                channelId: data.channel_id,
+                messageId: data.id,
+                guildId: data.guild_id || null,
+                isDM,
+              },
+            });
+          } catch (err) {
+            console.error('[discord] Error processing message:', err.message);
+          }
+        })();
         break;
+      }
     }
   }
 
@@ -225,12 +289,61 @@ export default class DiscordConnector extends BaseConnector {
     }
   }
 
-  async send(event, response) {
+  async send(event, response, result, files = []) {
     const channelId = event.metadata?.channelId;
     if (!channelId) return;
 
-    // Discord has a 2000 character limit per message
-    const chunks = this._splitMessage(response, 2000);
+    // If there are files, send the first message with attachments via multipart
+    if (files.length > 0) {
+      try {
+        const formData = new FormData();
+        const payload = { content: response ? this._splitMessage(response, 2000)[0] : '' };
+        formData.append('payload_json', JSON.stringify(payload));
+
+        for (let i = 0; i < files.length && i < 10; i++) {
+          const buffer = await readFileBuffer(files[i]);
+          const blob = new Blob([buffer], { type: files[i].mimeType });
+          formData.append(`files[${i}]`, blob, files[i].filename);
+        }
+
+        await fetch(`${this.apiBase}/channels/${channelId}/messages`, {
+          method: 'POST',
+          headers: { Authorization: `Bot ${this.token}` },
+          body: formData,
+        });
+
+        // Send remaining text chunks if the response was too long
+        if (response && response.length > 2000) {
+          const chunks = this._splitMessage(response, 2000);
+          for (let i = 1; i < chunks.length; i++) {
+            await fetch(`${this.apiBase}/channels/${channelId}/messages`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bot ${this.token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ content: chunks[i] }),
+            });
+          }
+        }
+      } catch (err) {
+        console.error('[discord] Failed to send files:', err.message);
+        // Fallback to text-only
+        if (response) {
+          await this._sendTextOnly(channelId, response);
+        }
+      }
+      return;
+    }
+
+    // Text-only
+    if (response) {
+      await this._sendTextOnly(channelId, response);
+    }
+  }
+
+  async _sendTextOnly(channelId, text) {
+    const chunks = this._splitMessage(text, 2000);
     for (const chunk of chunks) {
       await fetch(`${this.apiBase}/channels/${channelId}/messages`, {
         method: 'POST',
@@ -259,6 +372,62 @@ export default class DiscordConnector extends BaseConnector {
       botUsername: this.botUser?.username || null,
       botName: this.botUser?.global_name || this.botUser?.username || null,
     };
+  }
+
+  _typeFromMime(mime) {
+    if (!mime) return 'file';
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('audio/')) return 'audio';
+    if (mime.startsWith('video/')) return 'video';
+    return 'file';
+  }
+
+  /**
+   * Download Discord attachments into the workspace inbox.
+   * Mirrors truuze.js _downloadMedia: writes to data/inbox/<user>_<ts>_<safeName>
+   * and returns [{type, path}] with workspace-relative paths.
+   *
+   * Discord attachment URLs are CDN links and require no auth header.
+   */
+  async _downloadMedia(attachments, username) {
+    const inboxDir = path.join(this.engine.workspace, 'data', 'inbox');
+    fs.mkdirSync(inboxDir, { recursive: true });
+
+    const saved = [];
+    for (const att of attachments) {
+      try {
+        const url = att.url || att.proxy_url;
+        if (!url) {
+          console.error('[discord] attachment has no url:', att.id);
+          continue;
+        }
+        if (att.size && att.size > DISCORD_MAX_DOWNLOAD_BYTES) {
+          console.warn(`[discord] Skipping ${att.filename}: ${att.size} bytes exceeds limit`);
+          continue;
+        }
+
+        const resp = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+        if (!resp.ok) {
+          console.error('[discord] Failed to download attachment:', att.id, resp.status);
+          continue;
+        }
+        const buffer = Buffer.from(await resp.arrayBuffer());
+
+        const type = this._typeFromMime(att.content_type);
+        const originalName = att.filename || `file_${att.id || Date.now()}`;
+        const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const filename = `${username}_${Date.now()}_${safeName}`;
+        const filePath = path.join(inboxDir, filename);
+        fs.writeFileSync(filePath, buffer);
+
+        const relativePath = `data/inbox/${filename}`;
+        saved.push({ type, path: relativePath });
+        console.log('[discord] Downloaded attachment:', type, relativePath, buffer.length, 'bytes');
+      } catch (err) {
+        console.error('[discord] Attachment download error:', att.id, err.message);
+      }
+    }
+    return saved;
   }
 
   _splitMessage(text, maxLen) {

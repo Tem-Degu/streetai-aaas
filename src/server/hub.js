@@ -2,8 +2,10 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import multer from 'multer';
 import { readJson, readText, writeJson, listFiles } from '../utils/workspace.js';
 import { getProviderCredential, setProviderCredential, removeProviderCredential, listProviders, maskApiKey } from '../auth/credentials.js';
+import { getValidWorkspaces, registerWorkspace, unregisterWorkspace } from '../utils/registry.js';
 
 export function hubRouter(hubDir) {
   const router = express.Router();
@@ -80,10 +82,22 @@ export function hubRouter(hubDir) {
         }
       } catch { /* ignore */ }
 
+      // Check for avatar photo (add mtime for cache busting)
+      let photo = null;
+      const aaasDir = path.join(wsPath, '.aaas');
+      if (fs.existsSync(aaasDir)) {
+        const avatarFile = fs.readdirSync(aaasDir).find(f => f.startsWith('avatar.'));
+        if (avatarFile) {
+          const mtime = fs.statSync(path.join(aaasDir, avatarFile)).mtimeMs;
+          photo = `/api/hub/avatar/${entry.name}/${avatarFile}?t=${Math.floor(mtime)}`;
+        }
+      }
+
       workspaces.push({
         name: agentName,
         directory: entry.name,
         path: wsPath,
+        photo,
         provider: config.provider || null,
         model: config.model || null,
         connections,
@@ -92,6 +106,85 @@ export function hubRouter(hubDir) {
         factCount,
         activeTx,
         lastActive,
+      });
+    }
+
+    // Merge workspaces from global registry (~/.aaas/workspaces.json)
+    const knownPaths = new Set(workspaces.map(w => path.resolve(w.path)));
+    const registeredWorkspaces = getValidWorkspaces();
+
+    for (const reg of registeredWorkspaces) {
+      if (knownPaths.has(path.resolve(reg.path))) continue; // already discovered locally
+
+      const wsPath = reg.path;
+      const skillPath = path.join(wsPath, 'skills', 'aaas', 'SKILL.md');
+      if (!fs.existsSync(skillPath)) continue;
+
+      const skill = readText(skillPath) || '';
+      const config = readJson(path.join(wsPath, '.aaas', 'config.json')) || {};
+      const nameMatch = skill.match(/^#\s+(.+)/m);
+      const agentName = nameMatch ? nameMatch[1].replace(/\s*—.*/, '').trim() : path.basename(wsPath);
+
+      const connectionsDir = path.join(wsPath, '.aaas', 'connections');
+      const connections = [];
+      if (fs.existsSync(connectionsDir)) {
+        for (const f of fs.readdirSync(connectionsDir)) {
+          if (f.endsWith('.json')) {
+            const conn = readJson(path.join(connectionsDir, f));
+            connections.push({ platform: f.replace('.json', ''), ...(conn || {}) });
+          }
+        }
+      }
+
+      const pidFile = path.join(wsPath, '.aaas', 'agent.pid');
+      const isRunning = fs.existsSync(pidFile);
+      const dataDir = path.join(wsPath, 'data');
+      const dataFiles = fs.existsSync(dataDir) ? listFiles(dataDir).length : 0;
+      const factsPath = path.join(wsPath, 'memory', 'facts.json');
+      const facts = readJson(factsPath);
+      const factCount = Array.isArray(facts) ? facts.length : 0;
+      const activeTxDir = path.join(wsPath, 'transactions', 'active');
+      const activeTx = fs.existsSync(activeTxDir) ? listFiles(activeTxDir, '.json').length : 0;
+
+      let lastActive = null;
+      try {
+        const stat = fs.statSync(skillPath);
+        lastActive = stat.mtime.toISOString();
+        const sessionsDir = path.join(wsPath, '.aaas', 'sessions');
+        if (fs.existsSync(sessionsDir)) {
+          for (const sf of fs.readdirSync(sessionsDir)) {
+            const ss = fs.statSync(path.join(sessionsDir, sf));
+            if (!lastActive || ss.mtime > new Date(lastActive)) {
+              lastActive = ss.mtime.toISOString();
+            }
+          }
+        }
+      } catch { /* ignore */ }
+
+      let photo = null;
+      const aaasDir = path.join(wsPath, '.aaas');
+      if (fs.existsSync(aaasDir)) {
+        const avatarFile = fs.readdirSync(aaasDir).find(f => f.startsWith('avatar.'));
+        if (avatarFile) {
+          const mtime = fs.statSync(path.join(aaasDir, avatarFile)).mtimeMs;
+          photo = `/api/hub/avatar/${path.basename(wsPath)}/${avatarFile}?t=${Math.floor(mtime)}`;
+        }
+      }
+
+      workspaces.push({
+        name: agentName,
+        directory: path.basename(wsPath),
+        path: wsPath,
+        photo,
+        provider: config.provider || null,
+        model: config.model || null,
+        connections,
+        isRunning,
+        dataFiles,
+        factCount,
+        activeTx,
+        lastActive,
+        remote: true, // flag: not a local subdirectory of this hub
       });
     }
 
@@ -110,7 +203,37 @@ export function hubRouter(hubDir) {
   });
 
   // Create new workspace
-  router.post('/workspaces', (req, res) => {
+  // Avatar upload middleware
+  const avatarUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype.startsWith('image/')) cb(null, true);
+      else cb(new Error('Only image files are allowed'));
+    },
+  });
+
+  // Serve avatar images (local hub subdirs + remote registered workspaces)
+  router.get('/avatar/:directory/:filename', (req, res) => {
+    const { directory, filename } = req.params;
+    if (directory.includes('..') || filename.includes('..')) return res.status(400).end();
+
+    // Try local hub subdirectory first
+    let fp = path.join(hubDir, directory, '.aaas', filename);
+    if (fs.existsSync(fp)) return res.sendFile(fp);
+
+    // Try registered workspaces (remote)
+    const registered = getValidWorkspaces();
+    const match = registered.find(w => path.basename(w.path) === directory);
+    if (match) {
+      fp = path.join(match.path, '.aaas', filename);
+      if (fs.existsSync(fp)) return res.sendFile(fp);
+    }
+
+    res.status(404).end();
+  });
+
+  router.post('/workspaces', avatarUpload.single('photo'), (req, res) => {
     const { name, description } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
 
@@ -260,7 +383,91 @@ I am ${displayName}. I provide real value to real people through conversation.
       writeJson(path.join(target, '.aaas', 'config.json'), srcConfig);
     }
 
+    // Save uploaded photo
+    if (req.file) {
+      const ext = req.file.originalname.split('.').pop() || 'png';
+      const avatarPath = path.join(target, '.aaas', `avatar.${ext}`);
+      fs.writeFileSync(avatarPath, req.file.buffer);
+    }
+
+    // Register in global workspace registry
+    registerWorkspace(target, name);
+
     res.json({ ok: true, directory: dirName, path: target });
+  });
+
+  // Update workspace name/description/photo
+  router.patch('/workspaces/:directory', avatarUpload.single('photo'), (req, res) => {
+    const { directory } = req.params;
+    const { name, description } = req.body;
+    const wsPath = path.join(hubDir, directory);
+    const skillPath = path.join(wsPath, 'skills', 'aaas', 'SKILL.md');
+
+    if (!fs.existsSync(skillPath)) {
+      return res.status(404).json({ error: 'Workspace not found' });
+    }
+
+    let skill = readText(skillPath) || '';
+
+    if (name) {
+      skill = skill.replace(/^#\s+.+/m, `# ${name} — AaaS Service Agent`);
+      skill = skill.replace(/\*\*Name:\*\*\s+.+/, `**Name:** ${name}`);
+    }
+
+    if (description !== undefined) {
+      skill = skill.replace(/\*\*Service:\*\*\s+.+/, `**Service:** ${description}`);
+    }
+
+    fs.writeFileSync(skillPath, skill);
+
+    const aaasDir = path.join(wsPath, '.aaas');
+
+    // Remove photo if requested
+    if (req.body.removePhoto === 'true') {
+      const existing = fs.readdirSync(aaasDir).filter(f => f.startsWith('avatar.'));
+      for (const old of existing) fs.unlinkSync(path.join(aaasDir, old));
+    }
+
+    // Save uploaded photo (remove old avatar first)
+    if (req.file) {
+      const existing = fs.readdirSync(aaasDir).filter(f => f.startsWith('avatar.'));
+      for (const old of existing) fs.unlinkSync(path.join(aaasDir, old));
+      const ext = req.file.originalname.split('.').pop() || 'png';
+      fs.writeFileSync(path.join(aaasDir, `avatar.${ext}`), req.file.buffer);
+    }
+
+    res.json({ ok: true });
+  });
+
+  // Delete workspace and its entire directory
+  router.delete('/workspaces/:directory', (req, res) => {
+    const { directory } = req.params;
+
+    // Prevent path traversal
+    if (directory.includes('..') || directory.includes('/') || directory.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid directory name' });
+    }
+
+    const wsPath = path.join(hubDir, directory);
+    const skillPath = path.join(wsPath, 'skills', 'aaas', 'SKILL.md');
+
+    if (!fs.existsSync(skillPath)) {
+      return res.status(404).json({ error: 'Workspace not found' });
+    }
+
+    // Check if running
+    const pidFile = path.join(wsPath, '.aaas', 'agent.pid');
+    if (fs.existsSync(pidFile)) {
+      return res.status(409).json({ error: 'Agent is currently running. Stop it first.' });
+    }
+
+    try {
+      fs.rmSync(wsPath, { recursive: true, force: true });
+      unregisterWorkspace(wsPath);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to delete: ' + err.message });
+    }
   });
 
   // ─── Hub Config (shared defaults for new agents) ──────────
@@ -423,44 +630,81 @@ I am ${displayName}. I provide real value to real people through conversation.
 
 const PROVIDER_MODELS = {
   anthropic: [
-    { value: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
-    { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-    { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
+    { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+    { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+    { value: 'claude-opus-4-5', label: 'Claude Opus 4.5' },
+    { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+    { value: 'claude-opus-4-1', label: 'Claude Opus 4.1' },
+    { value: 'claude-opus-4-0', label: 'Claude Opus 4' },
+    { value: 'claude-sonnet-4-0', label: 'Claude Sonnet 4' },
   ],
   openai: [
+    { value: 'gpt-5.4', label: 'GPT-5.4' },
+    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+    { value: 'gpt-5.4-nano', label: 'GPT-5.4 Nano' },
+    { value: 'gpt-5.2', label: 'GPT-5.2' },
+    { value: 'gpt-5.1', label: 'GPT-5.1' },
+    { value: 'gpt-5', label: 'GPT-5' },
+    { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
+    { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
+    { value: 'gpt-4.1', label: 'GPT-4.1' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
     { value: 'gpt-4o', label: 'GPT-4o' },
     { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-    { value: 'o1', label: 'o1' },
-    { value: 'o3-mini', label: 'o3 Mini' },
+    { value: 'o3', label: 'o3' },
+    { value: 'o4-mini', label: 'o4 Mini' },
   ],
   google: [
+    { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)' },
+    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
+    { value: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash-Lite (Preview)' },
     { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
     { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+    { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite' },
   ],
   ollama: [
+    { value: 'llama3.3', label: 'Llama 3.3' },
     { value: 'llama3.2', label: 'Llama 3.2' },
     { value: 'llama3.1', label: 'Llama 3.1' },
-    { value: 'mistral', label: 'Mistral' },
-    { value: 'codellama', label: 'Code Llama' },
-    { value: 'phi3', label: 'Phi-3' },
+    { value: 'deepseek-r1', label: 'DeepSeek-R1' },
+    { value: 'qwen3', label: 'Qwen 3' },
     { value: 'qwen2.5', label: 'Qwen 2.5' },
+    { value: 'gemma3', label: 'Gemma 3' },
+    { value: 'gemma2', label: 'Gemma 2' },
+    { value: 'phi4', label: 'Phi-4' },
+    { value: 'phi3', label: 'Phi-3' },
+    { value: 'mistral', label: 'Mistral' },
+    { value: 'gpt-oss', label: 'GPT-OSS' },
   ],
   openrouter: [
-    { value: 'anthropic/claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-    { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-    { value: 'openai/gpt-4o', label: 'GPT-4o' },
-    { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { value: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
-    { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat' },
+    { value: 'openai/gpt-5.4', label: 'OpenAI: GPT-5.4' },
+    { value: 'openai/gpt-5.2', label: 'OpenAI: GPT-5.2' },
+    { value: 'openai/gpt-5.3-chat', label: 'OpenAI: GPT-5.3 Chat' },
+    { value: 'anthropic/claude-opus-4.6', label: 'Anthropic: Claude Opus 4.6' },
+    { value: 'anthropic/claude-sonnet-4.6', label: 'Anthropic: Claude Sonnet 4.6' },
+    { value: 'google/gemini-3.1-pro-preview', label: 'Google: Gemini 3.1 Pro' },
+    { value: 'google/gemini-3-flash-preview', label: 'Google: Gemini 3 Flash' },
+    { value: 'qwen/qwen3.6-plus', label: 'Qwen: Qwen 3.6 Plus' },
+    { value: 'x-ai/grok-4.20', label: 'xAI: Grok 4.20' },
+    { value: 'z-ai/glm-5', label: 'Z.ai: GLM 5' },
+    { value: 'mistralai/mistral-small-2603', label: 'Mistral: Mistral Small 4' },
   ],
   azure: [
+    { value: 'gpt-5.4', label: 'GPT-5.4' },
+    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+    { value: 'gpt-5.4-nano', label: 'GPT-5.4 Nano' },
+    { value: 'gpt-5.2', label: 'GPT-5.2' },
+    { value: 'gpt-5.1', label: 'GPT-5.1' },
+    { value: 'gpt-5', label: 'GPT-5' },
+    { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
+    { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
+    { value: 'gpt-4.1', label: 'GPT-4.1' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
     { value: 'gpt-4o', label: 'GPT-4o' },
     { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+    { value: 'o3', label: 'o3' },
+    { value: 'o4-mini', label: 'o4 Mini' },
   ],
 };
 

@@ -1,8 +1,9 @@
+import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
-import { requireWorkspace, getWorkspacePaths, listFiles, readJson } from '../../utils/workspace.js';
+import { requireWorkspace, getWorkspacePaths, listFiles, readJson, writeJson } from '../../utils/workspace.js';
 
-export function transactionsCommand(action, arg) {
+export function transactionsCommand(action, arg, extra) {
   const ws = requireWorkspace();
   const paths = getWorkspacePaths(ws);
 
@@ -10,6 +11,11 @@ export function transactionsCommand(action, arg) {
     case 'list': return txnList(paths, arg);
     case 'view': return txnView(paths, arg);
     case 'stats': return txnStats(paths);
+    case 'deliver': return txnDeliver(paths, arg);
+    case 'approve': return txnApprove(paths, arg);
+    case 'dispute': return txnDispute(paths, arg, extra);
+    case 'cancel': return txnCancel(paths, arg);
+    case 'complete': return txnComplete(paths, arg);
   }
 }
 
@@ -188,4 +194,126 @@ function txnStats(paths) {
   }
 
   console.log('');
+}
+
+// ─── Transaction Actions ────────────────────────────
+
+function findTransaction(paths, id) {
+  for (const dir of [paths.activeTransactions, paths.archivedTransactions]) {
+    for (const f of listFiles(dir, '.json')) {
+      const fp = path.join(dir, f);
+      const data = readJson(fp);
+      if (!data) continue;
+      if (data.id === id || f === id || f === `${id}.json`) {
+        return { data, filePath: fp, dir };
+      }
+    }
+  }
+  return null;
+}
+
+function updateTransaction(filePath, data) {
+  data.updated_at = new Date().toISOString();
+  writeJson(filePath, data);
+}
+
+function moveToArchive(paths, filePath, data) {
+  const archivePath = path.join(paths.archivedTransactions, path.basename(filePath));
+  fs.mkdirSync(paths.archivedTransactions, { recursive: true });
+  writeJson(archivePath, data);
+  try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+  return archivePath;
+}
+
+function txnDeliver(paths, id) {
+  if (!id) { console.error(chalk.red('\n  Usage: aaas txn deliver <id>\n')); return; }
+  const found = findTransaction(paths, id);
+  if (!found) { console.error(chalk.red(`\n  Transaction "${id}" not found.\n`)); return; }
+  const { data, filePath } = found;
+
+  if (data.status !== 'in_progress' && data.status !== 'accepted') {
+    console.error(chalk.red(`\n  Cannot deliver — status is "${data.status}" (must be in_progress or accepted).\n`));
+    return;
+  }
+
+  data.status = 'delivered';
+  data.delivered_at = new Date().toISOString();
+  updateTransaction(filePath, data);
+  console.log(chalk.green(`\n  Transaction "${data.id}" marked as delivered.`));
+  console.log(chalk.gray(`  Waiting for user approval or auto-completion.\n`));
+}
+
+function txnApprove(paths, id) {
+  if (!id) { console.error(chalk.red('\n  Usage: aaas txn approve <id>\n')); return; }
+  const found = findTransaction(paths, id);
+  if (!found) { console.error(chalk.red(`\n  Transaction "${id}" not found.\n`)); return; }
+  const { data, filePath } = found;
+
+  if (data.status !== 'delivered') {
+    console.error(chalk.red(`\n  Cannot approve — status is "${data.status}" (must be delivered).\n`));
+    return;
+  }
+
+  data.status = 'completed';
+  data.completed_at = new Date().toISOString();
+  updateTransaction(filePath, data);
+  moveToArchive(paths, filePath, data);
+  console.log(chalk.green(`\n  Transaction "${data.id}" approved and completed.`));
+  console.log(chalk.gray(`  Moved to archive.\n`));
+}
+
+function txnDispute(paths, id, reason) {
+  if (!id) { console.error(chalk.red('\n  Usage: aaas txn dispute <id> [reason]\n')); return; }
+  const found = findTransaction(paths, id);
+  if (!found) { console.error(chalk.red(`\n  Transaction "${id}" not found.\n`)); return; }
+  const { data, filePath } = found;
+
+  if (data.status !== 'delivered') {
+    console.error(chalk.red(`\n  Cannot dispute — status is "${data.status}" (must be delivered).\n`));
+    return;
+  }
+
+  data.status = 'disputed';
+  data.disputed_at = new Date().toISOString();
+  data.dispute = { reason: reason || 'No reason provided', filed_at: new Date().toISOString() };
+  updateTransaction(filePath, data);
+  console.log(chalk.yellow(`\n  Transaction "${data.id}" disputed.`));
+  console.log(chalk.gray(`  Reason: ${data.dispute.reason}\n`));
+}
+
+function txnCancel(paths, id) {
+  if (!id) { console.error(chalk.red('\n  Usage: aaas txn cancel <id>\n')); return; }
+  const found = findTransaction(paths, id);
+  if (!found) { console.error(chalk.red(`\n  Transaction "${id}" not found.\n`)); return; }
+  const { data, filePath } = found;
+
+  const cancellable = ['exploring', 'proposed', 'accepted', 'in_progress'];
+  if (!cancellable.includes(data.status)) {
+    console.error(chalk.red(`\n  Cannot cancel — status is "${data.status}".\n`));
+    return;
+  }
+
+  data.status = 'cancelled';
+  data.cancelled_at = new Date().toISOString();
+  updateTransaction(filePath, data);
+  moveToArchive(paths, filePath, data);
+  console.log(chalk.yellow(`\n  Transaction "${data.id}" cancelled and archived.\n`));
+}
+
+function txnComplete(paths, id) {
+  if (!id) { console.error(chalk.red('\n  Usage: aaas txn complete <id>\n')); return; }
+  const found = findTransaction(paths, id);
+  if (!found) { console.error(chalk.red(`\n  Transaction "${id}" not found.\n`)); return; }
+  const { data, filePath } = found;
+
+  if (data.status === 'completed') {
+    console.log(chalk.gray(`\n  Transaction "${data.id}" is already completed.\n`));
+    return;
+  }
+
+  data.status = 'completed';
+  data.completed_at = new Date().toISOString();
+  updateTransaction(filePath, data);
+  moveToArchive(paths, filePath, data);
+  console.log(chalk.green(`\n  Transaction "${data.id}" completed and archived.\n`));
 }

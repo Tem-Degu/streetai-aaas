@@ -1,18 +1,20 @@
 import { searchData } from './search-data.js';
 import { readMemory, saveMemory } from './memory.js';
 import { callExtension } from './extensions.js';
-import { createTransaction, updateTransaction, completeTransaction, listTransactions } from './transactions.js';
-import { readSkill, writeSkill, readSoul, writeSoul, readDataFile, writeDataFile, addDataRecord, readExtensions, addExtension, removeExtension, importFile } from './workspace.js';
+import { createTransaction, updateTransaction, completeTransaction, listTransactions, attachFileToTransaction } from './transactions.js';
+import { readSkill, writeSkill, readSoul, writeSoul, readDataFile, writeDataFile, addDataRecord, updateDataRecord, deleteDataRecord, readExtensions, addExtension, removeExtension, importFile } from './workspace.js';
 import { runQuery, listTables } from './database.js';
 import { platformRequest } from './platform-request.js';
+import { webSearch, webFetch } from './web.js';
 
 /**
  * Tool registry. Returns tool definitions for the LLM and dispatches execution.
  */
 export class ToolRegistry {
-  constructor(workspace, paths) {
+  constructor(workspace, paths, config = {}) {
     this.workspace = workspace;
     this.paths = paths;
+    this.config = config;
   }
 
   /**
@@ -60,14 +62,14 @@ export class ToolRegistry {
       },
       {
         name: 'call_extension',
-        description: 'Call an external API extension registered in the workspace.',
+        description: 'Call an external API extension or send a message to another AaaS agent. For API extensions: specify method, path, and data. For agent extensions: just provide a message and the other agent responds in natural language.',
         parameters: {
           type: 'object',
           properties: {
             name: { type: 'string', description: 'Extension name from extensions/registry.json.' },
-            method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'], description: 'HTTP method.' },
-            path: { type: 'string', description: 'API path (appended to extension base URL).' },
-            data: { type: 'object', description: 'Request body for POST/PUT.' },
+            method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'], description: 'HTTP method (API extensions only).' },
+            path: { type: 'string', description: 'API path appended to extension base URL (API extensions only).' },
+            data: { type: 'object', description: 'Request body for POST/PUT (API extensions), or { message: "..." } for agent extensions.' },
           },
           required: ['name'],
         },
@@ -111,6 +113,18 @@ export class ToolRegistry {
             rating: { type: 'number', description: 'Optional rating (1-5).' },
           },
           required: ['id'],
+        },
+      },
+      {
+        name: 'attach_file_to_transaction',
+        description: 'Link a file (image, audio, video, document) that already exists in your data/ folder to a transaction. Use this whenever a customer sends a file as part of a service. The file stays where you put it — this just records a reference in the transaction so the operator can see it.',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Transaction ID to attach the file to.' },
+            file_path: { type: 'string', description: 'Workspace-relative path to the file under data/ (e.g. "data/jobs/logo_1/photo.jpg").' },
+          },
+          required: ['id', 'file_path'],
         },
       },
       {
@@ -195,6 +209,33 @@ export class ToolRegistry {
         },
       },
       {
+        name: 'update_data_record',
+        description: 'Update an existing record in a JSON array data file by matching a key field. If no match is found, inserts a new record.',
+        parameters: {
+          type: 'object',
+          properties: {
+            file: { type: 'string', description: 'JSON file name (e.g., "profiles.json").' },
+            key: { type: 'string', description: 'Field name to match on (e.g., "user_id").' },
+            value: { type: 'string', description: 'Value to match (e.g., "bobby_11").' },
+            record: { type: 'object', description: 'The record data to update or insert.' },
+          },
+          required: ['file', 'key', 'value', 'record'],
+        },
+      },
+      {
+        name: 'delete_data_record',
+        description: 'Delete a record from a JSON array data file by matching a key field.',
+        parameters: {
+          type: 'object',
+          properties: {
+            file: { type: 'string', description: 'JSON file name (e.g., "profiles.json").' },
+            key: { type: 'string', description: 'Field name to match on (e.g., "user_id").' },
+            value: { type: 'string', description: 'Value to match (e.g., "bobby_11").' },
+          },
+          required: ['file', 'key', 'value'],
+        },
+      },
+      {
         name: 'read_extensions',
         description: 'Read the current extensions registry to see what external APIs are configured.',
         parameters: { type: 'object', properties: {} },
@@ -274,6 +315,32 @@ export class ToolRegistry {
           required: ['url'],
         },
       },
+
+      // ── Web tools ──
+
+      {
+        name: 'web_search',
+        description: 'Search the web for information. Returns titles, URLs, and snippets. Requires a search API key in .aaas/config.json.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Search query.' },
+            num_results: { type: 'number', description: 'Number of results to return (default 5, max 10).' },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'web_fetch',
+        description: 'Fetch a web page or API endpoint and return its text content. HTML is automatically stripped to readable text. Use this to read articles, documentation, product pages, or any public URL.',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'The URL to fetch (must start with http:// or https://).' },
+          },
+          required: ['url'],
+        },
+      },
     ];
   }
 
@@ -304,6 +371,8 @@ export class ToolRegistry {
           return completeTransaction(this.paths, args);
         case 'list_transactions':
           return listTransactions(this.paths, args);
+        case 'attach_file_to_transaction':
+          return attachFileToTransaction(this.paths, args);
         case 'read_skill':
           return readSkill(this.paths);
         case 'write_skill':
@@ -318,6 +387,10 @@ export class ToolRegistry {
           return writeDataFile(this.paths, args);
         case 'add_data_record':
           return addDataRecord(this.paths, args);
+        case 'update_data_record':
+          return updateDataRecord(this.paths, args);
+        case 'delete_data_record':
+          return deleteDataRecord(this.paths, args);
         case 'read_extensions':
           return readExtensions(this.paths);
         case 'add_extension':
@@ -334,6 +407,10 @@ export class ToolRegistry {
           result = await platformRequest(this.workspace, args);
           console.log('[executeTool] platform_request result:', result?.slice(0, 500));
           return result;
+        case 'web_search':
+          return await webSearch(this.config, args);
+        case 'web_fetch':
+          return await webFetch(args);
         default:
           return JSON.stringify({ error: `Unknown tool: ${name}` });
       }

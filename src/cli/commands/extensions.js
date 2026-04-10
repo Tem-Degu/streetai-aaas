@@ -1,3 +1,5 @@
+import fs from 'fs';
+import { spawnSync } from 'child_process';
 import chalk from 'chalk';
 import { requireWorkspace, getWorkspacePaths, readJson, writeJson } from '../../utils/workspace.js';
 
@@ -10,7 +12,24 @@ export function extensionsCommand(action, arg, opts) {
     case 'test': return extTest(paths, arg);
     case 'add': return extAdd(paths, opts);
     case 'remove': return extRemove(paths, arg);
+    case 'edit': return extEdit(paths);
   }
+}
+
+function extEdit(paths) {
+  const file = paths.extensions;
+  if (!fs.existsSync(file)) {
+    console.error(chalk.red('\n  No extensions registry. Add one with: aaas ext add --name <name>\n'));
+    return;
+  }
+  const editor = process.env.VISUAL || process.env.EDITOR || (process.platform === 'win32' ? 'notepad' : 'vi');
+  const result = spawnSync(editor, [file], { stdio: 'inherit', shell: process.platform === 'win32' });
+  if (result.error) {
+    console.error(chalk.red(`\n  Failed to open editor (${editor}): ${result.error.message}\n`));
+    return;
+  }
+  try { JSON.parse(fs.readFileSync(file, 'utf-8')); }
+  catch (err) { console.error(chalk.yellow(`\n  Warning: registry.json is not valid JSON — ${err.message}\n`)); }
 }
 
 function extList(paths) {

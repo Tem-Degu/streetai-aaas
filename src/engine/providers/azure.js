@@ -27,10 +27,10 @@ export default class AzureProvider extends OpenAIProvider {
   get name() { return 'azure'; }
 
   listModels() {
-    return ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'];
+    return ['gpt-5.4', 'gpt-5.4-mini', 'o3', 'o3-mini', 'o4-mini', 'gpt-5', 'gpt-4.1', 'gpt-4.1-mini'];
   }
 
-  async chat(messages, options = {}) {
+  async _chat(messages, options = {}) {
     // Override fetch to use Azure URL and auth
     const originalFetch = globalThis.fetch;
     const azureUrl = this.azureUrl;
@@ -51,7 +51,7 @@ export default class AzureProvider extends OpenAIProvider {
     };
 
     try {
-      return await super.chat(messages, options);
+      return await super._chat(messages, options);
     } finally {
       globalThis.fetch = originalFetch;
     }

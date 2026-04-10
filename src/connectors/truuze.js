@@ -17,6 +17,7 @@ export default class TruuzeConnector extends BaseConnector {
     this.ownerUsername = config.ownerUsername || null;
     this.heartbeatInterval = (config.heartbeatInterval || 30) * 1000;
     this.mode = config.mode || 'auto'; // 'auto', 'websocket', 'polling'
+    this.agentType = config.agentType || engine?.config?.agentType || 'service';
     this.intervalId = null;
     this.consecutiveFailures = 0;
     this.ws = null;
@@ -68,24 +69,108 @@ export default class TruuzeConnector extends BaseConnector {
   }
 
   /**
-   * Fetch the Truuze platform skill from the API and save to skills/truuze/SKILL.md.
+   * Fetch the Truuze platform skill from the API, rewrite with LLM to strip
+   * onboarding instructions, and save to skills/truuze/SKILL.md.
    */
   async _fetchPlatformSkill() {
     try {
-      const res = await this._fetch('/account/agent/skills/refresh/');
+      const agentType = this.agentType || 'service';
+      const res = await this._fetch(`/account/agent/skills/refresh/?type=${agentType}`);
       if (!res.ok) return;
 
       const data = await res.json();
-      const skillContent = data.content || data.skills_md || data;
+      let skillContent = data.content || data.skills_md || data;
 
-      if (typeof skillContent === 'string' && skillContent.length > 0) {
-        const skillPath = getPlatformSkillPath(this.engine.workspace, 'truuze');
-        fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-        fs.writeFileSync(skillPath, skillContent);
+      if (typeof skillContent !== 'string' || skillContent.length === 0) return;
+
+      // Rewrite with LLM to strip signup/onboarding instructions (agent is already connected)
+      try {
+        skillContent = await this._rewriteSkill(skillContent);
+      } catch (err) {
+        console.log('[truuze] Skill rewrite failed, using original:', err.message);
       }
+
+      // Inject AaaS-specific call guidance (the template is runtime-neutral)
+      skillContent = this._injectAaasGuidance(skillContent);
+
+      const skillPath = getPlatformSkillPath(this.engine.workspace, 'truuze');
+      fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+      fs.writeFileSync(skillPath, skillContent);
     } catch {
       // Non-critical
     }
+  }
+
+  /**
+   * Use the LLM to strip onboarding/signup sections from the platform skill,
+   * since the agent is already registered and connected.
+   */
+  async _rewriteSkill(originalSkill) {
+    if (!this.engine?.provider) {
+      await this.engine?.initialize?.();
+      if (!this.engine?.provider) return originalSkill;
+    }
+
+    const prompt = `You are rewriting a platform SKILL.md file for an AI agent that has already been onboarded.
+
+The agent is already signed up and connected. Rewrite the SKILL.md below with these changes:
+1. REMOVE all signup/registration instructions (Step 1: Register, provisioning token usage, etc.)
+2. REMOVE credential storage instructions (saving API keys, credentials.json, etc.)
+3. REMOVE heartbeat/polling setup instructions (events are delivered automatically)
+4. REMOVE "where to place this file" or installation instructions
+5. REMOVE authentication setup instructions (auth headers are handled automatically)
+6. KEEP all API endpoint documentation intact (messaging, escrow, kookies, profiles, etc.)
+7. KEEP behavioral guidance (community guidelines, best practices, owner priority)
+8. KEEP the frontmatter (--- block at the top) unchanged
+9. Return ONLY the rewritten SKILL.md content, nothing else — no explanations, no wrapping
+
+Original SKILL.md:
+${originalSkill}`;
+
+    const result = await this.engine.provider.chat([
+      { role: 'user', content: prompt },
+    ], { maxTokens: 8000, temperature: 0 });
+
+    const rewritten = result.content?.trim();
+    if (rewritten && rewritten.length > 500) {
+      console.log('[truuze] SKILL.md rewritten by LLM (' + rewritten.length + ' chars)');
+      return rewritten;
+    }
+    return originalSkill;
+  }
+
+  /**
+   * Inject AaaS-specific instructions into the skill. The Truuze template is
+   * intentionally runtime-neutral — the connector is responsible for telling
+   * the agent how to actually make calls on this particular platform.
+   */
+  _injectAaasGuidance(skillContent) {
+    const block = `
+## How to Call Truuze APIs (AaaS runtime)
+
+You are running on the AaaS platform. Use the \`platform_request\` tool for ALL Truuze API calls. Auth headers (X-Api-Key, X-Agent-Key) are added automatically — never add them yourself.
+
+\`\`\`
+platform_request({
+  url: "<full truuze url>",
+  method: "POST",
+  body: { ... }
+})
+\`\`\`
+
+Never use \`create_transaction\` for Truuze. That tool is for internal record-keeping only — it does NOT charge users or create escrows. Always use \`platform_request\`.
+
+---
+`;
+
+    // Insert after the frontmatter block (between the closing --- and the rest)
+    const fmMatch = skillContent.match(/^---\n[\s\S]*?\n---\n/);
+    if (fmMatch) {
+      const idx = fmMatch[0].length;
+      return skillContent.slice(0, idx) + block + skillContent.slice(idx);
+    }
+    // No frontmatter — prepend
+    return block + skillContent;
   }
 
   async disconnect() {
@@ -105,6 +190,10 @@ export default class TruuzeConnector extends BaseConnector {
     if (this._pollDebounceTimer) {
       clearTimeout(this._pollDebounceTimer);
       this._pollDebounceTimer = null;
+    }
+    if (this._adaptiveTimer) {
+      clearTimeout(this._adaptiveTimer);
+      this._adaptiveTimer = null;
     }
     await super.disconnect();
   }
@@ -144,8 +233,9 @@ export default class TruuzeConnector extends BaseConnector {
           }
         }, 30_000);
 
-        // Do one heartbeat fetch to catch up on missed events
+        // Do one heartbeat fetch to catch up on missed events, then start adaptive polling
         this._poll().then(resolve).catch(resolve);
+        this._startAdaptivePolling();
       });
 
       this.ws.on('message', (raw) => {
@@ -186,7 +276,8 @@ export default class TruuzeConnector extends BaseConnector {
 
     console.log('[truuze] WebSocket event:', source);
 
-    // On any notification, do a debounced heartbeat fetch to get full event details
+    // WebSocket notification received — reset to fast polling and fetch details
+    if (this._adaptiveDelay) this._resetAdaptivePolling();
     // Debounce to avoid multiple fetches when several events fire at once
     if (this._pollDebounceTimer) clearTimeout(this._pollDebounceTimer);
     this._pollDebounceTimer = setTimeout(() => {
@@ -229,6 +320,35 @@ export default class TruuzeConnector extends BaseConnector {
     }, delay);
   }
 
+  /**
+   * Adaptive safety-net polling for WebSocket mode.
+   * Starts fast (15s) after activity, doubles interval on each empty poll,
+   * caps at 16 minutes. Resets to fast on any new activity.
+   */
+  _startAdaptivePolling() {
+    this._adaptiveDelay = 15_000; // start at 15s
+    this._scheduleNextPoll();
+  }
+
+  _scheduleNextPoll() {
+    if (this._adaptiveTimer) clearTimeout(this._adaptiveTimer);
+    this._adaptiveTimer = setTimeout(() => {
+      this._poll();
+      this._scheduleNextPoll();
+    }, this._adaptiveDelay);
+  }
+
+  _resetAdaptivePolling() {
+    this._adaptiveDelay = 15_000;
+    this._scheduleNextPoll();
+  }
+
+  _backOffAdaptivePolling() {
+    const MAX_DELAY = 16 * 60 * 1000; // 16 minutes
+    this._adaptiveDelay = Math.min(this._adaptiveDelay * 2, MAX_DELAY);
+    this._scheduleNextPoll();
+  }
+
   // ─── Polling Mode (fallback) ───────────────────────
 
   _startPolling() {
@@ -268,8 +388,13 @@ export default class TruuzeConnector extends BaseConnector {
       const total = Object.values(counts).reduce((s, n) => s + n, 0);
       if (total > 0) {
         console.log('[truuze] Heartbeat returned updates:', JSON.stringify(counts));
+        await this._processUpdates(data);
+        // Activity found — reset to fast polling
+        if (this._adaptiveDelay) this._resetAdaptivePolling();
+      } else {
+        // No updates — slow down
+        if (this._adaptiveDelay) this._backOffAdaptivePolling();
       }
-      await this._processUpdates(data);
     } catch (err) {
       this.consecutiveFailures++;
       this.error = err.message;

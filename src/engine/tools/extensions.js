@@ -17,6 +17,37 @@ export async function callExtension(paths, { name, method = 'GET', path: apiPath
     return JSON.stringify({ error: `Extension "${name}" not found. Available: ${available || 'none'}` });
   }
 
+  // Agent-to-agent: send a natural language message to another AaaS agent
+  if (ext.type === 'agent') {
+    const agentUrl = ext.address || ext.endpoint;
+    if (!agentUrl) {
+      return JSON.stringify({ error: `Extension "${ext.name}" has no address configured.` });
+    }
+    try {
+      const fetchOpts = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: data?.message || apiPath || '' }),
+      };
+      if (ext.auth?.apiKey) {
+        fetchOpts.headers['Authorization'] = `Bearer ${ext.auth.apiKey}`;
+      }
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000);
+      fetchOpts.signal = controller.signal;
+
+      const res = await fetch(agentUrl, fetchOpts);
+      clearTimeout(timeout);
+      const body = await res.json().catch(() => res.text());
+      return JSON.stringify({ status: res.status, ok: res.ok, reply: body });
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return JSON.stringify({ error: `Agent "${ext.name}" timed out (30s).` });
+      }
+      return JSON.stringify({ error: `Agent "${ext.name}" call failed: ${err.message}` });
+    }
+  }
+
   if (ext.type !== 'api' || !ext.endpoint) {
     return JSON.stringify({
       error: `Extension "${ext.name}" is type "${ext.type}" and cannot be called via HTTP.`,

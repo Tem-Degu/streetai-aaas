@@ -7,7 +7,7 @@ const DEFAULT_BUDGETS = {
   base: 4000,
   system: 5000,
   platformSkill: 16000,
-  session: 4000,
+  session: 16000,
   memory: 2000,
   data: 4000,
   response: 4000,
@@ -97,9 +97,7 @@ export class ContextAssembler {
       totalTokens += estimateTokens(summaryMsg);
     }
 
-    // Cap to last 10 messages to prevent old failures from dominating context
-    const cappedMessages = sessionMessages.slice(-10);
-    const recentMessages = this.selectRecentMessages(cappedMessages, this.budgets.session);
+    const recentMessages = this.selectRecentMessages(sessionMessages, this.budgets.session);
     for (const msg of recentMessages) {
       messages.push(msg);
       totalTokens += estimateTokens(typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content));

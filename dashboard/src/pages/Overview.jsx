@@ -1,5 +1,7 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useFetch } from '../hooks/useApi.js';
+import { getTableColumns, getLabel, formatCellWithConfig } from '../utils/transactionView.js';
 
 export default function Overview() {
   const { data, loading, error } = useFetch('/api/overview');
@@ -8,7 +10,7 @@ export default function Overview() {
   if (error) return <div className="empty">Error: {error}</div>;
   if (!data) return null;
 
-  const { name, data: db, transactions: tx, extensions, memory } = data;
+  const { name, data: db, transactions: tx, extensions, memory, sessions, messages } = data;
   const cur = tx.currency || '';
 
   return (
@@ -18,29 +20,23 @@ export default function Overview() {
         <p className="page-desc">Agent workspace overview</p>
       </div>
 
-      <div className="stat-grid">
-        <div className="stat stat-green">
-          <div className="stat-label">Revenue</div>
-          <div className="stat-value green">{cur}{tx.revenue}</div>
+      <div className="txn-summary">
+        <div className="txn-summary-item">
+          <div className="txn-summary-label">Revenue</div>
+          <div className="txn-summary-value" style={{ color: 'var(--green)' }}>{cur}{tx.revenue}</div>
         </div>
-        <div className="stat stat-accent">
-          <div className="stat-label">Active</div>
-          <div className="stat-value accent">{tx.active}</div>
+        <div className="txn-summary-item">
+          <div className="txn-summary-label">Transactions</div>
+          <div className="txn-summary-value" style={{ color: 'var(--green)' }}>{tx.completed}</div>
         </div>
-        <div className="stat stat-green">
-          <div className="stat-label">Completed</div>
-          <div className="stat-value green">{tx.completed}</div>
+        <div className="txn-summary-item">
+          <div className="txn-summary-label">Messages</div>
+          <div className="txn-summary-value" style={{ color: 'var(--accent)' }}>{messages || 0}</div>
         </div>
-        <div className="stat stat-yellow">
-          <div className="stat-label">Success Rate</div>
-          <div className="stat-value yellow">{tx.successRate}%</div>
+        <div className="txn-summary-item">
+          <div className="txn-summary-label">Sessions</div>
+          <div className="txn-summary-value" style={{ color: 'var(--accent)' }}>{sessions || 0}</div>
         </div>
-        {tx.disputed > 0 && (
-          <div className="stat stat-red">
-            <div className="stat-label">Disputes</div>
-            <div className="stat-value" style={{ color: 'var(--red)' }}>{tx.disputed}</div>
-          </div>
-        )}
       </div>
 
       <div className="stat-grid">
@@ -108,7 +104,9 @@ function ConnectionStatus() {
 }
 
 function TransactionList({ currency }) {
+  const navigate = useNavigate();
   const { data, loading } = useFetch('/api/transactions');
+  const { data: viewConfig } = useFetch('/api/transaction-view');
 
   if (loading) return <div className="loading">Loading transactions</div>;
   if (!data || data.length === 0) {
@@ -119,29 +117,33 @@ function TransactionList({ currency }) {
     );
   }
 
+  const extraCols = getTableColumns(viewConfig, data);
+
   return (
     <div className="card" style={{ padding: 0 }}>
       <div className="card-title" style={{ padding: '16px 18px 0' }}>Active Transactions</div>
       <table className="table">
         <thead>
           <tr>
-            <th>ID</th>
             <th>Service</th>
             <th>User</th>
             <th>Status</th>
+            {extraCols.map(k => <th key={k}>{getLabel(viewConfig, k)}</th>)}
             <th>Cost</th>
+            <th>Date</th>
           </tr>
         </thead>
         <tbody>
           {data.slice(0, 10).map((t, i) => (
-            <tr key={t.id || i}>
-              <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>
-                {(t.id || t._file || '').slice(0, 8)}
-              </td>
-              <td>{t.service || '—'}</td>
-              <td>{t.user_name || t.user || t.client || '—'}</td>
+            <tr key={t.id || i} onClick={() => navigate(`transactions?id=${encodeURIComponent(t.id || t._file)}`)} style={{ cursor: 'pointer' }}>
+              <td>{t.service || ''}</td>
+              <td>{t.user_name || t.user || t.client || ''}</td>
               <td><span className={`badge ${t.status}`}>{t.status?.replace(/_/g, ' ')}</span></td>
+              {extraCols.map(k => (
+                <td key={k} style={{ fontSize: 13 }}>{formatCellWithConfig(t[k], k, viewConfig, currency)}</td>
+              ))}
               <td>{t.cost ? `${currency}${t.cost}` : 'Free'}</td>
+              <td>{t.created_at ? new Date(t.created_at).toLocaleDateString() : ''}</td>
             </tr>
           ))}
         </tbody>

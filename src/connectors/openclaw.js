@@ -23,6 +23,11 @@ export default class OpenClawConnector extends BaseConnector {
       const openclawDir = path.join(os.homedir(), '.openclaw');
       const workspaceDir = path.join(openclawDir, `workspace-${agentId}`);
 
+      // Warn if OpenClaw doesn't appear to be installed
+      if (!fs.existsSync(openclawDir)) {
+        console.warn(`[openclaw] ${openclawDir} does not exist yet. Creating it, but make sure OpenClaw is installed for the export to be useful.`);
+      }
+
       // Create OpenClaw workspace
       fs.mkdirSync(workspaceDir, { recursive: true });
 

@@ -9,7 +9,8 @@ import { getWorkspacePaths, readJson, readText, writeJson, listFiles, fileStats,
 import { getProviderCredential, setProviderCredential, removeProviderCredential, listProviders, maskApiKey } from '../auth/credentials.js';
 import { listConnections, loadConnection, saveConnection, removeConnection } from '../auth/connections.js';
 import { AgentEngine } from '../engine/index.js';
-import { createProvider } from '../engine/providers/index.js';
+import { extractFiles } from '../connectors/media.js';
+
 
 const __api_dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -68,6 +69,19 @@ export function apiRouter(workspace) {
     const factsData = readJson(path.join(paths.memory, 'facts.json'));
     const factsCount = Array.isArray(factsData) ? factsData.length : 0;
 
+    // Sessions & messages (lifetime)
+    let sessionCount = 0;
+    let messageCount = 0;
+    const sessionsDir = path.join(workspace, '.aaas', 'sessions');
+    if (fs.existsSync(sessionsDir)) {
+      const sessionFiles = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
+      sessionCount = sessionFiles.length;
+      for (const f of sessionFiles) {
+        const s = readJson(path.join(sessionsDir, f));
+        if (s && Array.isArray(s.messages)) messageCount += s.messages.length;
+      }
+    }
+
     res.json({
       name: agentName,
       workspace,
@@ -93,7 +107,9 @@ export function apiRouter(workspace) {
         ratingCount: ratings.length
       },
       extensions: extCount,
-      memory: factsCount
+      memory: factsCount,
+      sessions: sessionCount,
+      messages: messageCount
     });
   });
 
@@ -337,6 +353,12 @@ export function apiRouter(workspace) {
     });
   });
 
+  // ─── Transaction View Config ─────────────────────
+  router.get('/transaction-view', (req, res) => {
+    const config = readJson(paths.transactionView);
+    res.json(config || {});
+  });
+
   // ─── Extensions ──────────────────────────────────
 
   router.get('/extensions', (req, res) => {
@@ -475,15 +497,54 @@ export function apiRouter(workspace) {
       }
 
       const result = await eng.processChat(fullMessage, { mode: mode || 'admin' });
+
+      // Extract file references from the agent's response so they render as
+      // real attachments instead of broken markdown image links.
+      const { cleanText, files: responseFiles } = extractFiles(workspace, result.response);
+      const responseAttachments = responseFiles.map(f => {
+        const url = f.url
+          ? f.url
+          : `/api/workspace/${path.relative(workspace, f.absPath).replace(/\\/g, '/')}`;
+        return { url, name: f.filename, type: f.type, mimeType: f.mimeType, alt: f.alt };
+      });
+
       res.json({
-        response: result.response,
+        response: cleanText,
         toolsUsed: result.toolsUsed,
         tokensUsed: result.tokensUsed,
-        files: processedFiles,
+        files: [...processedFiles, ...responseAttachments],
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Load chat history from session file
+  router.get('/chat/history', (req, res) => {
+    const { mode } = req.query;
+    const userId = mode === 'customer' ? 'customer' : 'owner';
+    const sessionFile = path.join(workspace, '.aaas', 'sessions', `local_${userId}.json`);
+    if (!fs.existsSync(sessionFile)) return res.json({ messages: [] });
+    const session = readJson(sessionFile) || {};
+    const messages = (session.messages || [])
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => {
+        const rawContent = typeof m.content === 'string' ? m.content : (m.content || '');
+        // Extract file references from past assistant messages so historical
+        // markdown image links render as real attachments too.
+        if (m.role === 'assistant' && rawContent) {
+          const { cleanText, files } = extractFiles(workspace, rawContent);
+          const attachments = files.map(f => {
+            const url = f.url
+              ? f.url
+              : `/api/workspace/${path.relative(workspace, f.absPath).replace(/\\/g, '/')}`;
+            return { url, name: f.filename, type: f.type, mimeType: f.mimeType, alt: f.alt };
+          });
+          return { role: m.role, content: cleanText, files: attachments, at: m.at };
+        }
+        return { role: m.role, content: rawContent, at: m.at };
+      });
+    res.json({ messages });
   });
 
   // Debug: get last context sent to LLM
@@ -520,7 +581,14 @@ export function apiRouter(workspace) {
   // ─── Config ────────────────────────────────────
 
   router.get('/config', (req, res) => {
-    const config = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
+    let config = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
+    // If no provider configured, inherit from hub (parent directory) config
+    if (!config.provider) {
+      const hubConfig = readJson(path.join(workspace, '..', '.aaas', 'config.json'));
+      if (hubConfig?.provider) {
+        config = { ...hubConfig, ...config };
+      }
+    }
     const providers = listProviders().map(name => {
       const cred = getProviderCredential(name);
       return {
@@ -683,7 +751,7 @@ export function apiRouter(workspace) {
 
   router.post('/connections/:platform', async (req, res) => {
     const { platform } = req.params;
-    const validPlatforms = ['truuze', 'http', 'openclaw', 'telegram', 'discord', 'slack', 'whatsapp'];
+    const validPlatforms = ['truuze', 'http', 'openclaw', 'telegram', 'discord', 'slack', 'whatsapp', 'relay'];
     if (!validPlatforms.includes(platform)) {
       return res.status(400).json({ error: `Invalid platform. Use: ${validPlatforms.join(', ')}` });
     }
@@ -758,15 +826,37 @@ export function apiRouter(workspace) {
             connectedAt: new Date().toISOString(),
           });
 
-          // Rewrite SKILL.md with agent identity and save as platform skill
-          const rewrittenSkill = await rewritePlatformSkill(workspace, skillContent, {
-            username: data.username || agentUsername,
-            agentId: data.id,
-            ownerUsername: data.owner_username,
-          });
+          // Fetch the appropriate skill template from the refresh endpoint
           const skillPath = path.join(workspace, 'skills', 'truuze', 'SKILL.md');
           fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-          fs.writeFileSync(skillPath, rewrittenSkill);
+          const wsConfig = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
+          const agentType = wsConfig.agentType || 'service';
+          try {
+            const refreshUrl = `${url}/account/agent/skills/refresh/?type=${agentType}`;
+            console.log('[truuze-connect] Fetching skill from:', refreshUrl);
+            const skillResp = await fetch(refreshUrl, {
+              headers: { 'X-Agent-Key': data.api_key, 'X-Api-Key': PLATFORM_API_KEY },
+            });
+            console.log('[truuze-connect] Refresh response status:', skillResp.status);
+            if (skillResp.ok) {
+              const skillData = await skillResp.json();
+              const refreshedSkill = skillData.content || skillData.skills_md;
+              if (refreshedSkill) {
+                console.log('[truuze-connect] Got refreshed skill, length:', refreshedSkill.length);
+                fs.writeFileSync(skillPath, refreshedSkill);
+              } else {
+                console.log('[truuze-connect] No content in refresh response, saving original');
+                fs.writeFileSync(skillPath, skillContent);
+              }
+            } else {
+              const errText = await skillResp.text();
+              console.log('[truuze-connect] Refresh failed:', errText.slice(0, 200));
+              fs.writeFileSync(skillPath, skillContent);
+            }
+          } catch (err) {
+            console.log('[truuze-connect] Refresh error:', err.message);
+            fs.writeFileSync(skillPath, skillContent);
+          }
         } else if (agentKey) {
           const url = baseUrl || 'https://origin.truuze.com/api/v1';
           // Verify existing key
@@ -799,6 +889,24 @@ export function apiRouter(workspace) {
             heartbeatInterval: 30,
             connectedAt: new Date().toISOString(),
           });
+
+          // Fetch the appropriate skill template from the refresh endpoint
+          const wsConfig = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
+          const agentType = wsConfig.agentType || 'service';
+          try {
+            const skillResp = await fetch(`${url}/account/agent/skills/refresh/?type=${agentType}`, {
+              headers: { 'X-Agent-Key': agentKey, 'X-Api-Key': PLATFORM_API_KEY },
+            });
+            if (skillResp.ok) {
+              const skillData = await skillResp.json();
+              const refreshedSkill = skillData.content || skillData.skills_md;
+              if (refreshedSkill) {
+                const skillPath = path.join(workspace, 'skills', 'truuze', 'SKILL.md');
+                fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+                fs.writeFileSync(skillPath, refreshedSkill);
+              }
+            }
+          } catch { /* non-critical */ }
         } else if (token) {
           const url = baseUrl || 'https://origin.truuze.com/api/v1';
           // Signup with provisioning token (only pass agent identity fields)
@@ -841,6 +949,24 @@ export function apiRouter(workspace) {
             heartbeatInterval: 30,
             connectedAt: new Date().toISOString(),
           });
+
+          // Fetch the appropriate skill template from the refresh endpoint
+          const wsConfig3 = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
+          const agentType3 = wsConfig3.agentType || 'service';
+          try {
+            const skillResp = await fetch(`${url}/account/agent/skills/refresh/?type=${agentType3}`, {
+              headers: { 'X-Agent-Key': data.api_key, 'X-Api-Key': PLATFORM_API_KEY },
+            });
+            if (skillResp.ok) {
+              const skillData = await skillResp.json();
+              const refreshedSkill = skillData.content || skillData.skills_md;
+              if (refreshedSkill) {
+                const skillPath = path.join(workspace, 'skills', 'truuze', 'SKILL.md');
+                fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+                fs.writeFileSync(skillPath, refreshedSkill);
+              }
+            }
+          } catch { /* non-critical */ }
         } else {
           return res.status(400).json({ error: 'Provide a SKILL.md, provisioning token, or agent key' });
         }
@@ -917,6 +1043,48 @@ export function apiRouter(workspace) {
           botName: data.user,
           teamId: data.team_id,
           teamName: data.team,
+          connectedAt: new Date().toISOString(),
+        });
+      } else if (platform === 'relay') {
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: 'Agent name is required' });
+
+        const relayBase = 'https://streetai.org';
+        // Register with streetai.org relay
+        const regResp = await fetch(`${relayBase}/relay/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!regResp.ok) {
+          const err = await regResp.json().catch(() => ({}));
+          return res.status(400).json({ error: err.error || 'Relay registration failed' });
+        }
+        const regData = await regResp.json();
+
+        // Configure WhatsApp webhook if WhatsApp is connected
+        const waConn = loadConnection(workspace, 'whatsapp');
+        if (waConn?.verifyToken) {
+          await fetch(`${relayBase}/relay/configure`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              slug: regData.slug,
+              relayKey: regData.relayKey,
+              whatsapp: { verifyToken: waConn.verifyToken },
+            }),
+          });
+        }
+
+        const relayUrl = relayBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+        saveConnection(workspace, 'relay', {
+          platform: 'relay',
+          relayUrl,
+          relayKey: regData.relayKey,
+          slug: regData.slug,
+          chatUrl: regData.chatUrl,
+          widgetUrl: regData.widgetUrl,
+          webhookUrl: regData.webhookUrl,
           connectedAt: new Date().toISOString(),
         });
       }
@@ -1031,7 +1199,8 @@ export function apiRouter(workspace) {
       };
     });
 
-    res.json({ platforms, cliRunning: daemonRunning, daemonRunning, daemonPid });
+    const sessionRunning = Object.values(activeConnectors).some(c => c?.status === 'connected');
+    res.json({ platforms, cliRunning: daemonRunning, daemonRunning, daemonPid, sessionRunning });
   });
 
   // Start a single platform in-process (legacy, for quick testing)
@@ -1091,6 +1260,7 @@ export function apiRouter(workspace) {
       }
     }
 
+    // Try daemon mode first
     try {
       const workerPath = path.join(__api_dirname, '..', 'cli', 'agent-worker.js');
       const logPath = path.join(workspace, '.aaas', 'agent.log');
@@ -1112,12 +1282,37 @@ export function apiRouter(workspace) {
 
       if (fs.existsSync(pidFile)) {
         const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim());
-        res.json({ ok: true, pid, message: 'Agent started in background.' });
-      } else {
-        // Check log for errors
-        const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf-8').slice(-500) : '';
-        res.status(500).json({ error: 'Agent failed to start.', log });
+        return res.json({ ok: true, pid, mode: 'daemon', message: 'Agent started in background.' });
       }
+    } catch { /* daemon spawn failed — fall through to in-process */ }
+
+    // Fallback: start all connectors in-process (won't survive dashboard close)
+    try {
+      const eng = await getEngine();
+      const connections = listConnections(workspace);
+      if (connections.length === 0) {
+        return res.status(400).json({ error: 'No connections configured.' });
+      }
+
+      const { loadConnector } = await import('../connectors/index.js');
+      let connected = 0;
+      for (const conn of connections) {
+        if (activeConnectors[conn.platform]?.status === 'connected') { connected++; continue; }
+        try {
+          const ConnectorClass = await loadConnector(conn.platform);
+          if (!ConnectorClass) continue;
+          const connector = new ConnectorClass({ ...conn.config, platform: conn.platform }, eng);
+          await connector.connect();
+          activeConnectors[conn.platform] = connector;
+          connected++;
+        } catch { /* skip failed connector */ }
+      }
+
+      if (connected === 0) {
+        return res.status(500).json({ error: 'No connectors started successfully.' });
+      }
+
+      res.json({ ok: true, mode: 'session', message: `Agent running with ${connected} connection(s). Note: it will stop when you close this dashboard window.` });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1151,6 +1346,28 @@ export function apiRouter(workspace) {
     // Return last 100 lines
     const lines = content.split('\n').slice(-100).join('\n');
     res.json({ log: lines });
+  });
+
+  // Get pending owner verification codes
+  router.get('/deploy/verify', (req, res) => {
+    const verifyDir = path.join(workspace, '.aaas', 'verify');
+    if (!fs.existsSync(verifyDir)) return res.json({ pending: [] });
+
+    const pending = [];
+    for (const f of fs.readdirSync(verifyDir).filter(f => f.endsWith('.json'))) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(verifyDir, f), 'utf-8'));
+        // Only show codes less than 10 minutes old
+        const age = Date.now() - new Date(data.requestedAt).getTime();
+        if (age < 10 * 60 * 1000) {
+          pending.push(data);
+        } else {
+          // Clean up expired codes
+          fs.unlinkSync(path.join(verifyDir, f));
+        }
+      } catch { /* skip corrupt files */ }
+    }
+    res.json({ pending });
   });
 
   // ─── Platform Skills ──────────────────────────
@@ -1224,60 +1441,6 @@ function parseTruuzeSkill(content) {
   }
 }
 
-/**
- * Use the LLM to rewrite a platform SKILL.md after signup.
- * Removes onboarding/signup instructions and injects the agent's actual identity.
- * Falls back to the original content if the LLM call fails.
- */
-async function rewritePlatformSkill(workspace, originalSkill, agentInfo) {
-  try {
-    const config = readJson(path.join(workspace, '.aaas', 'config.json'));
-    if (!config?.provider) return originalSkill;
-
-    const provider = await createProvider(config.provider, {
-      model: config.model,
-      baseUrl: config.baseUrl,
-    });
-
-    const prompt = `You are rewriting a platform SKILL.md file for an AI agent that has already been onboarded.
-
-The agent has already signed up and is connected. Here are its account details:
-- Username: ${agentInfo.username}
-- Agent ID: ${agentInfo.agentId}
-- Owner: @${agentInfo.ownerUsername}
-
-Rewrite the SKILL.md below with these changes:
-1. REMOVE all signup/onboarding/registration instructions (the agent is already signed up)
-2. REMOVE credential storage instructions (credentials are managed automatically)
-3. REMOVE heartbeat/polling instructions (events are delivered automatically)
-4. REMOVE any "where to place this file" or installation instructions
-5. ADD a section at the top (after the title) called "## Your Identity" with the agent's account details above
-6. KEEP all API endpoint documentation intact (creating content, commenting, messaging, reacting, following, kookies, etc.)
-7. KEEP behavioral guidance (community guidelines, best practices, engagement tips)
-8. KEEP the frontmatter but update the metadata to replace the provisioning_token with "N/A - already onboarded"
-9. Do NOT add any headers or instructions about authentication — auth is handled automatically
-10. Return ONLY the rewritten SKILL.md content, nothing else
-
-Original SKILL.md:
-${originalSkill}`;
-
-    const result = await provider.chat([
-      { role: 'user', content: prompt },
-    ], { maxTokens: 8000, temperature: 0 });
-
-    const rewritten = result.content?.trim();
-    if (rewritten && rewritten.length > 500) {
-      console.log('[truuze-connect] SKILL.md rewritten by LLM (' + rewritten.length + ' chars)');
-      return rewritten;
-    }
-    console.log('[truuze-connect] LLM rewrite too short, using original');
-    return originalSkill;
-  } catch (err) {
-    console.log('[truuze-connect] SKILL.md rewrite failed, using original:', err.message);
-    return originalSkill;
-  }
-}
-
 function loadAllTransactions(paths, includeArchived) {
   const txns = [];
 
@@ -1313,44 +1476,64 @@ function findTransaction(paths, id) {
 
 const PROVIDER_MODELS = {
   anthropic: [
+    { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+    { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
+    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
     { value: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
     { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-    { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
   ],
   openai: [
-    { value: 'gpt-4o', label: 'GPT-4o' },
-    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-    { value: 'o1', label: 'o1' },
+    { value: 'gpt-5.4', label: 'GPT-5.4' },
+    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+    { value: 'o3', label: 'o3' },
     { value: 'o3-mini', label: 'o3 Mini' },
+    { value: 'o4-mini', label: 'o4 Mini' },
+    { value: 'gpt-5', label: 'GPT-5' },
+    { value: 'gpt-4.1', label: 'GPT-4.1' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
   ],
   google: [
+    { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)' },
+    { value: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash-Lite (Preview)' },
+    { value: 'gemini-3.0-flash', label: 'Gemini 3.0 Flash' },
     { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
     { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
   ],
   ollama: [
+    { value: 'llama3.3', label: 'Llama 3.3' },
     { value: 'llama3.2', label: 'Llama 3.2' },
     { value: 'llama3.1', label: 'Llama 3.1' },
-    { value: 'mistral', label: 'Mistral' },
-    { value: 'codellama', label: 'Code Llama' },
-    { value: 'phi3', label: 'Phi-3' },
+    { value: 'deepseek-r1', label: 'DeepSeek-R1' },
+    { value: 'qwen3', label: 'Qwen 3' },
     { value: 'qwen2.5', label: 'Qwen 2.5' },
+    { value: 'gemma3', label: 'Gemma 3' },
+    { value: 'gemma2', label: 'Gemma 2' },
+    { value: 'phi4', label: 'Phi-4' },
+    { value: 'phi3', label: 'Phi-3' },
+    { value: 'mistral', label: 'Mistral' },
+    { value: 'gpt-oss', label: 'GPT-OSS' },
   ],
   openrouter: [
-    { value: 'anthropic/claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-    { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-    { value: 'openai/gpt-4o', label: 'GPT-4o' },
-    { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { value: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
-    { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat' },
+    { value: 'openai/gpt-5.4', label: 'OpenAI: GPT-5.4' },
+    { value: 'openai/gpt-5.4-mini', label: 'OpenAI: GPT-5.4 Mini' },
+    { value: 'openai/o3', label: 'OpenAI: o3' },
+    { value: 'openai/gpt-5', label: 'OpenAI: GPT-5' },
+    { value: 'anthropic/claude-opus-4-6', label: 'Anthropic: Claude Opus 4.6' },
+    { value: 'anthropic/claude-sonnet-4-6', label: 'Anthropic: Claude Sonnet 4.6' },
+    { value: 'google/gemini-3.1-pro-preview', label: 'Google: Gemini 3.1 Pro' },
+    { value: 'google/gemini-2.5-pro', label: 'Google: Gemini 2.5 Pro' },
+    { value: 'mistralai/mistral-small-2603', label: 'Mistral: Mistral Small 4' },
   ],
   azure: [
-    { value: 'gpt-4o', label: 'GPT-4o' },
-    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+    { value: 'gpt-5.4', label: 'GPT-5.4' },
+    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+    { value: 'o3', label: 'o3' },
+    { value: 'o3-mini', label: 'o3 Mini' },
+    { value: 'o4-mini', label: 'o4 Mini' },
+    { value: 'gpt-5', label: 'GPT-5' },
+    { value: 'gpt-4.1', label: 'GPT-4.1' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
   ],
 };
 

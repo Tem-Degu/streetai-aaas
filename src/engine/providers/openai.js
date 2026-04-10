@@ -13,17 +13,21 @@ export default class OpenAIProvider extends BaseProvider {
   get name() { return 'openai'; }
 
   listModels() {
-    return ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini'];
+    return ['gpt-5.4', 'gpt-5.4-mini', 'o3', 'o3-mini', 'o4-mini', 'gpt-5', 'gpt-4.1', 'gpt-4.1-mini'];
   }
 
-  async chat(messages, options = {}) {
+  async _chat(messages, options = {}) {
+    const isReasoning = /^(o[0-9])/.test(this.model);
+
     const body = {
       model: this.model,
-      messages: messages.map(formatMessage),
-      max_tokens: options.maxTokens || 4096,
+      messages: messages.map(msg => formatMessage(msg, isReasoning)),
+      max_completion_tokens: options.maxTokens || 16384,
     };
 
-    if (options.temperature !== undefined) body.temperature = options.temperature;
+    if (options.temperature !== undefined && !isReasoning) {
+      body.temperature = options.temperature;
+    }
 
     if (options.tools?.length > 0) {
       body.tools = translateToolsForProvider('openai', options.tools);
@@ -50,7 +54,7 @@ export default class OpenAIProvider extends BaseProvider {
   }
 }
 
-function formatMessage(msg) {
+function formatMessage(msg, isReasoning = false) {
   if (msg.role === 'tool') {
     return {
       role: 'tool',
@@ -74,7 +78,8 @@ function formatMessage(msg) {
     };
   }
 
-  return { role: msg.role, content: msg.content };
+  const role = (msg.role === 'system' && isReasoning) ? 'developer' : msg.role;
+  return { role, content: msg.content };
 }
 
 function parseResponse(data) {

@@ -5,7 +5,6 @@ const TYPES = [
   { value: 'api', label: 'API', desc: 'External REST API' },
   { value: 'agent', label: 'Agent', desc: 'Another AaaS agent' },
   { value: 'human', label: 'Human', desc: 'Human escalation contact' },
-  { value: 'tool', label: 'Tool', desc: 'Local script or binary' },
 ];
 
 const AUTH_TYPES = [
@@ -17,7 +16,7 @@ const AUTH_TYPES = [
 ];
 
 const EMPTY_EXT = {
-  name: '', type: 'api', description: '', endpoint: '', address: '', command: '',
+  name: '', type: 'api', description: '', endpoint: '', address: '',
   capabilities: '', cost_model: 'free', cost: '', notes: '',
   authType: 'none', authKey: '', authHeader: '',
   headers: '',
@@ -30,7 +29,6 @@ function formFromExt(ext) {
     description: ext.description || '',
     endpoint: ext.endpoint || '',
     address: ext.address || '',
-    command: ext.command || '',
     capabilities: (ext.capabilities || []).join(', '),
     cost_model: ext.cost_model || ext.cost_per_call ? 'per_request' : 'free',
     cost: ext.cost || ext.cost_per_call || '',
@@ -57,27 +55,26 @@ function extFromForm(form) {
   if ((form.type === 'agent' || form.type === 'human') && form.address.trim()) {
     ext.address = form.address.trim();
   }
-  if (form.type === 'tool' && form.command.trim()) {
-    ext.command = form.command.trim();
+
+  // Capabilities (API only)
+  if (form.type === 'api') {
+    const caps = form.capabilities.split(',').map(s => s.trim()).filter(Boolean);
+    if (caps.length > 0) ext.capabilities = caps;
   }
 
-  // Capabilities
-  const caps = form.capabilities.split(',').map(s => s.trim()).filter(Boolean);
-  if (caps.length > 0) ext.capabilities = caps;
-
-  // Cost
-  if (form.cost_model && form.cost_model !== 'free') {
+  // Cost (API only)
+  if (form.type === 'api' && form.cost_model && form.cost_model !== 'free') {
     ext.cost_model = form.cost_model;
     if (form.cost.trim()) ext.cost = form.cost.trim();
-  } else {
+  } else if (form.type === 'api') {
     ext.cost_model = 'free';
   }
 
   // Notes
   if (form.notes.trim()) ext.notes = form.notes.trim();
 
-  // Auth
-  if (form.authType !== 'none' && form.authKey.trim()) {
+  // Auth (API and Agent)
+  if (form.type !== 'human' && form.authType !== 'none' && form.authKey.trim()) {
     ext.auth = {
       type: form.authType,
       apiKey: form.authKey.trim(),
@@ -87,8 +84,8 @@ function extFromForm(form) {
     }
   }
 
-  // Custom headers
-  if (form.headers.trim()) {
+  // Custom headers (API only)
+  if (form.type === 'api' && form.headers.trim()) {
     const headers = {};
     for (const line of form.headers.trim().split('\n')) {
       const idx = line.indexOf(':');
@@ -102,10 +99,56 @@ function extFromForm(form) {
   return ext;
 }
 
-// Type-specific icons
+// Type-specific icons (SVG)
 function TypeIcon({ type }) {
-  const icons = { api: '⚡', agent: '🤖', human: '👤', tool: '🔧' };
-  return <span style={{ fontSize: 18, marginRight: 6 }}>{icons[type] || '📦'}</span>;
+  const colors = { api: '#6366f1', agent: '#8b5cf6', human: '#14b8a6' };
+  const color = colors[type] || '#6b7280';
+  const common = {
+    width: 22,
+    height: 22,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: color,
+    strokeWidth: 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    style: { marginRight: 8, flexShrink: 0 },
+  };
+  if (type === 'api') {
+    // Lightning bolt / plug
+    return (
+      <svg {...common}>
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+      </svg>
+    );
+  }
+  if (type === 'agent') {
+    // Robot
+    return (
+      <svg {...common}>
+        <rect x="4" y="7" width="16" height="12" rx="2" />
+        <path d="M12 7V3" />
+        <circle cx="12" cy="3" r="1" />
+        <circle cx="9" cy="12" r="1" fill={color} />
+        <circle cx="15" cy="12" r="1" fill={color} />
+        <path d="M9 16h6" />
+      </svg>
+    );
+  }
+  if (type === 'human') {
+    // Person
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+    </svg>
+  );
 }
 
 export default function Extensions() {
@@ -125,9 +168,8 @@ export default function Extensions() {
   async function handleSave() {
     if (!form.name.trim()) return alert('Name is required');
     if (form.type === 'api' && !form.endpoint.trim()) return alert('Endpoint URL is required for API extensions');
-    if (form.type === 'agent' && !form.address.trim()) return alert('Agent address is required');
-    if (form.type === 'human' && !form.address.trim()) return alert('Contact address is required');
-    if (form.type === 'tool' && !form.command.trim()) return alert('Command is required for tool extensions');
+    if (form.type === 'agent' && !form.address.trim()) return alert('Agent chat URL is required');
+    if (form.type === 'human' && !form.address.trim()) return alert('Contact info is required');
 
     setSaving(true);
     const ext = extFromForm(form);
@@ -171,8 +213,30 @@ export default function Extensions() {
 
   async function handleTest(index) {
     const ext = data[index];
+    if (ext.type === 'agent') {
+      setTesting(index);
+      setTestResult(null);
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        const headers = { 'Content-Type': 'application/json' };
+        if (ext.auth?.apiKey) headers['Authorization'] = `Bearer ${ext.auth.apiKey}`;
+        const res = await fetch(ext.address, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ message: 'ping' }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        setTestResult({ index, ok: res.ok, msg: `${res.status} ${res.statusText}` });
+      } catch (err) {
+        setTestResult({ index, ok: false, msg: err.name === 'AbortError' ? 'Timeout (15s)' : err.message });
+      }
+      setTesting(null);
+      return;
+    }
     if (ext.type !== 'api' || !ext.endpoint) {
-      setTestResult({ index, ok: false, msg: 'Only API extensions can be tested' });
+      setTestResult({ index, ok: false, msg: 'Cannot test this extension type' });
       return;
     }
     setTesting(index);
@@ -199,7 +263,7 @@ export default function Extensions() {
   if (loading) return <div className="loading">Loading extensions</div>;
   if (error) return <div className="empty">Error: {error}</div>;
 
-  const grouped = { api: [], agent: [], human: [], tool: [] };
+  const grouped = { api: [], agent: [], human: [] };
   (data || []).forEach((ext, i) => {
     const g = grouped[ext.type] || grouped.api;
     g.push({ ...ext, _index: i });
@@ -209,7 +273,7 @@ export default function Extensions() {
     <div>
       <div className="page-header">
         <h1 className="page-title">Extensions</h1>
-        <p className="page-desc">External APIs, agents, tools, and contacts your agent can use</p>
+        <p className="page-desc">External APIs, agents, and contacts your agent can use</p>
       </div>
 
       {!showForm && (
@@ -226,7 +290,8 @@ export default function Extensions() {
           <div className="form-grid">
             <div className="form-field">
               <label className="form-label">Name *</label>
-              <input className="input" value={form.name} onChange={e => setField('name', e.target.value)} placeholder="e.g. Stripe, Delivery API, Weather" />
+              <input className="input" value={form.name} onChange={e => setField('name', e.target.value)}
+                placeholder={form.type === 'api' ? 'e.g. Stripe, Weather API' : form.type === 'agent' ? 'e.g. Delivery Agent, Support Bot' : 'e.g. John (Manager), Support Team'} />
             </div>
             <div className="form-field">
               <label className="form-label">Type *</label>
@@ -240,11 +305,14 @@ export default function Extensions() {
           <div className="form-grid" style={{ marginTop: 8 }}>
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
               <label className="form-label">Description</label>
-              <input className="input" value={form.description} onChange={e => setField('description', e.target.value)} placeholder="What does this extension do? The agent reads this to decide when to use it." />
+              <input className="input" value={form.description} onChange={e => setField('description', e.target.value)}
+                placeholder={form.type === 'api' ? 'What does this API do? The agent reads this to decide when to use it.'
+                  : form.type === 'agent' ? 'What does this agent do? When should your agent contact it?'
+                  : 'Who is this person and when should the agent escalate to them?'} />
             </div>
           </div>
 
-          {/* Type-specific fields */}
+          {/* ─── API fields ─── */}
           {form.type === 'api' && (
             <>
               <div className="form-grid" style={{ marginTop: 8 }}>
@@ -317,66 +385,80 @@ export default function Extensions() {
                   <span className="form-hint">One per line, format: Header-Name: value. Added to every request.</span>
                 </div>
               </div>
+
+              {/* Capabilities */}
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label">Capabilities</label>
+                  <input className="input" value={form.capabilities} onChange={e => setField('capabilities', e.target.value)} placeholder="e.g. create_checkout, verify_payment, refund" />
+                  <span className="form-hint">Comma-separated list. Helps the agent know what this extension can do.</span>
+                </div>
+              </div>
+
+              {/* Cost */}
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                <div className="form-field">
+                  <label className="form-label">Cost Model</label>
+                  <select className="input" value={form.cost_model} onChange={e => setField('cost_model', e.target.value)}>
+                    <option value="free">Free</option>
+                    <option value="per_request">Per Request</option>
+                    <option value="subscription">Subscription</option>
+                  </select>
+                </div>
+                {form.cost_model !== 'free' && (
+                  <div className="form-field">
+                    <label className="form-label">Cost</label>
+                    <input className="input" value={form.cost} onChange={e => setField('cost', e.target.value)} placeholder="e.g. $0.01 per call" />
+                  </div>
+                )}
+              </div>
             </>
           )}
 
-          {(form.type === 'agent') && (
-            <div className="form-grid" style={{ marginTop: 8 }}>
-              <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <label className="form-label">Agent Address *</label>
-                <input className="input" value={form.address} onChange={e => setField('address', e.target.value)} placeholder="agent_username or agent@platform" />
-                <span className="form-hint">The agent's username or address on the platform. Your agent will message them directly.</span>
+          {/* ─── Agent fields ─── */}
+          {form.type === 'agent' && (
+            <>
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label">Agent Chat URL *</label>
+                  <input className="input" value={form.address} onChange={e => setField('address', e.target.value)} placeholder="http://localhost:3001/api/chat or https://agent.example.com/api/chat" />
+                  <span className="form-hint">The other agent's HTTP chat endpoint. Your agent sends a message and gets a reply.</span>
+                </div>
               </div>
-            </div>
+
+              {/* Optional auth for agent */}
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                <div className="form-field">
+                  <label className="form-label">Authentication</label>
+                  <select className="input" value={form.authType} onChange={e => setField('authType', e.target.value)}>
+                    <option value="none">None</option>
+                    <option value="bearer">Bearer Token</option>
+                  </select>
+                </div>
+                {form.authType !== 'none' && (
+                  <div className="form-field">
+                    <label className="form-label">API Key</label>
+                    <input className="input" type="password" value={form.authKey} onChange={e => setField('authKey', e.target.value)} placeholder="API key or token" />
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
-          {(form.type === 'human') && (
-            <div className="form-grid" style={{ marginTop: 8 }}>
-              <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <label className="form-label">Contact Address *</label>
-                <input className="input" value={form.address} onChange={e => setField('address', e.target.value)} placeholder="username, email, or phone" />
-                <span className="form-hint">How the agent reaches this person. Used for escalation on complex requests.</span>
+          {/* ─── Human fields ─── */}
+          {form.type === 'human' && (
+            <>
+              <div className="form-grid" style={{ marginTop: 8 }}>
+                <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label">Contact Info *</label>
+                  <input className="input" value={form.address} onChange={e => setField('address', e.target.value)} placeholder="email, phone, or username" />
+                  <span className="form-hint">How the agent tells users to reach this person when escalating.</span>
+                </div>
               </div>
-            </div>
+            </>
           )}
 
-          {(form.type === 'tool') && (
-            <div className="form-grid" style={{ marginTop: 8 }}>
-              <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-                <label className="form-label">Command *</label>
-                <input className="input" value={form.command} onChange={e => setField('command', e.target.value)} placeholder="python3 extensions/tools/price_calc.py" style={{ fontFamily: 'monospace', fontSize: 12 }} />
-                <span className="form-hint">Shell command to run. The agent passes input via stdin and reads stdout.</span>
-              </div>
-            </div>
-          )}
-
-          {/* Capabilities + Cost */}
-          <div className="form-grid" style={{ marginTop: 8 }}>
-            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-              <label className="form-label">Capabilities</label>
-              <input className="input" value={form.capabilities} onChange={e => setField('capabilities', e.target.value)} placeholder="e.g. create_checkout, verify_payment, refund" />
-              <span className="form-hint">Comma-separated list. Helps the agent know what this extension can do.</span>
-            </div>
-          </div>
-
-          <div className="form-grid" style={{ marginTop: 8 }}>
-            <div className="form-field">
-              <label className="form-label">Cost Model</label>
-              <select className="input" value={form.cost_model} onChange={e => setField('cost_model', e.target.value)}>
-                <option value="free">Free</option>
-                <option value="per_request">Per Request</option>
-                <option value="subscription">Subscription</option>
-              </select>
-            </div>
-            {form.cost_model !== 'free' && (
-              <div className="form-field">
-                <label className="form-label">Cost</label>
-                <input className="input" value={form.cost} onChange={e => setField('cost', e.target.value)} placeholder="e.g. $0.01 per call, 5 TK per search" />
-              </div>
-            )}
-          </div>
-
-          {/* Notes */}
+          {/* Notes — shown for all types */}
           <div className="form-grid" style={{ marginTop: 8 }}>
             <div className="form-field" style={{ gridColumn: '1 / -1' }}>
               <label className="form-label">Notes</label>
@@ -384,11 +466,10 @@ export default function Extensions() {
                 className="input"
                 value={form.notes}
                 onChange={e => setField('notes', e.target.value)}
-                placeholder="Rate limits, restrictions, availability hours, special instructions..."
-                rows={2}
+                placeholder="Additional info the agent should know when using this extension, such as how to call the API, rate limits, or special instructions."
+                rows={4}
                 style={{ resize: 'vertical' }}
               />
-              <span className="form-hint">Additional info the agent should know when using this extension.</span>
             </div>
           </div>
 
@@ -403,7 +484,7 @@ export default function Extensions() {
         <div className="empty">
           <p>No extensions registered yet.</p>
           <p style={{ marginTop: 8, fontSize: 13, color: 'var(--text-secondary)' }}>
-            Extensions let your agent call external APIs, communicate with other agents, escalate to humans, or run local tools.
+            Extensions let your agent call external APIs, communicate with other agents, or escalate to humans.
           </p>
         </div>
       ) : (
@@ -431,10 +512,9 @@ export default function Extensions() {
                           <div className="ext-detail" style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 6, opacity: 0.7 }}>{ext.endpoint}</div>
                         )}
                         {ext.address && (
-                          <div className="ext-detail" style={{ marginTop: 4 }}>📍 {ext.address}</div>
-                        )}
-                        {ext.command && (
-                          <div className="ext-detail" style={{ fontFamily: 'monospace', fontSize: 12, marginTop: 4 }}>$ {ext.command}</div>
+                          <div className="ext-detail" style={{ marginTop: 4, fontFamily: ext.type === 'agent' ? 'monospace' : 'inherit', fontSize: ext.type === 'agent' ? 12 : 'inherit', opacity: ext.type === 'agent' ? 0.7 : 1 }}>
+                            {ext.type === 'human' ? '📧 ' : ''}{ext.address}
+                          </div>
                         )}
 
                         <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -443,11 +523,11 @@ export default function Extensions() {
                               💰 <span style={{ color: 'var(--yellow)', fontWeight: 500 }}>{ext.cost}</span>
                             </span>
                           )}
-                          {ext.cost_model === 'free' && (
+                          {ext.type === 'api' && ext.cost_model === 'free' && (
                             <span className="ext-detail" style={{ margin: 0, color: 'var(--green)' }}>Free</span>
                           )}
                           {ext.notes && (
-                            <span className="ext-detail" style={{ margin: 0, fontStyle: 'italic' }}>📝 {ext.notes}</span>
+                            <span className="ext-detail" style={{ margin: 0, fontStyle: 'italic' }}>📝 {ext.notes.length > 80 ? ext.notes.slice(0, 80) + '...' : ext.notes}</span>
                           )}
                         </div>
 
@@ -464,8 +544,8 @@ export default function Extensions() {
                         )}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexShrink: 0 }}>
-                        <span className={`ext-type ${ext.type || 'tool'}`}>{ext.type || 'tool'}</span>
-                        {ext.type === 'api' && ext.endpoint && (
+                        <span className={`ext-type ${ext.type || 'api'}`}>{ext.type || 'api'}</span>
+                        {(ext.type === 'api' && ext.endpoint || ext.type === 'agent' && ext.address) && (
                           <button
                             className="btn-inline"
                             onClick={() => handleTest(ext._index)}

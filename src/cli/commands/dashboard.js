@@ -1,19 +1,39 @@
+import path from 'path';
 import chalk from 'chalk';
 import { findWorkspace } from '../../utils/workspace.js';
+import { getValidWorkspaces } from '../../utils/registry.js';
 import { startServer } from '../../server/index.js';
 
-export async function dashboardCommand(opts) {
-  const ws = findWorkspace();
+export async function dashboardCommand(agentName, opts) {
   const port = parseInt(opts.port) || 3400;
+  let hubDir;
+  let openPath = '/';
 
-  if (ws) {
-    console.log(chalk.cyan(`\n  Starting AaaS Dashboard...`));
-    console.log(chalk.gray(`  Workspace: ${ws}\n`));
-    await startServer(ws, port);
+  if (agentName) {
+    // Look up agent by name or directory name in the global registry
+    const workspaces = getValidWorkspaces();
+    const match = workspaces.find(w =>
+      path.basename(w.path) === agentName || w.name.toLowerCase() === agentName.toLowerCase()
+    );
+    if (!match) {
+      console.error(chalk.red(`\n  Error: Agent "${agentName}" not found in registry.\n`));
+      console.log(chalk.gray('  Registered agents:'));
+      for (const w of workspaces) {
+        console.log(chalk.gray(`    - ${w.name} (${w.path})`));
+      }
+      if (workspaces.length === 0) console.log(chalk.gray('    (none)'));
+      console.log('');
+      process.exit(1);
+    }
+    hubDir = path.dirname(match.path);
+    openPath = `/ws/${path.basename(match.path)}`;
   } else {
-    const cwd = process.cwd();
-    console.log(chalk.cyan(`\n  Starting AaaS Hub Dashboard...`));
-    console.log(chalk.gray(`  Scanning: ${cwd}\n`));
-    await startServer(null, port, cwd);
+    const ws = findWorkspace();
+    hubDir = ws ? path.dirname(ws) : process.cwd();
+    openPath = ws ? `/ws/${path.basename(ws)}` : '/';
   }
+
+  console.log(chalk.cyan(`\n  Starting AaaS Hub Dashboard...`));
+  console.log(chalk.gray(`  Hub: ${hubDir}\n`));
+  await startServer(null, port, hubDir, openPath);
 }

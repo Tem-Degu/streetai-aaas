@@ -14,7 +14,33 @@ export function dataCommand(action, arg, extra) {
     case 'create': return dataCreate(paths, arg);
     case 'add': return dataAdd(paths, arg);
     case 'remove': return dataRemove(paths, arg, extra);
+    case 'import': return dataImport(paths, arg, extra);
   }
+}
+
+function dataImport(paths, src, renameTo) {
+  if (!src) {
+    console.error(chalk.red('\n  Usage: aaas data import <source-path> [rename-to]\n'));
+    return;
+  }
+  if (!fs.existsSync(src)) {
+    console.error(chalk.red(`\n  Source file not found: ${src}\n`));
+    return;
+  }
+  const stat = fs.statSync(src);
+  if (!stat.isFile()) {
+    console.error(chalk.red(`\n  Not a file: ${src}\n`));
+    return;
+  }
+  fs.mkdirSync(paths.data, { recursive: true });
+  const destName = renameTo || path.basename(src);
+  const dest = path.join(paths.data, destName);
+  if (fs.existsSync(dest)) {
+    console.error(chalk.red(`\n  Destination already exists: data/${destName}\n  Pass a different name as the second argument to rename.\n`));
+    return;
+  }
+  fs.copyFileSync(src, dest);
+  console.log(chalk.green(`\n  Imported data/${destName}`) + chalk.gray(`  (${formatBytes(stat.size)})\n`));
 }
 
 function dataList(paths) {

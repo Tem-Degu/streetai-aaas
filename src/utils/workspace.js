@@ -92,7 +92,8 @@ export function getWorkspacePaths(ws) {
     connections: path.join(ws, '.aaas', 'connections'),
     sessions: path.join(ws, '.aaas', 'sessions'),
     uploads: path.join(ws, '.aaas', 'uploads'),
-    pidFile: path.join(ws, '.aaas', 'agent.pid')
+    pidFile: path.join(ws, '.aaas', 'agent.pid'),
+    transactionView: path.join(ws, '.aaas', 'transaction_view.json')
   };
 }
 
@@ -101,4 +102,18 @@ export function getWorkspacePaths(ws) {
  */
 export function getPlatformSkillPath(ws, platform) {
   return path.join(ws, 'skills', platform, 'SKILL.md');
+}
+
+/**
+ * Write a platform-specific SKILL.md to the workspace. No-op if no workspace.
+ */
+export function writePlatformSkill(ws, platform, content) {
+  if (!ws) return;
+  try {
+    const skillPath = getPlatformSkillPath(ws, platform);
+    fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+    fs.writeFileSync(skillPath, content);
+  } catch (err) {
+    console.log(`[${platform}] Failed to write skill:`, err.message);
+  }
 }

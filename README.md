@@ -41,6 +41,19 @@ Explore  ->  Propose Service  ->  Create Transaction  ->  Deliver  ->  Complete
 4. **Deliver Service**: Do the work, send the result
 5. **Complete Transaction**: Confirm satisfaction, release payment
 
+## AaaS in Action
+
+Maya lives in New York and knows the city's dating scene inside out — which neighborhoods click, which restaurants spark a real conversation, how to read between the lines of a profile. She doesn't know how to code, but she wants to turn that knowledge into a service.
+
+1. She installs AaaS and creates an agent workspace
+2. She writes the matchmaking skill: what the agent does, New York dating knowledge, pricing, boundaries
+3. She seeds the database with initial profiles and venue data
+4. She connects the agent to her preferred platforms
+
+The agent is now live. When James messages asking for help finding a date, the agent explores his preferences, proposes a service tier, collects payment, delivers curated matches with compatibility notes, and logs the completed transaction. Maya earns money while the agent does the work.
+
+Every interaction makes the service better: more profiles in the database means better matches, which means more satisfied users, which means more word of mouth.
+
 ## Quick Start
 
 ### Install
@@ -53,24 +66,46 @@ Requires Node.js 18 or later.
 
 ### Create an agent
 
+**Syntax:**
+
+```
+aaas init <directory> [name] [description] [--type service|social]
+```
+
+- `<directory>` — folder name where the workspace will be created
+- `[name]` — display name shown to users (optional, can be edited later)
+- `[description]` — one-line summary (optional, can be edited later)
+- `--type` — `service` (default, follows the transaction protocol) or `social` (creates content and engages in conversations)
+
+**Examples:**
+
 ```bash
+# Service agent — replace "my-agent" with the folder name you want
 aaas init my-agent "Lyon Travel Guide" "Helps tourists explore Lyon, France"
-cd my-agent
+
+# Social agent
+aaas init my-bot "Aria" --type social
 ```
 
 This creates a workspace with the full AaaS structure: skill template, soul file, data directory, extensions registry, and configuration.
 
-### Configure your LLM
+### Open the dashboard
 
 ```bash
-aaas config --provider anthropic --model claude-sonnet-4-20250514 --key sk-ant-...
+aaas dashboard my-agent
+```
+
+The dashboard opens with a Setup Guide that walks you through configuring your LLM provider, adding data, writing your service definition, and deploying. You can also configure everything from the CLI:
+
+```bash
+# Configure LLM provider
+aaas config --provider anthropic --model claude-sonnet-4-6 --key sk-ant-...
+
+# Edit the skill file
+aaas skill edit
 ```
 
 Supported providers: Anthropic, OpenAI, Google, Ollama, OpenRouter, Azure.
-
-### Write your skill
-
-Open `.aaas/skills/aaas/SKILL.md` and fill in what your agent does, what services it offers, its domain knowledge, pricing, and boundaries.
 
 ### Connect to a platform
 
@@ -85,13 +120,19 @@ aaas connect telegram --token YOUR_BOT_TOKEN
 aaas connect discord --token YOUR_BOT_TOKEN
 
 # Slack
-aaas connect slack --token YOUR_BOT_TOKEN
+aaas connect slack --bot-token xoxb-... --app-token xapp-...
 
-# WhatsApp (via WhatsApp Business API)
-aaas connect whatsapp --token YOUR_ACCESS_TOKEN
+# WhatsApp (via WhatsApp Business Cloud API)
+aaas connect whatsapp --access-token YOUR_ACCESS_TOKEN --phone-number-id YOUR_PHONE_NUMBER_ID --verify-token YOUR_VERIFY_TOKEN
 
 # Truuze (social platform with native agent accounts)
 aaas connect truuze --token YOUR_PROVISIONING_TOKEN
+
+# OpenClaw (run inside an OpenClaw workspace)
+aaas connect openclaw --id YOUR_AGENT_ID
+
+# Public Relay (no public server required — also routes WhatsApp + chat widget)
+aaas connect relay
 ```
 
 ### Start serving
@@ -102,22 +143,35 @@ aaas run
 
 Your agent is now live on all connected platforms. Users message it, and it follows the AaaS protocol to serve them.
 
+### Check everything is working
+
+```bash
+aaas doctor
+```
+
+Verifies node version, credentials, LLM reachability, connections, workspace structure, and more.
+
 ### Open the dashboard
 
 ```bash
-aaas dashboard
+aaas dashboard my-agent
 ```
 
-A web dashboard opens in your browser where you can monitor transactions, manage data, edit extensions, view memory, and test conversations with your agent.
+Opens the web dashboard for the specified agent. You can also run `aaas dashboard` from inside a workspace directory, or with no arguments to open the hub dashboard showing all your agents.
 
 ## Chat Widget
 
-The HTTP connector includes an embeddable chat widget for websites. Add one script tag:
+The fastest way to put your agent on any website is the public Relay. Connect the relay first to get your unique slug, then drop one script tag into your HTML before the closing `</body>`:
+
+```bash
+# Register your agent with streetai.org and get a public slug
+aaas connect relay
+```
 
 ```html
 <script
-  src="http://localhost:3300/widget.js"
-  data-agent="Lyon Travel Guide"
+  src="https://streetai.org/a/YOUR_SLUG/widget.js"
+  data-agent="https://streetai.org/a/YOUR_SLUG"
   data-title="Ask me anything about Lyon"
   data-color="#2563eb"
   data-position="right"
@@ -125,27 +179,123 @@ The HTTP connector includes an embeddable chat widget for websites. Add one scri
 ></script>
 ```
 
-The widget renders a floating chat button on your site. No build step, no dependencies.
+Visitors chat through `streetai.org`, which forwards messages over WebSocket to your locally-running agent — no public IP, no port forwarding, no build step. The widget renders a floating chat button, supports file attachments (images, audio, video, PDFs), and persists conversation history per visitor.
+
+**Widget options:**
+
+| Attribute | Description |
+|-----------|-------------|
+| `data-agent` | Your agent's public URL — required |
+| `data-title` | Header text shown at the top of the chat |
+| `data-color` | Theme color (default `#2563eb`) |
+| `data-position` | `"right"` or `"left"` (default `"right"`) |
+| `data-greeting` | Welcome message shown before the first reply |
 
 ## CLI Commands
 
+### Workspace
+
 | Command | Description |
 |---------|-------------|
-| `aaas init <dir>` | Create a new agent workspace |
-| `aaas status` | Show workspace overview |
-| `aaas skill` | View and validate the agent skill |
-| `aaas config` | Configure LLM provider and model |
-| `aaas data list/view/add/remove` | Manage the service database |
-| `aaas transactions list/view/stats` | View and filter transactions |
-| `aaas extensions list/add/remove/test` | Manage extensions |
-| `aaas logs` | View recent memory and activity |
-| `aaas chat` | Chat with your agent in the terminal |
-| `aaas connect <platform>` | Connect to a platform |
-| `aaas connections` | List active connections |
-| `aaas disconnect <platform>` | Remove a connection |
+| `aaas init <dir> [name] [desc]` | Create a new workspace. Use `--type social` for a social agent (default: service) |
+| `aaas status` | Show workspace overview — provider, connections, data, transactions |
+| `aaas doctor` | Check workspace health — node version, credentials, connections, structure, LLM reachability |
+| `aaas chat` | Chat with your agent in the terminal. Drag files in to attach them. Shows recent session history on startup |
+| `aaas dashboard [agent-name]` | Open the web dashboard for an agent (or hub if no name given) |
+
+### Content
+
+| Command | Description |
+|---------|-------------|
+| `aaas skill view` | View skill overview. Add `-v` to validate required sections |
+| `aaas skill edit [platform]` | Open a skill file in `$EDITOR` (default: aaas) |
+| `aaas skill new [platform]` | Create a new skill file and open in `$EDITOR` |
+| `aaas soul` | Edit `SOUL.md` in `$EDITOR`. Use `--show` to print instead |
+| `aaas memory` | Edit `memory/facts.json` in `$EDITOR`. Use `--show` to print instead |
+
+### Configuration
+
+| Command | Description |
+|---------|-------------|
+| `aaas config --provider <name> --key <key>` | Set LLM provider and API key |
+| `aaas config --model <model>` | Set the model |
+| `aaas config --show` | Show current configuration |
+| `aaas config --remove <provider>` | Remove provider credentials |
+
+### Data
+
+| Command | Description |
+|---------|-------------|
+| `aaas data list` | List all data files with sizes and record counts |
+| `aaas data view <file>` | View file contents (auto-formats JSON arrays) |
+| `aaas data stats` | Show database statistics — files, sizes, records, last modified |
+| `aaas data create <filename>` | Create a new empty JSON data file |
+| `aaas data add <file>` | Add a JSON record from stdin: `echo '{"key":"val"}' \| aaas data add file.json` |
+| `aaas data remove <file> <index>` | Remove a record by array index |
+| `aaas data import <path> [rename]` | Copy an external file into `data/` (optionally rename it) |
+
+### Transactions
+
+| Command | Description |
+|---------|-------------|
+| `aaas txn list` | List active transactions. Add `--all` for archived, `--status <s>` to filter |
+| `aaas txn view <id>` | View a transaction's full details |
+| `aaas txn stats` | Revenue, success rate, average rating, breakdown by service |
+| `aaas txn deliver <id>` | Mark a transaction as delivered (from in_progress/accepted) |
+| `aaas txn approve <id>` | Approve a delivered transaction — completes and archives it |
+| `aaas txn dispute <id> [reason]` | Dispute a delivered transaction |
+| `aaas txn cancel <id>` | Cancel a transaction (exploring/proposed/accepted/in_progress) |
+| `aaas txn complete <id>` | Force-complete and archive a transaction |
+
+### Extensions
+
+| Command | Description |
+|---------|-------------|
+| `aaas ext list` | List registered extensions |
+| `aaas ext add --name <n> --type <t>` | Add an extension. Types: api, agent, human, tool. Options: `--endpoint`, `--address`, `--description` |
+| `aaas ext test <name>` | Test an extension's connectivity |
+| `aaas ext remove <name>` | Remove an extension |
+| `aaas ext edit` | Open `extensions/registry.json` in `$EDITOR` |
+
+### Platform Connections
+
+| Command | Description |
+|---------|-------------|
+| `aaas connect http --port 3300` | Connect via HTTP API (includes embeddable chat widget) |
+| `aaas connect telegram --token <t>` | Connect to Telegram |
+| `aaas connect discord --token <t>` | Connect to Discord |
+| `aaas connect slack --bot-token <t>` | Connect to Slack |
+| `aaas connect whatsapp --access-token <t> --phone-number-id <id> --verify-token <s>` | Connect to WhatsApp Business Cloud API |
+| `aaas connect truuze --token <t>` | Connect to Truuze (social platform with native agent accounts) |
+| `aaas connect openclaw --id <agentId>` | Connect to an OpenClaw workspace |
+| `aaas connect relay` | Connect to streetai.org relay (no public server needed for WhatsApp/HTTP) |
+| `aaas connections` | List all connected platforms |
+| `aaas connection-edit <platform>` | Edit a connection config in `$EDITOR` |
+| `aaas disconnect <platform>` | Remove a platform connection |
+
+### Agent Lifecycle
+
+| Command | Description |
+|---------|-------------|
 | `aaas run` | Start the agent on all connected platforms |
+| `aaas run --daemon` | Start in the background |
 | `aaas stop` | Stop a running agent |
-| `aaas dashboard` | Open the web dashboard |
+| `aaas logs [--days 5]` | View recent agent activity and memory changes |
+
+### Hub (Multi-Agent Management)
+
+| Command | Description |
+|---------|-------------|
+| `aaas hub init [dir]` | Mark a directory as a hub root |
+| `aaas hub list` | List all workspaces — name, provider, status, active transactions, last activity |
+| `aaas hub new <name> [desc]` | Create a workspace under the hub. Use `--type social` for social agents |
+| `aaas hub config` | Edit shared hub config in `$EDITOR`. Use `--show` to print |
+| `aaas hub creds list` | List shared LLM credentials (masked) |
+| `aaas hub creds set <provider> --key <k>` | Save a shared credential. Options: `--endpoint`, `--base-url` |
+| `aaas hub creds remove <provider>` | Delete a shared credential |
+| `aaas hub run <name>` | Start a workspace agent in the background |
+| `aaas hub stop <name>` | Stop a running workspace agent |
+| `aaas hub remove <name> --force` | Permanently delete a workspace |
 
 ## Extensions
 
@@ -210,41 +360,37 @@ aaas/
 
 ## Platform Support
 
-AaaS ships with connectors for six platforms plus a general-purpose HTTP API:
+AaaS ships with connectors for six platforms, a general-purpose HTTP API, and a relay for serverless deployments:
 
 | Platform | Connector | Notes |
 |----------|-----------|-------|
-| HTTP API | `aaas connect http` | REST API + embeddable chat widget |
-| Telegram | `aaas connect telegram` | Bot API integration |
-| Discord | `aaas connect discord` | Bot integration |
-| Slack | `aaas connect slack` | App integration |
-| WhatsApp | `aaas connect whatsapp` | Business API integration |
+| HTTP API | `aaas connect http` | REST API + embeddable chat widget, file uploads |
+| Telegram | `aaas connect telegram` | Bot API integration, receives photos/audio/video/documents |
+| Discord | `aaas connect discord` | Bot integration, receives attachments |
+| Slack | `aaas connect slack` | App integration, receives shared files |
+| WhatsApp | `aaas connect whatsapp` | Business API integration, receives media messages |
 | Truuze | `aaas connect truuze` | Social platform with native agent accounts and in-app currency |
+| OpenClaw | `aaas connect openclaw` | Run your agent inside an OpenClaw workspace |
+| Relay | `aaas connect relay` | streetai.org proxy — no public server needed for WhatsApp or HTTP |
 
 You can connect to multiple platforms at the same time. Run `aaas run` and the agent serves on all of them.
 
-## Example: AaaS in Action
+### Relay (streetai.org)
 
-Sarah lives in Dubai and knows the dating scene inside out. She doesn't know how to code, but she wants to turn that knowledge into a service.
+If you don't have a public server, use the relay. It proxies WhatsApp webhooks and chat widget traffic through streetai.org to your locally-running agent via WebSocket.
 
-1. She installs AaaS and creates an agent workspace
-2. She writes the matchmaking skill: what the agent does, Dubai dating knowledge, pricing, boundaries
-3. She seeds the database with initial profiles and venue data
-4. She connects the agent to her preferred platforms
+```bash
+# Connect WhatsApp credentials (stored locally, never sent to relay)
+aaas connect whatsapp --access-token TOKEN --phone-number-id ID --verify-token SECRET
 
-The agent is now live. When Ahmed messages asking for help finding a date, the agent explores his preferences, proposes a service tier, collects payment, delivers curated matches with compatibility scores, and logs the completed transaction. Sarah earns money while the agent does the work.
+# Register with the relay
+aaas connect relay
 
-Every interaction makes the service better: more profiles in the database means better matches, which means more satisfied users, which means more word of mouth.
+# Start — agent connects outbound to streetai.org, no public IP needed
+aaas run
+```
 
-## Philosophy
-
-**The skill is the software.** A traditional service app requires developers, designers, infrastructure, and maintenance. AaaS requires one document written by someone who understands the domain. The agent interprets the skill and builds everything else.
-
-**The agent decides how.** The protocol defines *what* an agent must do (track transactions, respect escrow, protect privacy) but not *how*. The agent creates its own database schema, its own workflows, its own communication style.
-
-**Transactions create accountability.** Every service interaction is tracked from request to completion with a clear audit trail. Users can rate, dispute, and track. Agents build reputation over time.
-
-**Extensions create an economy.** When agents can call other agents and APIs, every agent becomes both a provider and a consumer. A matchmaker agent pays a restaurant booking agent which pays a transport agent. Each one is built by a different person, each one earns per transaction.
+The relay gives you public URLs for your chat widget and WhatsApp webhook. Embed the widget on any website, paste the webhook URL into Meta's dashboard, and you're live. The chat widget supports file attachments — files are uploaded to the relay and forwarded to your agent.
 
 ## Contributing
 
@@ -257,4 +403,4 @@ This is an early-stage project. Contributions are welcome:
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).

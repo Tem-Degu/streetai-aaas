@@ -6,10 +6,10 @@ export default class GoogleProvider extends BaseProvider {
   get name() { return 'google'; }
 
   listModels() {
-    return ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'];
+    return ['gemini-3.1-pro-preview', 'gemini-3.1-flash-lite-preview', 'gemini-3.0-flash', 'gemini-2.5-pro', 'gemini-2.5-flash'];
   }
 
-  async chat(messages, options = {}) {
+  async _chat(messages, options = {}) {
     // Convert messages to Gemini format
     const { systemInstruction, contents } = convertMessages(messages);
 
@@ -20,9 +20,7 @@ export default class GoogleProvider extends BaseProvider {
       body.tools = translateToolsForProvider('google', options.tools);
     }
 
-    if (options.maxTokens) {
-      body.generationConfig = { maxOutputTokens: options.maxTokens };
-    }
+    body.generationConfig = { maxOutputTokens: options.maxTokens || 16384 };
     if (options.temperature !== undefined) {
       body.generationConfig = { ...body.generationConfig, temperature: options.temperature };
     }
@@ -78,9 +76,11 @@ function convertMessages(messages) {
       const parts = [];
       if (msg.content) parts.push({ text: msg.content });
       for (const tc of msg.toolCalls) {
-        parts.push({
+        const fcPart = {
           functionCall: { name: tc.name, args: tc.arguments },
-        });
+        };
+        if (tc.thoughtSignature) fcPart.thoughtSignature = tc.thoughtSignature;
+        parts.push(fcPart);
       }
       contents.push({ role, parts });
       continue;
@@ -104,11 +104,13 @@ function parseResponse(data) {
     if (part.functionCall) {
       if (!toolCalls) toolCalls = [];
       const tcName = part.functionCall.name;
-      toolCalls.push({
+      const tc = {
         id: tcName,
         name: tcName,
         arguments: part.functionCall.args || {},
-      });
+      };
+      if (part.thoughtSignature) tc.thoughtSignature = part.thoughtSignature;
+      toolCalls.push(tc);
     }
   }
 

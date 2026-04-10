@@ -24,6 +24,8 @@ export default function Settings() {
   const [provider, setProvider] = useState('');
   const [providerModels, setProviderModels] = useState([]);
   const [customModel, setCustomModel] = useState(false);
+  const [agentType, setAgentType] = useState('service');
+  const [saveMsg, setSaveMsg] = useState('');
 
   // API key form
   const [keyProvider, setKeyProvider] = useState('');
@@ -32,6 +34,7 @@ export default function Settings() {
   const [ollamaUrl, setOllamaUrl] = useState('');
   const [savingKey, setSavingKey] = useState(false);
   const [keyMsg, setKeyMsg] = useState('');
+  const [removeKeyConfirm, setRemoveKeyConfirm] = useState(null);
 
   // OAuth form
   const [oauthProvider, setOauthProvider] = useState('');
@@ -52,6 +55,7 @@ export default function Settings() {
       setEngineStatus(status);
       setProvider(cfg.provider || '');
       setModel(cfg.model || '');
+      setAgentType(cfg.agentType || 'service');
       if (cfg.provider) loadModels(cfg.provider, cfg.model);
     } catch { /* ignore */ }
     setLoading(false);
@@ -84,12 +88,15 @@ export default function Settings() {
 
   const save = async () => {
     setSaving(true);
+    setSaveMsg('');
     try {
-      await api.put('/api/config', { provider, model });
+      await api.put('/api/config', { provider, model, agentType });
       const cfg = await api.get('/api/config');
       setConfig(cfg);
+      setSaveMsg('Saved!');
+      setTimeout(() => setSaveMsg(''), 2500);
     } catch (err) {
-      alert('Save failed: ' + err.message);
+      setSaveMsg('Error: ' + err.message);
     }
     setSaving(false);
   };
@@ -121,7 +128,6 @@ export default function Settings() {
   };
 
   const removeKey = async (name) => {
-    if (!confirm(`Remove ${name} credentials?`)) return;
     try {
       await api.del(`/api/credentials/${name}`);
       loadConfig();
@@ -174,6 +180,78 @@ export default function Settings() {
       </div>
 
       <div className="settings-grid">
+        {/* Agent Type */}
+        <div className="card">
+          <div className="card-header">Agent Type</div>
+          <div className="card-body">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {[
+                {
+                  value: 'service',
+                  icon: (
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="7" width="20" height="14" rx="2" />
+                      <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+                    </svg>
+                  ),
+                  title: 'Service Agent',
+                  desc: 'Provides paid services via escrow. Compact skill for messaging and transactions.',
+                },
+                {
+                  value: 'social',
+                  icon: (
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="9" cy="7" r="4" />
+                      <path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+                      <circle cx="17" cy="7" r="3" />
+                      <path d="M21 21v-2a4 4 0 0 0-3-3.87" />
+                    </svg>
+                  ),
+                  title: 'Social Agent',
+                  desc: 'Participates in social platforms built for AI agents.',
+                },
+              ].map(opt => {
+                const active = agentType === opt.value;
+                return (
+                  <div
+                    key={opt.value}
+                    onClick={() => setAgentType(opt.value)}
+                    style={{
+                      padding: 14,
+                      borderRadius: 10,
+                      border: active ? '2px solid var(--accent)' : '1px solid var(--border)',
+                      background: active ? 'var(--accent-bg, rgba(99,102,241,0.08))' : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                      position: 'relative',
+                    }}
+                  >
+                    <div style={{ marginBottom: 8, color: active ? 'var(--accent)' : 'var(--text-muted)' }}>{opt.icon}</div>
+                    <div style={{ fontWeight: 600, marginBottom: 4, color: active ? 'var(--accent)' : 'var(--text)' }}>
+                      {opt.title}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                      {opt.desc}
+                    </div>
+                    {active && (
+                      <div style={{
+                        position: 'absolute', top: 8, right: 8,
+                        width: 18, height: 18, borderRadius: '50%',
+                        background: 'var(--accent)', color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 700,
+                      }}>✓</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="form-hint" style={{ marginTop: 10 }}>
+              Click Save in the Active Provider card to apply changes.
+            </p>
+          </div>
+        </div>
+
         {/* Active Provider */}
         <div className="card">
           <div className="card-header">Active Provider</div>
@@ -225,6 +303,11 @@ export default function Settings() {
             <button className="btn btn-primary" onClick={save} disabled={saving || !provider || !model}>
               {saving ? 'Saving...' : 'Save'}
             </button>
+            {saveMsg && (
+              <p className="form-hint" style={{ marginTop: 8, color: saveMsg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
+                {saveMsg}
+              </p>
+            )}
           </div>
         </div>
 
@@ -293,78 +376,14 @@ export default function Settings() {
 
         {/* OAuth Connection */}
         <div className="card">
-          <div className="card-header">Connect via OAuth</div>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Connect via OAuth</span>
+            <span className="badge" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)', fontSize: 11, padding: '2px 8px', borderRadius: 10 }}>Coming soon</span>
+          </div>
           <div className="card-body">
-            <p className="form-hint" style={{ marginBottom: 12 }}>
-              Use your existing subscription (Claude Max, Google AI, Azure) without an API key.
+            <p className="form-hint" style={{ margin: 0 }}>
+              This option will be available in a future update. For now, please use an API key in the LLM Provider card above.
             </p>
-
-            {oauthStep === 0 && (
-              <>
-                <div className="form-group">
-                  <label>Provider</label>
-                  <select value={oauthProvider} onChange={e => { setOauthProvider(e.target.value); setOauthMsg(''); }} className="form-select">
-                    <option value="">Select provider...</option>
-                    {PROVIDERS.filter(p => p.hasOAuth).map(p => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {oauthProvider && (
-                  <button className="btn btn-primary" onClick={startOAuth} disabled={oauthLoading}>
-                    {oauthLoading ? 'Starting...' : 'Start Authorization'}
-                  </button>
-                )}
-              </>
-            )}
-
-            {oauthStep === 2 && (
-              <>
-                <div className="oauth-steps">
-                  <div className="oauth-step">
-                    <span className="oauth-step-num">1</span>
-                    <div>
-                      <p>Open this URL in your browser and authorize:</p>
-                      <div className="oauth-url-box">
-                        <code className="oauth-url">{oauthAuthUrl}</code>
-                        <button className="btn btn-small" onClick={() => {
-                          navigator.clipboard.writeText(oauthAuthUrl);
-                        }}>Copy</button>
-                        <a href={oauthAuthUrl} target="_blank" rel="noreferrer" className="btn btn-small btn-primary">Open</a>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="oauth-step">
-                    <span className="oauth-step-num">2</span>
-                    <div>
-                      <p>After authorizing, you'll be redirected. Copy the full URL from your browser's address bar and paste it here:</p>
-                      <div className="form-group">
-                        <input
-                          type="text"
-                          value={oauthRedirectUrl}
-                          onChange={e => setOauthRedirectUrl(e.target.value)}
-                          className="form-input"
-                          placeholder="http://localhost/callback?code=..."
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-actions">
-                  <button className="btn btn-primary" onClick={exchangeOAuth} disabled={oauthLoading || !oauthRedirectUrl}>
-                    {oauthLoading ? 'Connecting...' : 'Connect'}
-                  </button>
-                  <button className="btn" onClick={() => { setOauthStep(0); setOauthAuthUrl(''); setOauthState(''); }}>
-                    Cancel
-                  </button>
-                </div>
-              </>
-            )}
-
-            {oauthMsg && <p className="form-hint" style={{ marginTop: 8, color: oauthMsg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>{oauthMsg}</p>}
           </div>
         </div>
 
@@ -426,7 +445,7 @@ export default function Settings() {
                     <span className="status-label">{p.name}</span>
                     <span className="mono">{p.keyPreview || 'no key'}</span>
                     <span className="badge badge-muted">{p.source}</span>
-                    <button className="btn-icon" onClick={() => removeKey(p.name)} title="Remove">✕</button>
+                    <button className="btn-icon" onClick={() => setRemoveKeyConfirm(p.name)} title="Remove">✕</button>
                   </div>
                 ))}
               </div>
@@ -485,6 +504,23 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      {removeKeyConfirm && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setRemoveKeyConfirm(null)}>
+          <div className="card" style={{ maxWidth: 420, width: '90%' }} onClick={(e) => e.stopPropagation()}>
+            <div className="card-header">Remove credentials?</div>
+            <div className="card-body">
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text)' }}>
+                Remove <strong>{removeKeyConfirm}</strong> credentials? This cannot be undone.
+              </p>
+              <div className="form-actions" style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-danger" onClick={() => { removeKey(removeKeyConfirm); setRemoveKeyConfirm(null); }}>Remove</button>
+                <button className="btn" onClick={() => setRemoveKeyConfirm(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

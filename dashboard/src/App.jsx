@@ -15,6 +15,7 @@ import Deploy from './pages/Deploy.jsx';
 import Hub from './pages/Hub.jsx';
 import GetStarted from './pages/GetStarted.jsx';
 import Guide from './pages/Guide.jsx';
+import SetupGuide from './pages/SetupGuide.jsx';
 
 function Logo() {
   return (
@@ -30,6 +31,12 @@ function Logo() {
 
 function workspaceNav(prefix) {
   return [
+    {
+      section: '',
+      items: [
+        { path: `${prefix}/setup`, label: 'Setup Guide', icon: <IconBook />, highlight: true },
+      ]
+    },
     {
       section: 'Monitor',
       items: [
@@ -105,9 +112,9 @@ function Sidebar({ navItems, mode, onLogoClick, workspaceName }) {
         <div key={section || '_root'}>
           {section && <div className="sidebar-section">{section}</div>}
           <ul className="sidebar-nav">
-            {items.map(({ path, label, icon }) => (
+            {items.map(({ path, label, icon, highlight }) => (
               <li key={path}>
-                <NavLink to={path} end={path === '/' || path.match(/^\/ws\/[^/]+$/)} className={({ isActive }) => isActive ? 'active' : ''}>
+                <NavLink to={path} end={path === '/' || path.match(/^\/ws\/[^/]+$/)} className={({ isActive }) => `${isActive ? 'active' : ''}${highlight ? ' nav-highlight' : ''}`}>
                   <span className="nav-icon">{icon}</span>
                   {label}
                 </NavLink>
@@ -119,7 +126,7 @@ function Sidebar({ navItems, mode, onLogoClick, workspaceName }) {
 
       <div style={{ flex: 1 }} />
       <div className="sidebar-footer">
-        <a href="https://github.com/streetai/aaas" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="https://github.com/Tem-Degu/streetai-aaas" target="_blank" rel="noreferrer">GitHub</a>
         {' \u00b7 '}
         <span>v0.1.0</span>
       </div>
@@ -163,6 +170,7 @@ function WorkspaceLayout({ navItems, wsName, prefix }) {
           <Route path="/chat" element={<Chat />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/deploy" element={<Deploy />} />
+          <Route path="/setup" element={<SetupGuide />} />
         </Routes>
       </main>
     </div>
@@ -235,6 +243,7 @@ function StandaloneLayout() {
           <Route path="/chat" element={<Chat />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/deploy" element={<Deploy />} />
+          <Route path="/setup" element={<SetupGuide />} />
         </Routes>
       </main>
     </div>

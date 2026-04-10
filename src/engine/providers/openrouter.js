@@ -16,17 +16,19 @@ export default class OpenRouterProvider extends OpenAIProvider {
 
   listModels() {
     return [
-      'anthropic/claude-sonnet-4-20250514',
-      'anthropic/claude-haiku-4-5-20251001',
-      'openai/gpt-4o',
-      'openai/gpt-4o-mini',
-      'google/gemini-2.0-flash-001',
-      'meta-llama/llama-3.3-70b-instruct',
-      'mistralai/mistral-large-latest',
+      'openai/gpt-5.4',
+      'openai/gpt-5.4-mini',
+      'openai/o3',
+      'openai/gpt-5',
+      'anthropic/claude-opus-4-6',
+      'anthropic/claude-sonnet-4-6',
+      'google/gemini-3.1-pro-preview',
+      'google/gemini-2.5-pro',
+      'mistralai/mistral-small-2603',
     ];
   }
 
-  async chat(messages, options = {}) {
+  async _chat(messages, options = {}) {
     // Override the fetch to add OpenRouter-specific headers
     const originalFetch = globalThis.fetch;
     const apiKey = this.openRouterApiKey;
@@ -42,7 +44,7 @@ export default class OpenRouterProvider extends OpenAIProvider {
     };
 
     try {
-      return await super.chat(messages, options);
+      return await super._chat(messages, options);
     } finally {
       globalThis.fetch = originalFetch;
     }

@@ -38,7 +38,9 @@ Every service interaction with real customers follows five phases:
 2. **Create Service** — Propose a plan with clear deliverables and cost. Get user approval before proceeding.
 3. **Create Transaction** — Record the job. Use the \`create_transaction\` tool.
 4. **Deliver Service** — Do the work. Query your data, call extensions, prepare results, send to user.
-5. **Complete Transaction** — Confirm satisfaction. Use the \`complete_transaction\` tool. Send an invoice.`);
+5. **Complete Transaction** — Confirm satisfaction. Use the \`complete_transaction\` tool. Send an invoice.
+
+**Files in transactions:** When a customer sends a file as part of a service, save it under \`data/\` and call \`attach_file_to_transaction\` to link it to the transaction. The file stays where you saved it.`);
   } else {
     sections.push(`# AaaS — Agent as a Service
 
@@ -54,7 +56,9 @@ Every service interaction follows five phases:
 
 If you cannot help, say so honestly. If a service costs money, always state the price and wait for approval before starting. If something goes wrong, inform the user immediately.
 
-**Important:** Do not expose internal details about your workspace, tools, SKILL.md, SOUL.md, configuration, or admin functions to customers. You are a service provider — act like one.`);
+**Important:** Do not expose internal details about your workspace, tools, SKILL.md, SOUL.md, configuration, or admin functions to customers. You are a service provider — act like one.
+
+**Files in transactions:** When a customer sends a file (photo, audio, document) as part of a service, save it under \`data/\` wherever fits your workflow, then call \`attach_file_to_transaction\` with the transaction ID and the file path. This links the file to the transaction so the operator can see it — the file stays where you put it. Do this as soon as the file arrives, before continuing the work.`);
   }
 
   // ── Tools ──
@@ -72,9 +76,12 @@ You have these tools available. Use them — don't guess when you can look up th
 | \`update_transaction\` | Update a transaction's status or details |
 | \`complete_transaction\` | Mark a service as done and archive it |
 | \`list_transactions\` | View active or past transactions |
+| \`attach_file_to_transaction\` | Attach a customer-uploaded file (image, audio, doc) to a transaction |
 | \`read_memory\` | Recall stored facts from past interactions |
 | \`save_memory\` | Store important facts for future conversations |
 | \`platform_request\` | Make HTTP requests to connected platform APIs (auth is automatic) |
+| \`web_search\` | Search the web for information (requires search API key in config) |
+| \`web_fetch\` | Fetch and read any public web page or API endpoint |
 
 ### Workspace tools (admin only)
 These let you build and manage your own workspace — your service definition, personality, data, and extensions.
@@ -88,10 +95,12 @@ These let you build and manage your own workspace — your service definition, p
 | \`read_data_file\` | Read a specific file from your data/ directory |
 | \`write_data_file\` | Create or replace a data file |
 | \`add_data_record\` | Add a single record to a JSON array file |
+| \`update_data_record\` | Update an existing record by key, or insert if not found |
 | \`read_extensions\` | View your registered extensions |
 | \`add_extension\` | Register a new external API extension |
 | \`remove_extension\` | Remove an extension |
 | \`import_file\` | Import an uploaded file into your data/ directory |
+| \`delete_data_record\` | Delete a record from a JSON array file by matching a key field |
 | \`run_query\` | Execute SQL on the workspace SQLite database (CREATE TABLE, INSERT, SELECT, UPDATE, DELETE) |
 | \`list_tables\` | List all tables and their schemas in the database |
 
@@ -114,11 +123,18 @@ You have these tools available. Use them to serve the customer — don't guess w
 | \`update_transaction\` | Update a transaction's status or details |
 | \`complete_transaction\` | Mark a service as done and archive it |
 | \`list_transactions\` | View active or past transactions |
+| \`attach_file_to_transaction\` | Attach a customer-uploaded file (image, audio, doc) to a transaction |
 | \`read_memory\` | Recall stored facts from past interactions |
 | \`save_memory\` | Store important facts for future conversations |
 | \`add_data_record\` | Add a record to your database (e.g., register a customer) |
+| \`update_data_record\` | Update an existing record by key, or insert if not found (e.g., update a customer profile) |
+| \`delete_data_record\` | Delete a record from a JSON array file by matching a key field |
 | \`import_file\` | Save a file into your data/ directory (e.g., images, documents from users) |
+| \`run_query\` | Execute SQL on the database (SELECT, INSERT, UPDATE, DELETE — no table creation/deletion) |
+| \`list_tables\` | List all tables and their schemas in the database |
 | \`platform_request\` | Make HTTP requests to connected platform APIs (auth is automatic) |
+| \`web_search\` | Search the web for information |
+| \`web_fetch\` | Fetch and read any public web page or API endpoint |
 
 ### Sharing files with users
 To send images, audio, video, or documents to users on a platform, you MUST use the \`platform_request\` tool with media fields (e.g., \`image_0_1\`, \`file_0_1\`). Provide a URL or workspace file path (e.g., \`data/images/photo.jpg\`) as the value — the file will be fetched and uploaded automatically.
@@ -395,7 +411,11 @@ function buildWorkspaceState(paths, { isAdmin = true } = {}) {
   if (extensions.length > 0) {
     const extDescriptions = extensions.map(ext => {
       const caps = ext.capabilities ? ` — ${ext.capabilities.join(', ')}` : '';
-      return `- **${ext.name}** (${ext.type || 'api'})${caps}`;
+      let line = `- **${ext.name}** (${ext.type || 'api'})${caps}`;
+      if (ext.description) line += `\n  ${ext.description}`;
+      if (ext.endpoint) line += `\n  Endpoint: ${ext.endpoint}`;
+      if (ext.notes) line += `\n  ${ext.notes}`;
+      return line;
     });
     parts.push(`**Extensions** (call with \`call_extension\`):\n${extDescriptions.join('\n')}`);
   } else if (isAdmin) {

@@ -477,7 +477,7 @@ Expose your agent as a REST API that any website or app can call:
 
 \`\`\`bash
 aaas connect http --port 3300
-aaas start http
+aaas run
 \`\`\`
 
 Or connect from the Deploy page in the dashboard.
@@ -517,12 +517,16 @@ const data = await res.json();
 \`\`\`
 
 **Available endpoints:**
-- \`POST /chat\` — Send a message, get the agent's response
+- \`POST /chat\` — Send a message (JSON or multipart with file attachments), get the agent's response
+- \`POST /upload\` — Upload a file (raw bytes with Content-Type and X-Filename headers). Returns a URL to include in the chat request
 - \`GET /health\` — Check if the agent is running
 - \`GET /info\` — Get agent name, provider, and status
 - \`GET /widget.js\` — Embeddable chat widget script
+- \`GET /files/*\` — Serve files from the agent's workspace
 
 CORS is enabled, so browsers can call the API directly from any website.
+
+**Need a public URL?** If you don't have a public server, use the **Relay** to get a public chat API and widget URL through streetai.org — no port forwarding or HTTPS setup needed. See the Relay section below.
 
 ### Chat Widget
 
@@ -548,7 +552,7 @@ This injects a floating chat button in the bottom-right corner. Clicking it open
 | \`data-position\` | "right" or "left" | "right" |
 | \`data-greeting\` | Welcome message | none |
 
-The widget handles everything: conversation history (saved in localStorage), typing indicators, mobile responsiveness, and message persistence across page refreshes.
+The widget handles everything: conversation history (saved in localStorage), typing indicators, file attachments (images, audio, video, PDFs), mobile responsiveness, and message persistence across page refreshes.
 
 ### Telegram
 
@@ -571,6 +575,7 @@ Once running, users can message your bot directly on Telegram. The agent receive
 **Behavior:**
 - Responds to all direct messages
 - In group chats, only responds when mentioned by name
+- Receives photos, audio, voice messages, videos, and documents (saved to \`data/inbox/\`)
 
 ### Discord
 
@@ -593,6 +598,7 @@ Or use the Deploy page in the dashboard and paste the token.
 **Behavior:**
 - Responds to all DMs (direct messages)
 - In server channels, only responds when @mentioned
+- Receives file attachments (images, audio, video, documents — saved to \`data/inbox/\`)
 - Messages from other bots are ignored
 
 ### Slack
@@ -603,7 +609,7 @@ Connect your agent to a Slack workspace:
 1. Go to **api.slack.com/apps** and create a new app (From scratch)
 2. Enable **Socket Mode** → create an app-level token with \`connections:write\` scope → copy the \`xapp-...\` token
 3. Enable **Event Subscriptions** → add bot events: \`message.im\` and \`app_mention\`
-4. Go to **OAuth & Permissions** → add scopes: \`chat:write\`, \`im:history\`, \`app_mentions:read\` → install to workspace → copy the \`xoxb-...\` token
+4. Go to **OAuth & Permissions** → add scopes: \`chat:write\`, \`im:history\`, \`app_mentions:read\`, \`files:read\` → install to workspace → copy the \`xoxb-...\` token
 
 **Connect:**
 \`\`\`bash
@@ -616,6 +622,7 @@ Or use the Deploy page in the dashboard and paste both tokens.
 - Responds to all DMs (direct messages)
 - In channels, only responds when @mentioned
 - Replies in threads to keep channels clean
+- Receives shared files (images, audio, video, documents — saved to \`data/inbox/\`)
 - Messages from other bots are ignored
 
 ### WhatsApp
@@ -637,12 +644,50 @@ aaas connect whatsapp --access-token YOUR_TOKEN --phone-number-id 123... --verif
 
 Or use the Deploy page in the dashboard and fill in all three fields.
 
-**Important:** AaaS starts a local webhook server (default port 3301). You need to expose this publicly with HTTPS and set the webhook URL in Meta's dashboard to \`https://your-domain/webhook\`.
+**Important:** WhatsApp requires a publicly accessible HTTPS webhook URL. You have two options:
+
+1. **Self-hosted** — AaaS starts a local webhook server (default port 3301). Expose it publicly with HTTPS (nginx, ngrok, etc.) and set the webhook URL in Meta's dashboard.
+2. **Relay (recommended)** — Use \`aaas connect relay\` to get a public webhook URL through streetai.org. No public server needed — your agent connects outbound via WebSocket and your WhatsApp credentials never leave your machine. See the Relay section below.
 
 **Behavior:**
-- Responds to all incoming text messages
+- Responds to all incoming messages (text and media)
+- Receives images, audio, voice notes, videos, documents, and stickers (saved to \`data/inbox/\`)
 - Messages are split at 4096 characters (WhatsApp limit)
 - Supports the standard WhatsApp Business Cloud API (v21.0)
+
+### Relay (streetai.org)
+
+If you don't have a public server, the **relay** lets your agent receive WhatsApp webhooks and serve a public chat API + widget through streetai.org — all without opening any ports or setting up HTTPS.
+
+**How it works:**
+1. Your agent connects outbound to streetai.org via WebSocket
+2. streetai.org provides public URLs for your chat widget, chat API, and WhatsApp webhook
+3. Incoming traffic is forwarded to your agent through the WebSocket connection
+4. Your WhatsApp API credentials (access token, phone number ID) **never leave your machine** — the relay only stores the non-sensitive verify token for Meta's handshake
+
+**Setup:**
+\`\`\`bash
+# 1. Connect WhatsApp credentials (stored locally only)
+aaas connect whatsapp --access-token TOKEN --phone-number-id 123... --verify-token my-secret
+
+# 2. Register with the relay
+aaas connect relay
+
+# 3. Start the agent (connects outbound to streetai.org)
+aaas run
+\`\`\`
+
+Or use the Deploy page in the dashboard — select "Relay" and enter your agent name.
+
+**What you get:**
+- **Chat widget** — \`https://streetai.org/a/your-agent/widget.js\` (embed on any website)
+- **Chat API** — \`POST https://streetai.org/a/your-agent/chat\`
+- **WhatsApp webhook** — \`https://streetai.org/wh/your-agent/webhook\` (paste into Meta's dashboard)
+- **Health check** — \`GET https://streetai.org/a/your-agent/health\`
+
+The chat widget supports file attachments when used via the relay — files are uploaded to streetai.org and forwarded to your agent's \`data/inbox/\` folder.
+
+The relay replaces the need for a local HTTP server and WhatsApp webhook server. When relay is active, those local servers are automatically skipped to avoid port conflicts.
 
 ### Running your agent
 
@@ -822,10 +867,27 @@ When you run \`aaas dashboard\` from a folder that contains multiple agent works
 
 ### Chat Modes
 
-The Chat page has two modes:
+Your agent has two modes that control what it can do:
 
-- **User mode** — Talk to the agent as a regular customer would. Good for testing the user experience.
-- **Admin mode** — Talk to the agent with elevated permissions (can run SQL queries, modify data directly). Good for setup and debugging.`,
+- **Customer mode** — The agent acts as a service provider. It can search data, create transactions, and serve users, but cannot modify the workspace (SKILL.md, SOUL.md, data files, extensions).
+- **Admin mode** — The agent has full access to workspace tools. It can modify your service definition, personality, data, extensions, and run arbitrary SQL. Use this for setup and debugging.
+
+**Switching modes in the dashboard:**
+
+The Chat page has a toggle at the top to switch between User (customer) and Admin mode.
+
+**Switching modes on other platforms:**
+
+On Telegram, Discord, WhatsApp, and Slack, the owner can switch modes by typing:
+
+- \`/admin\` — switch to admin mode
+- \`/customer\` — switch back to customer mode
+
+**First-time owner verification:**
+
+When you type \`/admin\` on a platform for the first time, the agent will ask you to verify your identity. A 6-character code will appear on the **Deploy** page in the dashboard. Type that code in the platform chat to confirm you are the owner. This only needs to be done once per platform. After verification, \`/admin\` and \`/customer\` work instantly.
+
+Only the verified owner can switch modes. Other users who try \`/admin\` will be denied.`,
   },
   {
     id: 'settings',
@@ -981,7 +1043,7 @@ This usually means the API route returned HTML instead of JSON. Make sure:
 
 ### Need more help?
 
-- Open an issue at: **github.com/streetai/aaas**
+- Open an issue at: **github.com/Tem-Degu/streetai-aaas**
 - Check the Dashboard → Chat page for testing and debugging
 - Use \`aaas logs\` to see what the agent is doing behind the scenes`,
   },

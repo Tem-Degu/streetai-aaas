@@ -15,16 +15,42 @@ export class BaseProvider {
 
   /**
    * Send messages to the LLM and get a response.
-   * @param {Array} messages - [{ role: 'system'|'user'|'assistant'|'tool', content: string, ... }]
-   * @param {Object} options - { tools?, maxTokens?, temperature? }
-   * @returns {{ content: string, toolCalls: Array|null, usage: { inputTokens, outputTokens } }}
+   * Subclasses implement _chat(). This wrapper adds retry on rate limits.
    */
-  async chat(messages, options = {}) { throw new Error('Not implemented'); }
+  async chat(messages, options = {}) {
+    const maxRetries = 2;
+    const delayMs = 8000;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this._chat(messages, options);
+      } catch (err) {
+        if (attempt < maxRetries && isRateLimitError(err)) {
+          console.log(`[${this.name}] Rate limited (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delayMs / 1000}s...`);
+          await sleep(delayMs);
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
+  /** Subclasses implement this instead of chat(). */
+  async _chat(messages, options = {}) { throw new Error('Not implemented'); }
 
   /**
    * List available models for this provider.
    */
   listModels() { return []; }
+}
+
+function isRateLimitError(err) {
+  const msg = (err.message || '').toLowerCase();
+  return msg.includes('429') || msg.includes('rate limit') || msg.includes('too many requests');
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 const PROVIDER_MODULES = {

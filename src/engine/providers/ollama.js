@@ -11,10 +11,10 @@ export default class OllamaProvider extends BaseProvider {
   get name() { return 'ollama'; }
 
   listModels() {
-    return ['llama3.2', 'llama3.1', 'mistral', 'codellama', 'phi3', 'gemma2'];
+    return ['llama3.3', 'llama3.2', 'llama3.1', 'deepseek-r1', 'qwen3', 'qwen2.5', 'gemma3', 'gemma2', 'phi4', 'phi3', 'mistral', 'gpt-oss'];
   }
 
-  async chat(messages, options = {}) {
+  async _chat(messages, options = {}) {
     const body = {
       model: this.model,
       messages: messages.map(msg => ({ role: msg.role, content: msg.content })),

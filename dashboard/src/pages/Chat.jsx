@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useFetch, useResolveUrl } from '../hooks/useApi.js';
+import { useFetch, useResolveUrl, WorkspaceContext } from '../hooks/useApi.js';
 import { marked } from 'marked';
 
 export default function Chat() {
@@ -8,10 +8,12 @@ export default function Chat() {
   const { data: config, loading: configLoading } = useFetch('/api/config');
   const resolve = useResolveUrl();
   const navigate = useNavigate();
+  const workspace = useContext(WorkspaceContext);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [mode, setMode] = useState('admin');
@@ -29,6 +31,22 @@ export default function Chat() {
   useEffect(() => {
     if (hasProvider) inputRef.current?.focus();
   }, [hasProvider]);
+
+  // Load chat history from session on mount
+  useEffect(() => {
+    fetch(resolve(`/api/chat/history?mode=${mode}`))
+      .then(r => r.ok ? r.json() : { messages: [] })
+      .then(data => {
+        const history = (data.messages || []).map(m => ({
+          role: m.role === 'assistant' ? 'agent' : m.role,
+          text: m.content,
+          files: m.files,
+          time: m.at ? new Date(m.at) : new Date(),
+        }));
+        if (history.length > 0) setMessages(history);
+      })
+      .catch(() => {});
+  }, [mode]);
 
   async function handleFileSelect(e) {
     const files = Array.from(e.target.files);
@@ -65,8 +83,18 @@ export default function Chat() {
     setAttachedFiles(prev => prev.filter(f => f.id !== id));
   }
 
-  function isImageFile(name) {
+  function isImageFile(f) {
+    if (f?.type === 'image') return true;
+    const name = typeof f === 'string' ? f : f?.name || '';
     return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name);
+  }
+
+  function fileSrc(f) {
+    return f.url ? resolve(f.url) : resolve(`/api/chat/files/${f.id}`);
+  }
+
+  function fileKey(f, i) {
+    return f.id || f.url || `f-${i}`;
   }
 
   function renderMessageText(text) {
@@ -130,8 +158,10 @@ export default function Chat() {
       await fetch(resolve(`/api/chat/session?mode=${mode}`), { method: 'DELETE' });
       setMessages([]);
       setError(null);
+      setShowClearConfirm(false);
     } catch (e) {
       setError('Failed to clear session: ' + e.message);
+      setShowClearConfirm(false);
     }
   }
 
@@ -166,7 +196,7 @@ export default function Chat() {
           </button>
           <button
             className="chat-mode-btn chat-clear-btn"
-            onClick={handleClearSession}
+            onClick={() => setShowClearConfirm(true)}
             title="Clear session history"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -192,7 +222,7 @@ export default function Chat() {
             <strong>No LLM provider configured</strong>
             <p>To chat with your agent, you need to set up an LLM provider first. Add your API key or connect via OAuth.</p>
           </div>
-          <button className="btn btn-primary" onClick={() => navigate('/settings')}>
+          <button className="btn btn-primary" onClick={() => navigate(workspace ? `/ws/${workspace}/settings` : '/settings')}>
             Go to Settings
           </button>
         </div>
@@ -224,18 +254,18 @@ export default function Chat() {
               {msg.text && renderMessageText(msg.text)}
               {msg.files?.length > 0 && (
                 <div className="chat-msg-files">
-                  {msg.files.filter(f => isImageFile(f.name)).map(f => (
-                    <a key={f.id} className="chat-file-image" href={resolve(`/api/chat/files/${f.id}`)} target="_blank" rel="noopener noreferrer">
-                      <img src={resolve(`/api/chat/files/${f.id}`)} alt={f.name} />
+                  {msg.files.filter(f => isImageFile(f)).map((f, i) => (
+                    <a key={fileKey(f, i)} className="chat-file-image" href={fileSrc(f)} target="_blank" rel="noopener noreferrer">
+                      <img src={fileSrc(f)} alt={f.alt || f.name} />
                     </a>
                   ))}
-                  {msg.files.filter(f => !isImageFile(f.name)).map(f => (
-                    <a key={f.id} className="chat-file-badge" href={resolve(`/api/chat/files/${f.id}`)} target="_blank" rel="noopener noreferrer" title={`${f.name} (${formatSize(f.size)})`}>
+                  {msg.files.filter(f => !isImageFile(f)).map((f, i) => (
+                    <a key={fileKey(f, i)} className="chat-file-badge" href={fileSrc(f)} target="_blank" rel="noopener noreferrer" title={f.size ? `${f.name} (${formatSize(f.size)})` : f.name}>
                       <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M17 10.5V7.5a5.5 5.5 0 00-11 0v6a3.5 3.5 0 007 0V7a1.5 1.5 0 00-3 0v7" />
                       </svg>
                       {f.name}
-                      <span className="chat-file-size">{formatSize(f.size)}</span>
+                      {f.size && <span className="chat-file-size">{formatSize(f.size)}</span>}
                     </a>
                   ))}
                 </div>
@@ -258,9 +288,9 @@ export default function Chat() {
       {attachedFiles.length > 0 && (
         <div className="chat-attachments">
           {attachedFiles.map(f => (
-            <div key={f.id} className={`chat-attachment ${isImageFile(f.name) ? 'chat-attachment-image' : ''}`}>
-              {isImageFile(f.name) && (
-                <img src={resolve(`/api/chat/files/${f.id}`)} alt={f.name} className="chat-attachment-thumb" />
+            <div key={f.id} className={`chat-attachment ${isImageFile(f) ? 'chat-attachment-image' : ''}`}>
+              {isImageFile(f) && (
+                <img src={fileSrc(f)} alt={f.name} className="chat-attachment-thumb" />
               )}
               <span className="chat-attachment-name">{f.name}</span>
               <span className="chat-attachment-size">{formatSize(f.size)}</span>
@@ -308,6 +338,26 @@ export default function Chat() {
           Send
         </button>
       </div>
+
+      {showClearConfirm && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 100,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => setShowClearConfirm(false)}>
+          <div className="card" style={{ maxWidth: 420, width: '90%' }} onClick={e => e.stopPropagation()}>
+            <div className="card-header">Clear chat session?</div>
+            <div className="card-body">
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text)' }}>
+                This will permanently delete all messages in your <strong>{mode}</strong> session. The agent will lose context of this conversation. This cannot be undone.
+              </p>
+              <div className="form-actions" style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-danger" onClick={handleClearSession}>Clear Session</button>
+                <button className="btn" onClick={() => setShowClearConfirm(false)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

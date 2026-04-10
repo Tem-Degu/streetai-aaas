@@ -43,29 +43,33 @@ export async function runCommand(opts) {
     }
   }
 
-  // 4. Daemon mode — spawn detached worker process
+  // 4. Daemon mode — spawn detached worker process, fall back to foreground if it fails
   if (opts.daemon) {
-    const workerPath = path.join(__dirname, '..', 'agent-worker.js');
-    const logPath = path.join(ws, '.aaas', 'agent.log');
+    try {
+      const workerPath = path.join(__dirname, '..', 'agent-worker.js');
+      const logPath = path.join(ws, '.aaas', 'agent.log');
 
-    // Ensure log directory exists
-    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+      fs.mkdirSync(path.dirname(logPath), { recursive: true });
 
-    const out = fs.openSync(logPath, 'a');
-    const err = fs.openSync(logPath, 'a');
+      const out = fs.openSync(logPath, 'a');
+      const err = fs.openSync(logPath, 'a');
 
-    const child = spawn(process.execPath, [workerPath, ws], {
-      detached: true,
-      stdio: ['ignore', out, err],
-      cwd: ws,
-    });
+      const child = spawn(process.execPath, [workerPath, ws], {
+        detached: true,
+        stdio: ['ignore', out, err],
+        cwd: ws,
+      });
 
-    child.unref();
+      child.unref();
 
-    console.log(chalk.green(`\n  Agent started in background (PID ${child.pid})`));
-    console.log(chalk.gray(`  Log: ${logPath}`));
-    console.log(chalk.gray('  Run "aaas stop" to stop the agent.\n'));
-    return;
+      console.log(chalk.green(`\n  Agent started in background (PID ${child.pid})`));
+      console.log(chalk.gray(`  Log: ${logPath}`));
+      console.log(chalk.gray('  Run "aaas stop" to stop the agent.\n'));
+      return;
+    } catch (e) {
+      console.log(chalk.yellow(`\n  Background mode unavailable. Running in this terminal session instead.`));
+      console.log(chalk.yellow(`  The agent will stop when you close this window.`));
+    }
   }
 
   // 5. Foreground mode — run directly in this process

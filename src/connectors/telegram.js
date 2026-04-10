@@ -1,4 +1,47 @@
+import fs from 'fs';
+import path from 'path';
 import { BaseConnector } from './index.js';
+import { readFileBuffer } from './media.js';
+import { writePlatformSkill } from '../utils/workspace.js';
+
+const TELEGRAM_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024; // Bot API hard limit
+
+const TELEGRAM_SKILL = `---
+name: telegram
+description: Sending files to users via the Telegram connector
+---
+
+# Telegram Connector — Sending Files
+
+When chatting with users on Telegram, you can send images, audio, video, and
+documents in addition to text. The connector handles the upload to Telegram for
+you — you just need to **embed the file in your reply as markdown using a
+workspace-relative path**.
+
+## How to send a file
+
+1. Place (or generate) the file inside your workspace, e.g. \`data/photos/foo.png\`.
+2. In your reply, embed it using markdown:
+
+   - Image:    \`![caption](data/photos/foo.png)\`
+   - Audio:    \`[song.mp3](data/audio/song.mp3)\`
+   - Video:    \`[clip.mp4](data/video/clip.mp4)\`
+   - Document: \`[report.pdf](data/files/report.pdf)\`
+
+3. The connector strips the markdown ref out of the text and uploads the file
+   to Telegram via \`sendPhoto\` / \`sendAudio\` / \`sendVideo\` / \`sendDocument\`.
+   The \`alt\` / link text becomes the Telegram caption.
+
+## Rules
+
+- **Paths must be workspace-relative.** Absolute paths, \`/api/workspace/...\`
+  URLs, or anything outside the workspace will be silently dropped for security.
+- File type is detected from the extension. Unknown extensions are sent as
+  documents.
+- Telegram limits: photos ≤ 10 MB, other files ≤ 50 MB per upload.
+- You may embed multiple files in one reply — they are sent before the text.
+- Text replies are sent with \`parse_mode: Markdown\` and split at 4096 chars.
+`;
 
 /**
  * Telegram connector — connects the agent to a Telegram bot.
@@ -19,6 +62,7 @@ export default class TelegramConnector extends BaseConnector {
 
   async connect() {
     this.status = 'connecting';
+    writePlatformSkill(this.engine?.workspace, 'telegram', TELEGRAM_SKILL);
 
     // Verify the bot token
     try {
@@ -63,24 +107,43 @@ export default class TelegramConnector extends BaseConnector {
         for (const update of data.result) {
           this.offset = update.update_id + 1;
 
-          if (update.message?.text) {
-            const msg = update.message;
-            try {
-              await this.handleEvent({
-                platform: 'telegram',
-                userId: String(msg.from.id),
-                userName: [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ') || msg.from.username || 'User',
-                type: 'message',
-                content: msg.text,
-                metadata: {
-                  chatId: msg.chat.id,
-                  messageId: msg.message_id,
-                  chatType: msg.chat.type,
-                },
-              });
-            } catch (err) {
-              console.error(`[telegram] Error processing message:`, err.message);
+          const msg = update.message;
+          if (!msg) continue;
+
+          const mediaItems = this._extractMediaItems(msg);
+          const hasText = !!(msg.text || msg.caption);
+          if (!hasText && mediaItems.length === 0) continue;
+
+          const userName = [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ') || msg.from.username || 'User';
+          const userId = String(msg.from.id);
+
+          let content = msg.text || msg.caption || '';
+          if (mediaItems.length > 0) {
+            const safeUser = (msg.from.username || userName).replace(/[^a-zA-Z0-9._-]/g, '_');
+            const savedFiles = await this._downloadMedia(mediaItems, safeUser);
+            if (savedFiles.length > 0) {
+              const fileList = savedFiles.map(f => `${f.type}: ${f.path}`).join(', ');
+              content = content
+                ? `${content}\n\n[Attached files: ${fileList}]`
+                : `[Attached files: ${fileList}]`;
             }
+          }
+
+          try {
+            await this.handleEvent({
+              platform: 'telegram',
+              userId,
+              userName,
+              type: 'message',
+              content,
+              metadata: {
+                chatId: msg.chat.id,
+                messageId: msg.message_id,
+                chatType: msg.chat.type,
+              },
+            });
+          } catch (err) {
+            console.error(`[telegram] Error processing message:`, err.message);
           }
         }
       } catch (err) {
@@ -91,22 +154,54 @@ export default class TelegramConnector extends BaseConnector {
     }
   }
 
-  async send(event, response) {
+  async send(event, response, result, files = []) {
     const chatId = event.metadata?.chatId;
     if (!chatId) return;
 
-    // Telegram has a 4096 character limit per message
-    const chunks = this._splitMessage(response, 4096);
-    for (const chunk of chunks) {
-      await fetch(`${this.apiBase}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: chunk,
-          parse_mode: 'Markdown',
-        }),
-      });
+    // Send files first
+    for (const file of files) {
+      try {
+        const buffer = await readFileBuffer(file);
+        const blob = new Blob([buffer], { type: file.mimeType });
+        const formData = new FormData();
+        formData.append('chat_id', chatId);
+
+        if (file.type === 'image') {
+          formData.append('photo', blob, file.filename);
+          if (file.alt) formData.append('caption', file.alt);
+          await fetch(`${this.apiBase}/sendPhoto`, { method: 'POST', body: formData });
+        } else if (file.type === 'audio') {
+          formData.append('audio', blob, file.filename);
+          if (file.alt) formData.append('caption', file.alt);
+          await fetch(`${this.apiBase}/sendAudio`, { method: 'POST', body: formData });
+        } else if (file.type === 'video') {
+          formData.append('video', blob, file.filename);
+          if (file.alt) formData.append('caption', file.alt);
+          await fetch(`${this.apiBase}/sendVideo`, { method: 'POST', body: formData });
+        } else {
+          formData.append('document', blob, file.filename);
+          if (file.alt) formData.append('caption', file.alt);
+          await fetch(`${this.apiBase}/sendDocument`, { method: 'POST', body: formData });
+        }
+      } catch (err) {
+        console.error(`[telegram] Failed to send file ${file.filename}:`, err.message);
+      }
+    }
+
+    // Send text response
+    if (response) {
+      const chunks = this._splitMessage(response, 4096);
+      for (const chunk of chunks) {
+        await fetch(`${this.apiBase}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: chunk,
+            parse_mode: 'Markdown',
+          }),
+        });
+      }
     }
   }
 
@@ -143,6 +238,128 @@ export default class TelegramConnector extends BaseConnector {
       remaining = remaining.slice(splitAt).trimStart();
     }
     return chunks;
+  }
+
+  /**
+   * Pull all downloadable media off a Telegram message into a uniform list.
+   * Each item: { type: 'image'|'audio'|'video'|'file', fileId, originalName, fileSize }
+   */
+  _extractMediaItems(msg) {
+    const items = [];
+
+    if (Array.isArray(msg.photo) && msg.photo.length > 0) {
+      // Pick the largest size variant
+      const largest = msg.photo.reduce((a, b) => (b.file_size || 0) > (a.file_size || 0) ? b : a, msg.photo[0]);
+      items.push({
+        type: 'image',
+        fileId: largest.file_id,
+        originalName: `photo_${largest.file_unique_id || Date.now()}.jpg`,
+        fileSize: largest.file_size || 0,
+      });
+    }
+
+    if (msg.voice) {
+      items.push({
+        type: 'audio',
+        fileId: msg.voice.file_id,
+        originalName: `voice_${msg.voice.file_unique_id || Date.now()}.ogg`,
+        fileSize: msg.voice.file_size || 0,
+      });
+    }
+
+    if (msg.audio) {
+      items.push({
+        type: 'audio',
+        fileId: msg.audio.file_id,
+        originalName: msg.audio.file_name || `audio_${msg.audio.file_unique_id || Date.now()}.mp3`,
+        fileSize: msg.audio.file_size || 0,
+      });
+    }
+
+    if (msg.video) {
+      items.push({
+        type: 'video',
+        fileId: msg.video.file_id,
+        originalName: msg.video.file_name || `video_${msg.video.file_unique_id || Date.now()}.mp4`,
+        fileSize: msg.video.file_size || 0,
+      });
+    }
+
+    if (msg.video_note) {
+      items.push({
+        type: 'video',
+        fileId: msg.video_note.file_id,
+        originalName: `video_note_${msg.video_note.file_unique_id || Date.now()}.mp4`,
+        fileSize: msg.video_note.file_size || 0,
+      });
+    }
+
+    if (msg.document) {
+      items.push({
+        type: 'file',
+        fileId: msg.document.file_id,
+        originalName: msg.document.file_name || `document_${msg.document.file_unique_id || Date.now()}`,
+        fileSize: msg.document.file_size || 0,
+      });
+    }
+
+    return items;
+  }
+
+  /**
+   * Download Telegram media items into the workspace inbox.
+   * Mirrors truuze.js _downloadMedia: writes to data/inbox/<user>_<ts>_<safeName>
+   * and returns [{type, path}] with workspace-relative paths.
+   */
+  async _downloadMedia(mediaItems, username) {
+    const inboxDir = path.join(this.engine.workspace, 'data', 'inbox');
+    fs.mkdirSync(inboxDir, { recursive: true });
+
+    const saved = [];
+    for (const item of mediaItems) {
+      try {
+        if (item.fileSize && item.fileSize > TELEGRAM_MAX_DOWNLOAD_BYTES) {
+          console.warn(`[telegram] Skipping ${item.originalName}: ${item.fileSize} bytes exceeds 20 MB Bot API limit`);
+          continue;
+        }
+
+        // Step 1: getFile
+        const infoResp = await fetch(`${this.apiBase}/getFile?file_id=${encodeURIComponent(item.fileId)}`, {
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!infoResp.ok) {
+          console.error('[telegram] getFile failed:', item.fileId, infoResp.status);
+          continue;
+        }
+        const info = await infoResp.json();
+        if (!info.ok || !info.result?.file_path) {
+          console.error('[telegram] getFile bad response:', info.description || 'no file_path');
+          continue;
+        }
+
+        // Step 2: download bytes
+        const fileUrl = `https://api.telegram.org/file/bot${this.token}/${info.result.file_path}`;
+        const resp = await fetch(fileUrl, { signal: AbortSignal.timeout(60_000) });
+        if (!resp.ok) {
+          console.error('[telegram] Failed to download media:', fileUrl, resp.status);
+          continue;
+        }
+        const buffer = Buffer.from(await resp.arrayBuffer());
+
+        // Build filename: username_timestamp_originalname
+        const safeName = item.originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const filename = `${username}_${Date.now()}_${safeName}`;
+        const filePath = path.join(inboxDir, filename);
+        fs.writeFileSync(filePath, buffer);
+
+        const relativePath = `data/inbox/${filename}`;
+        saved.push({ type: item.type, path: relativePath });
+        console.log('[telegram] Downloaded media:', item.type, relativePath, buffer.length, 'bytes');
+      } catch (err) {
+        console.error('[telegram] Media download error:', item.fileId, err.message);
+      }
+    }
+    return saved;
   }
 
   _sleep(ms) {

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { useFetch, useApi } from '../hooks/useApi.js';
+import { useFetch, useApi, useResolveUrl } from '../hooks/useApi.js';
 
 function formatBytes(bytes) {
   if (bytes < 1024) return bytes + ' B';
@@ -24,6 +24,7 @@ function fileIcon(entry) {
 
 export default function Data() {
   const api = useApi();
+  const resolveUrl = useResolveUrl();
   const [currentPath, setCurrentPath] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const { data: entries, loading, error, refetch } = useFetch(`/api/data?path=${encodeURIComponent(currentPath)}`);
@@ -84,11 +85,16 @@ export default function Data() {
     for (const file of files) {
       try {
         const buf = await file.arrayBuffer();
-        await fetch('/api/data/upload', {
+        const res = await fetch(resolveUrl('/api/data/upload'), {
           method: 'POST',
-          headers: { 'X-Filename': file.name, 'X-Path': currentPath },
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-Filename': file.name,
+            'X-Path': currentPath,
+          },
           body: buf,
         });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       } catch (e) {
         alert(`Failed to upload ${file.name}: ${e.message}`);
       }
@@ -116,7 +122,7 @@ export default function Data() {
   }
 
   if (selectedFile) {
-    return <FileView entry={selectedFile} onBack={() => { setSelectedFile(null); refetch(); }} />;
+    return <FileView entry={selectedFile} onBack={() => { setSelectedFile(null); refetch(); }} resolveUrl={resolveUrl} />;
   }
 
   return (
@@ -216,9 +222,86 @@ export default function Data() {
   );
 }
 
+/* ─── File type helpers ─── */
+
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+const AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'webm'];
+const VIDEO_EXTS = ['mp4', 'webm', 'ogv', 'mov', 'avi', 'mkv'];
+const PDF_EXTS = ['pdf'];
+
+function getFileExt(name) {
+  return (name || '').split('.').pop().toLowerCase();
+}
+
+function isBinaryFile(name) {
+  const ext = getFileExt(name);
+  return [...IMAGE_EXTS, ...AUDIO_EXTS, ...VIDEO_EXTS, ...PDF_EXTS,
+    'zip', 'tar', 'gz', '7z', 'rar', 'exe', 'dll', 'so', 'dylib',
+    'woff', 'woff2', 'ttf', 'otf', 'eot',
+    'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  ].includes(ext);
+}
+
+/* ─── Binary File View ─── */
+
+function BinaryFileView({ entry, onBack, resolveUrl }) {
+  const ext = getFileExt(entry.name);
+  const rawUrl = resolveUrl(`/api/data/file/${entry.path}`);
+
+  return (
+    <div>
+      <div className="detail-header">
+        <button className="btn-back" onClick={onBack}>&larr; Back</button>
+        <h1 className="page-title">{entry.name}</h1>
+      </div>
+      <div className="card" style={{ padding: 24 }}>
+        {IMAGE_EXTS.includes(ext) ? (
+          <div style={{ textAlign: 'center' }}>
+            <img
+              src={rawUrl}
+              alt={entry.name}
+              style={{ maxWidth: '100%', maxHeight: 500, borderRadius: 8, background: 'var(--bg-card)' }}
+            />
+          </div>
+        ) : AUDIO_EXTS.includes(ext) ? (
+          <div style={{ textAlign: 'center' }}>
+            <audio controls src={rawUrl} style={{ width: '100%', maxWidth: 480 }}>
+              Your browser does not support audio playback.
+            </audio>
+          </div>
+        ) : VIDEO_EXTS.includes(ext) ? (
+          <div style={{ textAlign: 'center' }}>
+            <video controls src={rawUrl} style={{ maxWidth: '100%', maxHeight: 500, borderRadius: 8 }}>
+              Your browser does not support video playback.
+            </video>
+          </div>
+        ) : PDF_EXTS.includes(ext) ? (
+          <iframe
+            src={rawUrl}
+            title={entry.name}
+            style={{ width: '100%', height: 600, border: 'none', borderRadius: 8 }}
+          />
+        ) : (
+          <div className="explorer-empty" style={{ textAlign: 'center' }}>
+            <p style={{ marginBottom: 12 }}>This file type cannot be previewed.</p>
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 16 }}>
+          <a href={rawUrl} download={entry.name} className="btn btn-primary" style={{ textDecoration: 'none' }}>
+            Download
+          </a>
+          <span style={{ color: 'var(--text-muted)', fontSize: 13, alignSelf: 'center' }}>
+            {formatBytes(entry.size)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── File View ─── */
 
-function FileView({ entry, onBack }) {
+function FileView({ entry, onBack, resolveUrl }) {
   const { data, loading, error, refetch } = useFetch(`/api/data/${entry.path}`);
   const { put } = useApi();
   const [view, setView] = useState('ui');
@@ -228,6 +311,10 @@ function FileView({ entry, onBack }) {
   const [addData, setAddData] = useState('');
   const [rawEdit, setRawEdit] = useState('');
   const [rawEditing, setRawEditing] = useState(false);
+
+  if (isBinaryFile(entry.name)) {
+    return <BinaryFileView entry={entry} onBack={onBack} resolveUrl={resolveUrl} />;
+  }
 
   if (loading) return <div className="page-loading">Loading {entry.name}</div>;
   if (error) return <div className="explorer-empty">Error: {error}</div>;

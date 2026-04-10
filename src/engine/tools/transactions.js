@@ -63,6 +63,70 @@ export function completeTransaction(paths, { id, rating }) {
   return JSON.stringify({ ok: true, message: `Transaction "${id}" completed and archived.`, transaction: txn });
 }
 
+export function attachFileToTransaction(paths, { id, file_path }) {
+  if (!id || !file_path) {
+    return JSON.stringify({ error: 'id and file_path are required.' });
+  }
+
+  // Locate the transaction (active or archived)
+  let txnPath = path.join(paths.activeTransactions, `${id}.json`);
+  if (!fs.existsSync(txnPath)) {
+    txnPath = path.join(paths.archivedTransactions, `${id}.json`);
+    if (!fs.existsSync(txnPath)) {
+      return JSON.stringify({ error: `Transaction "${id}" not found.` });
+    }
+  }
+
+  // Normalize path — must be workspace-relative and live under data/
+  const rel = file_path.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (path.isAbsolute(rel) || rel.includes('..')) {
+    return JSON.stringify({ error: 'file_path must be a workspace-relative path under data/.' });
+  }
+  const relUnderData = rel.startsWith('data/') ? rel.slice(5) : rel;
+  const absPath = path.resolve(paths.data, relUnderData);
+  if (!absPath.startsWith(path.resolve(paths.data))) {
+    return JSON.stringify({ error: 'file_path must resolve under data/.' });
+  }
+  if (!fs.existsSync(absPath)) {
+    return JSON.stringify({ error: `File not found: ${file_path}` });
+  }
+
+  const stat = fs.statSync(absPath);
+  const filename = path.basename(absPath);
+  const ext = path.extname(filename).slice(1).toLowerCase();
+  const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'];
+  const audioExts = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'];
+  const videoExts = ['mp4', 'webm', 'ogv', 'mov', 'avi', 'mkv'];
+  let kind = 'file';
+  if (imageExts.includes(ext)) kind = 'image';
+  else if (audioExts.includes(ext)) kind = 'audio';
+  else if (videoExts.includes(ext)) kind = 'video';
+
+  const fileEntry = {
+    name: filename,
+    path: `data/${relUnderData}`,
+    size: stat.size,
+    kind,
+    attached_at: new Date().toISOString(),
+  };
+
+  const txn = readJson(txnPath);
+  if (!Array.isArray(txn.files)) txn.files = [];
+  // Avoid duplicate entries for the same path
+  if (!txn.files.some(f => f.path === fileEntry.path)) {
+    txn.files.push(fileEntry);
+    txn.updated_at = new Date().toISOString();
+    writeJson(txnPath, txn);
+  }
+
+  return JSON.stringify({
+    ok: true,
+    message: `File "${filename}" attached to transaction "${id}".`,
+    file: fileEntry,
+    file_count: txn.files.length,
+  });
+}
+
 export function listTransactions(paths, { status, include_archived } = {}) {
   const txns = [];
 

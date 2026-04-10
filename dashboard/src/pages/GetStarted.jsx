@@ -4,11 +4,11 @@ import { useNavigate } from 'react-router-dom';
 const BENEFITS = [
   {
     title: 'No Code Required',
-    desc: 'Define your service in plain text. Write a SKILL.md describing what your agent does, and it handles the rest.',
+    desc: 'Describe your service, add your data, and your agent is ready. No programming, no frameworks — just plain text and files.',
   },
   {
     title: 'Real Business, Not a Chatbot',
-    desc: 'Your agent manages inventory, tracks transactions, handles payments, and delivers results — a full service operation.',
+    desc: 'Your agent manages inventory, tracks transactions, connects to external services, and delivers results — a full service operation.',
   },
   {
     title: 'Gets Smarter Over Time',
@@ -16,11 +16,11 @@ const BENEFITS = [
   },
   {
     title: 'Multi-Platform Deployment',
-    desc: 'Deploy to Truuze, expose as an HTTP API, or connect to multiple platforms simultaneously from one workspace.',
+    desc: 'Deploy to Truuze, Telegram, Discord, Slack, WhatsApp, or expose as an HTTP API — all from one workspace.',
   },
   {
     title: 'Your Data, Your Control',
-    desc: 'Everything runs locally. Your service database, customer data, and agent memory stay in your workspace.',
+    desc: 'Everything runs locally. Your service database, customer data, and agent memory stay on your machine.',
   },
   {
     title: 'Works With Any LLM',
@@ -29,11 +29,11 @@ const BENEFITS = [
 ];
 
 const STEPS = [
-  { num: '1', title: 'Create a workspace', desc: 'Set up your agent with a name and service description.' },
-  { num: '2', title: 'Configure your LLM', desc: 'Add your API key for Anthropic, OpenAI, Google, or Ollama.' },
-  { num: '3', title: 'Write your SKILL.md', desc: 'Define your service catalog, pricing, domain knowledge, and boundaries.' },
-  { num: '4', title: 'Add your data', desc: 'Seed your database with products, profiles, or any service data.' },
-  { num: '5', title: 'Deploy', desc: 'Connect to Truuze, start an HTTP API, or both. Your agent goes live.' },
+  { num: '1', title: 'Create an agent', desc: 'Give your agent a name and describe what service it provides.' },
+  { num: '2', title: 'Configure your LLM', desc: 'Add your API key for Anthropic, OpenAI, Google, or use a local model with Ollama.' },
+  { num: '3', title: 'Add your data', desc: 'Upload products, menus, documents, images — whatever your agent needs to do its job.' },
+  { num: '4', title: 'Define the service', desc: 'Write your service catalog, pricing, domain knowledge, and rules in the SKILL file.' },
+  { num: '5', title: 'Test and deploy', desc: 'Chat with your agent to test it, then connect to any platform to go live.' },
 ];
 
 export default function GetStarted() {
@@ -48,12 +48,11 @@ export default function GetStarted() {
 
       <div className="gs-hero">
         <p className="gs-hero-text">
-          AaaS lets you build AI agents that provide real services through conversation.
-          Instead of writing code, you write a skill document that teaches your agent everything
-          it needs to know. The agent handles conversations, manages data, tracks transactions,
-          and deploys to any platform.
+          AaaS lets you turn expertise into an AI-powered service business. Add your data,
+          define your service, and your agent handles conversations, manages inventory, tracks
+          transactions, and deploys to any platform — no code required.
         </p>
-        <button className="btn btn-primary btn-lg" onClick={() => navigate('/agents')}>
+        <button className="btn btn-primary btn-lg" onClick={() => navigate('/')}>
           Create an Agent
         </button>
       </div>
@@ -84,7 +83,7 @@ export default function GetStarted() {
       <div className="gs-cta">
         <p>Ready to build your first agent?</p>
         <div style={{ display: 'flex', gap: 12 }}>
-          <button className="btn btn-primary" onClick={() => navigate('/agents')}>Create an Agent</button>
+          <button className="btn btn-primary" onClick={() => navigate('/')}>Create an Agent</button>
           <button className="btn" onClick={() => navigate('/guide')}>Read the Guide</button>
         </div>
       </div>
