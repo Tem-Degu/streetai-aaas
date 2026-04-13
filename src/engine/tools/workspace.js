@@ -45,8 +45,16 @@ export function writeSoul(paths, { content }) {
 export function readDataFile(paths, { file }) {
   if (!file) return JSON.stringify({ error: 'file name is required.' });
 
-  const safe = file.replace(/\.\./g, '').replace(/[\/\\]/g, '');
-  const fp = path.join(paths.data, safe);
+  // Strip leading "data/" if the agent passes the full relative path
+  let cleaned = file.replace(/^data[\/\\]/, '');
+  // Block path traversal but allow subdirectories (e.g. inbox/photo.jpg)
+  const safe = cleaned.replace(/\.\./g, '');
+  const fp = path.resolve(paths.data, safe);
+
+  // Ensure resolved path is still inside data/
+  if (!fp.startsWith(path.resolve(paths.data))) {
+    return JSON.stringify({ error: 'Invalid file path.' });
+  }
 
   if (!fs.existsSync(fp)) {
     return JSON.stringify({ error: `File "${file}" not found in data/.`, available: listDataFiles(paths) });
@@ -216,7 +224,10 @@ export function importFile(paths, { source, destination }) {
   if (!source) return JSON.stringify({ error: 'source path is required.' });
   if (!destination) return JSON.stringify({ error: 'destination filename is required.' });
 
-  if (!fs.existsSync(source)) {
+  // Resolve workspace-relative paths (e.g. "data/inbox/photo.jpg" from [Attached files:])
+  const resolvedSource = path.isAbsolute(source) ? source : path.resolve(paths.root, source);
+
+  if (!fs.existsSync(resolvedSource)) {
     return JSON.stringify({ error: `Source file not found: ${source}` });
   }
 
@@ -228,7 +239,7 @@ export function importFile(paths, { source, destination }) {
   }
 
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(source, dest);
+  fs.copyFileSync(resolvedSource, dest);
 
   const stat = fs.statSync(dest);
   return JSON.stringify({ ok: true, message: `File imported to data/${safe}.`, file: safe, size: stat.size });

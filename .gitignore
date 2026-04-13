@@ -4,6 +4,9 @@ node_modules/
 # Agent workspaces (user data)
 Lyon/
 matchmaking/
+dubai_matchmaker/
+gulf_star_ladies_salon/
+streetai/
 
 # Credentials and secrets
 .aaas/credentials.json

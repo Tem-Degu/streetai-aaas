@@ -83,6 +83,7 @@ export default class TelegramConnector extends BaseConnector {
     this.status = 'connected';
     this.error = null;
     this.polling = true;
+    this.pollFailures = 0;
     this._poll();
   }
 
@@ -96,10 +97,17 @@ export default class TelegramConnector extends BaseConnector {
         );
 
         if (!resp.ok) {
-          console.error(`[telegram] Poll error: ${resp.status}`);
+          this.pollFailures++;
+          if (this.pollFailures >= 3) {
+            console.error(`[telegram] Persistent poll failure (${this.pollFailures}x): HTTP ${resp.status}`);
+          } else {
+            console.warn(`[telegram] Poll interrupted (HTTP ${resp.status}), retrying...`);
+          }
           await this._sleep(5000);
           continue;
         }
+
+        this.pollFailures = 0;
 
         const data = await resp.json();
         if (!data.ok || !data.result?.length) continue;
@@ -148,7 +156,12 @@ export default class TelegramConnector extends BaseConnector {
         }
       } catch (err) {
         if (err.name === 'AbortError') break;
-        console.error(`[telegram] Poll error:`, err.message);
+        this.pollFailures++;
+        if (this.pollFailures >= 3) {
+          console.error(`[telegram] Persistent poll failure (${this.pollFailures}x): ${err.message}`);
+        } else {
+          console.warn(`[telegram] Connection interrupted, retrying...`);
+        }
         await this._sleep(5000);
       }
     }
@@ -188,19 +201,31 @@ export default class TelegramConnector extends BaseConnector {
       }
     }
 
-    // Send text response
+    // Send text response with retry
     if (response) {
       const chunks = this._splitMessage(response, 4096);
       for (const chunk of chunks) {
-        await fetch(`${this.apiBase}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: chunk,
-            parse_mode: 'Markdown',
-          }),
-        });
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const resp = await fetch(`${this.apiBase}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: chunk,
+                parse_mode: 'Markdown',
+              }),
+            });
+            if (resp.ok) break;
+            console.warn(`[telegram] Send attempt ${attempt}/3 failed: HTTP ${resp.status}`);
+            if (attempt < 3) await this._sleep(2000);
+            else console.error('[telegram] Failed to send message after 3 attempts');
+          } catch (err) {
+            console.warn(`[telegram] Send attempt ${attempt}/3 failed: ${err.message}`);
+            if (attempt < 3) await this._sleep(2000);
+            else console.error('[telegram] Failed to send message after 3 attempts');
+          }
+        }
       }
     }
   }
@@ -323,28 +348,43 @@ export default class TelegramConnector extends BaseConnector {
           continue;
         }
 
-        // Step 1: getFile
-        const infoResp = await fetch(`${this.apiBase}/getFile?file_id=${encodeURIComponent(item.fileId)}`, {
-          signal: AbortSignal.timeout(15_000),
-        });
-        if (!infoResp.ok) {
-          console.error('[telegram] getFile failed:', item.fileId, infoResp.status);
-          continue;
-        }
-        const info = await infoResp.json();
-        if (!info.ok || !info.result?.file_path) {
-          console.error('[telegram] getFile bad response:', info.description || 'no file_path');
-          continue;
-        }
+        let buffer;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            // Step 1: getFile
+            const infoResp = await fetch(`${this.apiBase}/getFile?file_id=${encodeURIComponent(item.fileId)}`, {
+              signal: AbortSignal.timeout(15_000),
+            });
+            if (!infoResp.ok) {
+              console.warn(`[telegram] getFile attempt ${attempt}/3 failed: ${item.fileId} HTTP ${infoResp.status}`);
+              if (attempt < 3) { await this._sleep(2000); continue; }
+              break;
+            }
+            const info = await infoResp.json();
+            if (!info.ok || !info.result?.file_path) {
+              console.error('[telegram] getFile bad response:', info.description || 'no file_path');
+              break; // not retriable
+            }
 
-        // Step 2: download bytes
-        const fileUrl = `https://api.telegram.org/file/bot${this.token}/${info.result.file_path}`;
-        const resp = await fetch(fileUrl, { signal: AbortSignal.timeout(60_000) });
-        if (!resp.ok) {
-          console.error('[telegram] Failed to download media:', fileUrl, resp.status);
+            // Step 2: download bytes
+            const fileUrl = `https://api.telegram.org/file/bot${this.token}/${info.result.file_path}`;
+            const resp = await fetch(fileUrl, { signal: AbortSignal.timeout(60_000) });
+            if (!resp.ok) {
+              console.warn(`[telegram] Download attempt ${attempt}/3 failed: ${item.fileId} HTTP ${resp.status}`);
+              if (attempt < 3) { await this._sleep(2000); continue; }
+              break;
+            }
+            buffer = Buffer.from(await resp.arrayBuffer());
+            break;
+          } catch (fetchErr) {
+            console.warn(`[telegram] Download attempt ${attempt}/3 failed: ${item.fileId} ${fetchErr.message}`);
+            if (attempt < 3) await this._sleep(2000);
+          }
+        }
+        if (!buffer) {
+          console.error('[telegram] Failed to download media after 3 attempts:', item.fileId);
           continue;
         }
-        const buffer = Buffer.from(await resp.arrayBuffer());
 
         // Build filename: username_timestamp_originalname
         const safeName = item.originalName.replace(/[^a-zA-Z0-9._-]/g, '_');

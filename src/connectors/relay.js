@@ -7,6 +7,7 @@ import { loadConnection } from '../auth/connections.js';
 import { writePlatformSkill } from '../utils/workspace.js';
 
 const RELAY_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024; // Match the relay upload cap
+const WHATSAPP_MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024; // Documents go up to 100 MB
 
 // Derive HTTPS base URL from the relay WebSocket URL (wss://host → https://host)
 function relayHttpBase(relayUrl) {
@@ -193,17 +194,34 @@ Bad (will NOT work):
         if (!value?.messages) continue;
 
         for (const message of value.messages) {
-          if (message.type !== 'text') continue;
+          const mediaItems = this._extractWAMediaItems(message);
+          const textPart = message.type === 'text' ? message.text?.body : (message[message.type]?.caption || '');
+          if (!textPart && mediaItems.length === 0) continue;
 
           const contact = value.contacts?.find(c => c.wa_id === message.from);
+          const userName = contact?.profile?.name || message.from;
 
           try {
+            let content = textPart || '';
+
+            // Download incoming media files
+            if (mediaItems.length > 0) {
+              const safeUser = String(userName).replace(/[^a-zA-Z0-9._-]/g, '_');
+              const savedFiles = await this._downloadWAMedia(mediaItems, safeUser);
+              if (savedFiles.length > 0) {
+                const fileList = savedFiles.map(f => `${f.type}: ${f.path}`).join(', ');
+                content = content
+                  ? `${content}\n\n[Attached files: ${fileList}]`
+                  : `[Attached files: ${fileList}]`;
+              }
+            }
+
             const result = await this.engine.processEvent({
               platform: 'whatsapp',
               userId: message.from,
-              userName: contact?.profile?.name || message.from,
+              userName,
               type: 'message',
-              content: message.text.body,
+              content,
               metadata: {
                 phoneNumber: message.from,
                 messageId: message.id,
@@ -213,19 +231,30 @@ Bad (will NOT work):
             });
 
             if (result.response) {
-              await this._sendWhatsAppReply(message.from, result.response, result);
+              let sent = false;
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                  await this._sendWhatsAppReply(message.from, result.response, result, { attempt });
+                  sent = true;
+                  break;
+                } catch (sendErr) {
+                  console.error(`[relay:wa] Send attempt ${attempt}/3 failed: ${sendErr.message}`);
+                  if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+                }
+              }
+              if (!sent) console.error('[relay:wa] All 3 send attempts failed — response lost');
             }
           } catch (err) {
-            console.error('[relay] WhatsApp processing error:', err.message);
+            console.error('[relay:wa] Processing error:', err.message);
           }
         }
       }
     }
   }
 
-  async _sendWhatsAppReply(phoneNumber, response, result) {
+  async _sendWhatsAppReply(phoneNumber, response, result, { attempt = 1 } = {}) {
     if (!this.whatsappConfig) {
-      console.error('[relay] No WhatsApp credentials — cannot send reply');
+      console.error('[relay:wa] No WhatsApp credentials — cannot send reply');
       return;
     }
 
@@ -241,7 +270,8 @@ Bad (will NOT work):
       files = extracted.files;
     }
 
-    for (const file of files) {
+    // Only send media on first attempt — skip on retries to avoid duplicates
+    for (const file of (attempt === 1 ? files : [])) {
       try {
         const buffer = await readFileBuffer(file);
         const blob = new Blob([buffer], { type: file.mimeType });
@@ -276,22 +306,26 @@ Bad (will NOT work):
           }),
         });
       } catch (err) {
-        console.error(`[relay] WhatsApp file send error:`, err.message);
+        console.error(`[relay:wa] File send error: ${err.message}`);
       }
     }
 
-    // Send text
+    // Send text — throw on failure so the caller's retry loop can catch it
     if (text) {
       const chunks = this._splitMessage(text, 4096);
-      for (const chunk of chunks) {
-        await fetch(`${apiBase}/${phoneNumberId}/messages`, {
+      for (let i = 0; i < chunks.length; i++) {
+        const resp = await fetch(`${apiBase}/${phoneNumberId}/messages`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messaging_product: 'whatsapp', to: phoneNumber,
-            type: 'text', text: { body: chunk },
+            type: 'text', text: { body: chunks[i] },
           }),
         });
+        if (!resp.ok) {
+          const errBody = await resp.text().catch(() => '');
+          throw new Error(`Text send failed (${resp.status}): ${errBody}`);
+        }
       }
     }
   }
@@ -409,12 +443,26 @@ Bad (will NOT work):
           continue;
         }
 
-        const resp = await fetch(att.url, { signal: AbortSignal.timeout(60_000) });
-        if (!resp.ok) {
-          console.error('[relay] Failed to download attachment:', att.url, resp.status);
+        let buffer;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const resp = await fetch(att.url, { signal: AbortSignal.timeout(60_000) });
+            if (!resp.ok) {
+              console.warn(`[relay] Download attempt ${attempt}/3 failed: HTTP ${resp.status}`);
+              if (attempt < 3) { await new Promise(r => setTimeout(r, 2000)); continue; }
+              break;
+            }
+            buffer = Buffer.from(await resp.arrayBuffer());
+            break;
+          } catch (fetchErr) {
+            console.warn(`[relay] Download attempt ${attempt}/3 failed: ${fetchErr.message}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+        if (!buffer) {
+          console.error('[relay] Failed to download attachment after 3 attempts:', att.url);
           continue;
         }
-        const buffer = Buffer.from(await resp.arrayBuffer());
 
         const type = this._typeFromMime(att.mimeType);
         const originalName = att.filename || `file_${Date.now()}`;
@@ -428,6 +476,146 @@ Bad (will NOT work):
         console.log('[relay] Downloaded attachment:', type, relativePath, buffer.length, 'bytes');
       } catch (err) {
         console.error('[relay] Attachment download error:', err.message);
+      }
+    }
+    return saved;
+  }
+
+  // ─── WhatsApp media helpers ───────────────────────────────────
+
+  /**
+   * Extract downloadable media items from a WhatsApp incoming message.
+   * Returns [{ type, mediaId, originalName, mimeType }].
+   */
+  _extractWAMediaItems(msg) {
+    const items = [];
+
+    if (msg.type === 'image' && msg.image) {
+      items.push({
+        type: 'image', mediaId: msg.image.id,
+        originalName: `image_${msg.id || Date.now()}.${this._extFromWAMime(msg.image.mime_type) || 'jpg'}`,
+        mimeType: msg.image.mime_type,
+      });
+    }
+    if ((msg.type === 'audio' || msg.type === 'voice') && msg.audio) {
+      items.push({
+        type: 'audio', mediaId: msg.audio.id,
+        originalName: `audio_${msg.id || Date.now()}.${this._extFromWAMime(msg.audio.mime_type) || 'ogg'}`,
+        mimeType: msg.audio.mime_type,
+      });
+    }
+    if (msg.type === 'video' && msg.video) {
+      items.push({
+        type: 'video', mediaId: msg.video.id,
+        originalName: `video_${msg.id || Date.now()}.${this._extFromWAMime(msg.video.mime_type) || 'mp4'}`,
+        mimeType: msg.video.mime_type,
+      });
+    }
+    if (msg.type === 'document' && msg.document) {
+      items.push({
+        type: 'file', mediaId: msg.document.id,
+        originalName: msg.document.filename || `document_${msg.id || Date.now()}`,
+        mimeType: msg.document.mime_type,
+      });
+    }
+    if (msg.type === 'sticker' && msg.sticker) {
+      items.push({
+        type: 'image', mediaId: msg.sticker.id,
+        originalName: `sticker_${msg.id || Date.now()}.webp`,
+        mimeType: msg.sticker.mime_type,
+      });
+    }
+
+    return items;
+  }
+
+  _extFromWAMime(mime) {
+    if (!mime) return null;
+    const map = {
+      'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+      'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/amr': 'amr',
+      'video/mp4': 'mp4', 'video/3gpp': '3gp',
+      'application/pdf': 'pdf', 'application/zip': 'zip', 'text/plain': 'txt',
+    };
+    return map[mime.split(';')[0].trim()] || null;
+  }
+
+  /**
+   * Download WhatsApp media via Meta's two-step API into data/inbox/.
+   * Step 1: GET /{mediaId} → { url }
+   * Step 2: GET {url} with Bearer token → binary
+   */
+  async _downloadWAMedia(mediaItems, username) {
+    if (!this.whatsappConfig) {
+      console.error('[relay:wa] No WhatsApp credentials — cannot download media');
+      return [];
+    }
+
+    const workspace = this.engine?.workspace;
+    if (!workspace) return [];
+
+    const { accessToken, apiBase } = this.whatsappConfig;
+    const inboxDir = path.join(workspace, 'data', 'inbox');
+    fs.mkdirSync(inboxDir, { recursive: true });
+
+    const saved = [];
+    for (const item of mediaItems) {
+      try {
+        let buffer;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            // Step 1: get download URL
+            const infoResp = await fetch(`${apiBase}/${encodeURIComponent(item.mediaId)}`, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+              signal: AbortSignal.timeout(15_000),
+            });
+            if (!infoResp.ok) {
+              console.warn(`[relay:wa] getMedia attempt ${attempt}/3 failed: ${item.mediaId} HTTP ${infoResp.status}`);
+              if (attempt < 3) { await new Promise(r => setTimeout(r, 2000)); continue; }
+              break;
+            }
+            const info = await infoResp.json();
+            if (!info.url) {
+              console.error('[relay:wa] getMedia bad response: no url');
+              break;
+            }
+            if (info.file_size && info.file_size > WHATSAPP_MAX_DOWNLOAD_BYTES) {
+              console.warn(`[relay:wa] Skipping ${item.originalName}: ${info.file_size} bytes exceeds limit`);
+              break;
+            }
+
+            // Step 2: download bytes
+            const resp = await fetch(info.url, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+              signal: AbortSignal.timeout(60_000),
+            });
+            if (!resp.ok) {
+              console.warn(`[relay:wa] Download attempt ${attempt}/3 failed: ${item.mediaId} HTTP ${resp.status}`);
+              if (attempt < 3) { await new Promise(r => setTimeout(r, 2000)); continue; }
+              break;
+            }
+            buffer = Buffer.from(await resp.arrayBuffer());
+            break;
+          } catch (fetchErr) {
+            console.warn(`[relay:wa] Download attempt ${attempt}/3 failed: ${item.mediaId} ${fetchErr.message}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+        if (!buffer) {
+          console.error('[relay:wa] Failed to download media after 3 attempts:', item.mediaId);
+          continue;
+        }
+
+        const safeName = item.originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const filename = `${username}_${Date.now()}_${safeName}`;
+        const filePath = path.join(inboxDir, filename);
+        fs.writeFileSync(filePath, buffer);
+
+        const relativePath = `data/inbox/${filename}`;
+        saved.push({ type: item.type, path: relativePath });
+        console.log('[relay:wa] Downloaded media:', item.type, relativePath, buffer.length, 'bytes');
+      } catch (err) {
+        console.error('[relay:wa] Media download error:', item.mediaId, err.message);
       }
     }
     return saved;

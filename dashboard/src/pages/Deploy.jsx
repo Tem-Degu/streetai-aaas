@@ -898,7 +898,7 @@ Content-Type: application/json
               <p style={{ margin: '0 0 8px' }}><strong>2.</strong> Go to <strong>Socket Mode</strong> → enable it → create an app-level token with <code>connections:write</code> scope → copy the <code>xapp-...</code> token</p>
               <p style={{ margin: '0 0 8px' }}><strong>3.</strong> Go to <strong>Event Subscriptions</strong> → enable events → under <strong>Subscribe to bot events</strong>, add: <code>message.im</code> and <code>app_mention</code></p>
               <p style={{ margin: '0 0 8px' }}><strong>4.</strong> Go to <strong>OAuth & Permissions</strong> → under <strong>Bot Token Scopes</strong>, add: <code>chat:write</code>, <code>im:history</code>, <code>app_mentions:read</code>, <code>files:write</code>, <code>files:read</code></p>
-              <p style={{ margin: '0 0 8px' }}><strong>5.</strong> Click <strong>Install to Workspace</strong> at the top of the OAuth page → authorize → copy the <code>xoxb-...</code> Bot User OAuth Token</p>
+              <p style={{ margin: '0 0 8px' }}><strong>5.</strong> Click <strong>Install to {'{'}your workspace name{'}'}</strong> at the top of the OAuth page → authorize → copy the <code>xoxb-...</code> Bot User OAuth Token</p>
               <p style={{ margin: '0 0 8px' }}><strong>6.</strong> Paste both tokens above and click <strong>Connect</strong>, then click <strong>Start</strong> on the Slack card</p>
               <p style={{ margin: '0 0 8px' }}><strong>7.</strong> Test it: DM the bot directly, or invite it to a channel with <code>/invite @your-bot-name</code> and @mention it. In DMs, the bot responds to every message. In channels, it only responds when mentioned</p>
             </div>
@@ -941,8 +941,8 @@ Content-Type: application/json
             <div className="deploy-form-divider" />
             <h4 style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--text)' }}>Getting Your Credentials</h4>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-              <p style={{ margin: '0 0 8px' }}><strong>1.</strong> Go to <a href="https://developers.facebook.com" target="_blank" rel="noopener" style={{ color: 'var(--blue)' }}>developers.facebook.com</a> → <strong>My Apps</strong> → <strong>Create App</strong> → choose <strong>Business</strong></p>
-              <p style={{ margin: '0 0 8px' }}><strong>2.</strong> In your app, click <strong>Add Product</strong> → <strong>WhatsApp</strong> → <strong>Set up</strong></p>
+              <p style={{ margin: '0 0 8px' }}><strong>1.</strong> Go to <a href="https://developers.facebook.com" target="_blank" rel="noopener" style={{ color: 'var(--blue)' }}>developers.facebook.com</a> → <strong>My Apps</strong> → <strong>Create App</strong></p>
+              <p style={{ margin: '0 0 8px' }}><strong>2.</strong> Choose <strong>Connect with customers through WhatsApp</strong> as the use case, then click <strong>Customize</strong></p>
               <p style={{ margin: '0 0 8px' }}><strong>3.</strong> Go to <strong>API Setup</strong>. You'll see a test phone number with a <strong>Phone Number ID</strong>. Copy it above.</p>
               <p style={{ margin: '0 0 8px' }}><strong>4.</strong> Copy the <strong>Temporary Access Token</strong> from the same page (lasts 24h). For production, create a System User token under Business Settings → Users → System Users</p>
               <p style={{ margin: '0 0 8px' }}><strong>5.</strong> The <strong>Verify Token</strong> is any string you make up. You'll enter the same string in Meta's webhook config</p>

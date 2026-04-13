@@ -268,30 +268,38 @@ export default class WhatsAppConnector extends BaseConnector {
       }
     }
 
-    // Send text response
+    // Send text response with retry
     if (response) {
       const chunks = this._splitMessage(response, 4096);
       for (const chunk of chunks) {
-        const resp = await fetch(
-          `${this.apiBase}/${this.phoneNumberId}/messages`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${this.accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              messaging_product: 'whatsapp',
-              to: phoneNumber,
-              type: 'text',
-              text: { body: chunk },
-            }),
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const resp = await fetch(
+              `${this.apiBase}/${this.phoneNumberId}/messages`,
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${this.accessToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  messaging_product: 'whatsapp',
+                  to: phoneNumber,
+                  type: 'text',
+                  text: { body: chunk },
+                }),
+              }
+            );
+            if (resp.ok) break;
+            const err = await resp.json().catch(() => ({}));
+            console.warn(`[whatsapp] Send attempt ${attempt}/3 failed: ${err.error?.message || resp.status}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+            else console.error('[whatsapp] Failed to send message after 3 attempts');
+          } catch (err) {
+            console.warn(`[whatsapp] Send attempt ${attempt}/3 failed: ${err.message}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+            else console.error('[whatsapp] Failed to send message after 3 attempts');
           }
-        );
-
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          console.error('[whatsapp] Send failed:', err.error?.message || resp.status);
         }
       }
     }
@@ -395,35 +403,50 @@ export default class WhatsAppConnector extends BaseConnector {
     const saved = [];
     for (const item of mediaItems) {
       try {
-        // Step 1: get download URL + size
-        const infoResp = await fetch(`${this.apiBase}/${encodeURIComponent(item.mediaId)}`, {
-          headers: { Authorization: `Bearer ${this.accessToken}` },
-          signal: AbortSignal.timeout(15_000),
-        });
-        if (!infoResp.ok) {
-          console.error('[whatsapp] getMedia failed:', item.mediaId, infoResp.status);
-          continue;
-        }
-        const info = await infoResp.json();
-        if (!info.url) {
-          console.error('[whatsapp] getMedia bad response: no url');
-          continue;
-        }
-        if (info.file_size && info.file_size > WHATSAPP_MAX_DOWNLOAD_BYTES) {
-          console.warn(`[whatsapp] Skipping ${item.originalName}: ${info.file_size} bytes exceeds limit`);
-          continue;
-        }
+        let buffer;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            // Step 1: get download URL + size
+            const infoResp = await fetch(`${this.apiBase}/${encodeURIComponent(item.mediaId)}`, {
+              headers: { Authorization: `Bearer ${this.accessToken}` },
+              signal: AbortSignal.timeout(15_000),
+            });
+            if (!infoResp.ok) {
+              console.warn(`[whatsapp] getMedia attempt ${attempt}/3 failed: ${item.mediaId} HTTP ${infoResp.status}`);
+              if (attempt < 3) { await new Promise(r => setTimeout(r, 2000)); continue; }
+              break;
+            }
+            const info = await infoResp.json();
+            if (!info.url) {
+              console.error('[whatsapp] getMedia bad response: no url');
+              break; // not retriable
+            }
+            if (info.file_size && info.file_size > WHATSAPP_MAX_DOWNLOAD_BYTES) {
+              console.warn(`[whatsapp] Skipping ${item.originalName}: ${info.file_size} bytes exceeds limit`);
+              break; // not retriable
+            }
 
-        // Step 2: download bytes (the URL needs the same Bearer token)
-        const resp = await fetch(info.url, {
-          headers: { Authorization: `Bearer ${this.accessToken}` },
-          signal: AbortSignal.timeout(60_000),
-        });
-        if (!resp.ok) {
-          console.error('[whatsapp] Failed to download media:', item.mediaId, resp.status);
+            // Step 2: download bytes
+            const resp = await fetch(info.url, {
+              headers: { Authorization: `Bearer ${this.accessToken}` },
+              signal: AbortSignal.timeout(60_000),
+            });
+            if (!resp.ok) {
+              console.warn(`[whatsapp] Download attempt ${attempt}/3 failed: ${item.mediaId} HTTP ${resp.status}`);
+              if (attempt < 3) { await new Promise(r => setTimeout(r, 2000)); continue; }
+              break;
+            }
+            buffer = Buffer.from(await resp.arrayBuffer());
+            break;
+          } catch (fetchErr) {
+            console.warn(`[whatsapp] Download attempt ${attempt}/3 failed: ${item.mediaId} ${fetchErr.message}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+        if (!buffer) {
+          console.error('[whatsapp] Failed to download media after 3 attempts:', item.mediaId);
           continue;
         }
-        const buffer = Buffer.from(await resp.arrayBuffer());
 
         // Build filename: username_timestamp_originalname
         const safeName = item.originalName.replace(/[^a-zA-Z0-9._-]/g, '_');

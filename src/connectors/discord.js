@@ -345,14 +345,26 @@ export default class DiscordConnector extends BaseConnector {
   async _sendTextOnly(channelId, text) {
     const chunks = this._splitMessage(text, 2000);
     for (const chunk of chunks) {
-      await fetch(`${this.apiBase}/channels/${channelId}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bot ${this.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ content: chunk }),
-      });
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const resp = await fetch(`${this.apiBase}/channels/${channelId}/messages`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bot ${this.token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ content: chunk }),
+          });
+          if (resp.ok) break;
+          console.warn(`[discord] Send attempt ${attempt}/3 failed: HTTP ${resp.status}`);
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          else console.error('[discord] Failed to send message after 3 attempts');
+        } catch (err) {
+          console.warn(`[discord] Send attempt ${attempt}/3 failed: ${err.message}`);
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          else console.error('[discord] Failed to send message after 3 attempts');
+        }
+      }
     }
   }
 
@@ -406,12 +418,26 @@ export default class DiscordConnector extends BaseConnector {
           continue;
         }
 
-        const resp = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-        if (!resp.ok) {
-          console.error('[discord] Failed to download attachment:', att.id, resp.status);
+        let buffer;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const resp = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+            if (!resp.ok) {
+              console.warn(`[discord] Download attempt ${attempt}/3 failed for ${att.id}: HTTP ${resp.status}`);
+              if (attempt < 3) { await new Promise(r => setTimeout(r, 2000)); continue; }
+              break;
+            }
+            buffer = Buffer.from(await resp.arrayBuffer());
+            break;
+          } catch (fetchErr) {
+            console.warn(`[discord] Download attempt ${attempt}/3 failed for ${att.id}: ${fetchErr.message}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+        if (!buffer) {
+          console.error('[discord] Failed to download attachment after 3 attempts:', att.id);
           continue;
         }
-        const buffer = Buffer.from(await resp.arrayBuffer());
 
         const type = this._typeFromMime(att.content_type);
         const originalName = att.filename || `file_${att.id || Date.now()}`;

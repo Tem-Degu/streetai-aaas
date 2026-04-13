@@ -301,7 +301,7 @@ export default class SlackConnector extends BaseConnector {
       }
     }
 
-    // Send text response
+    // Send text response with retry
     if (response) {
       const chunks = this._splitMessage(response, 4000);
       for (const chunk of chunks) {
@@ -311,14 +311,26 @@ export default class SlackConnector extends BaseConnector {
         };
         if (threadTs) body.thread_ts = threadTs;
 
-        await fetch(`${this.apiBase}/chat.postMessage`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${this.botToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        });
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const resp = await fetch(`${this.apiBase}/chat.postMessage`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${this.botToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(body),
+            });
+            if (resp.ok) break;
+            console.warn(`[slack] Send attempt ${attempt}/3 failed: HTTP ${resp.status}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+            else console.error('[slack] Failed to send message after 3 attempts');
+          } catch (err) {
+            console.warn(`[slack] Send attempt ${attempt}/3 failed: ${err.message}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+            else console.error('[slack] Failed to send message after 3 attempts');
+          }
+        }
       }
     }
   }
@@ -390,15 +402,29 @@ export default class SlackConnector extends BaseConnector {
           continue;
         }
 
-        const resp = await fetch(downloadUrl, {
-          headers: { Authorization: `Bearer ${this.botToken}` },
-          signal: AbortSignal.timeout(60_000),
-        });
-        if (!resp.ok) {
-          console.error('[slack] Failed to download file:', f.id, resp.status);
+        let buffer;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const resp = await fetch(downloadUrl, {
+              headers: { Authorization: `Bearer ${this.botToken}` },
+              signal: AbortSignal.timeout(60_000),
+            });
+            if (!resp.ok) {
+              console.warn(`[slack] Download attempt ${attempt}/3 failed for ${f.id}: HTTP ${resp.status}`);
+              if (attempt < 3) { await new Promise(r => setTimeout(r, 2000)); continue; }
+              break;
+            }
+            buffer = Buffer.from(await resp.arrayBuffer());
+            break;
+          } catch (fetchErr) {
+            console.warn(`[slack] Download attempt ${attempt}/3 failed for ${f.id}: ${fetchErr.message}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+        if (!buffer) {
+          console.error('[slack] Failed to download file after 3 attempts:', f.id);
           continue;
         }
-        const buffer = Buffer.from(await resp.arrayBuffer());
 
         const type = this._typeFromMime(f.mimetype);
         const originalName = f.name || `file_${f.id || Date.now()}`;

@@ -349,12 +349,16 @@ aaas/
 ├── dashboard/                # React web dashboard (Vite + React)
 │   ├── src/pages/            # Dashboard pages
 │   └── dist/                 # Pre-built dashboard (shipped with npm package)
+├── templates/
+│   └── workspace/            # Scaffold used by `aaas init` (SOUL.md, data/, extensions/, etc.)
 ├── docs/                     # Protocol documentation
 │   ├── protocol.md           # Full protocol specification
 │   ├── extensions.md         # Extension protocol and payment flows
 │   ├── skill-reference.md    # How to write a skill
 │   ├── transactions.md       # Transaction lifecycle
 │   └── ...
+├── streetai/                 # streetai.org marketing website
+├── bin/                      # Helper scripts (scaffold.sh)
 └── examples/                 # Example agent workspaces
 ```
 
