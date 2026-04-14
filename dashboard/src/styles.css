@@ -1068,6 +1068,27 @@ select.input {
   color: var(--red);
 }
 
+.chat-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--red);
+  background: transparent;
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.chat-retry-btn:hover {
+  background: var(--red);
+  color: #fff;
+}
+.chat-retry-btn svg { flex-shrink: 0; }
+
 .chat-typing {
   color: var(--text-muted);
   font-style: italic;

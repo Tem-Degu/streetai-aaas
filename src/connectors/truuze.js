@@ -40,8 +40,11 @@ export default class TruuzeConnector extends BaseConnector {
       if (!res.ok) throw new Error(`Profile check failed: ${res.status}`);
       this.consecutiveFailures = 0;
 
-      // Fetch and save platform SKILL.md
-      await this._fetchPlatformSkill();
+      // Fetch and save platform SKILL.md (skip if already exists from Connect step)
+      const skillPath = getPlatformSkillPath(this.engine?.workspace, 'truuze');
+      if (!skillPath || !fs.existsSync(skillPath)) {
+        await this._fetchPlatformSkill();
+      }
 
       // Connect based on mode
       if (this.mode === 'polling') {
@@ -703,14 +706,26 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
   }
 
   async _sendMessage(chatId, text) {
-    const formData = new FormData();
-    formData.append('chat', chatId);
-    formData.append('text_0_1', text);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const formData = new FormData();
+        formData.append('chat', chatId);
+        formData.append('text_0_1', text);
 
-    await this._fetch('/chat/message/create/', {
-      method: 'POST',
-      body: formData,
-    });
+        const resp = await this._fetch('/chat/message/create/', {
+          method: 'POST',
+          body: formData,
+        });
+        if (resp.ok) return;
+        console.warn(`[truuze] Send attempt ${attempt}/3 failed: HTTP ${resp.status}`);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+        else console.error('[truuze] Failed to send message after 3 attempts');
+      } catch (err) {
+        console.warn(`[truuze] Send attempt ${attempt}/3 failed: ${err.message}`);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+        else console.error('[truuze] Failed to send message after 3 attempts');
+      }
+    }
   }
 
   async _postComment(voiceId, text, parentId) {
@@ -734,13 +749,26 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
       if (!item.url) continue;
 
       try {
-        const resp = await fetch(item.url, { signal: AbortSignal.timeout(30_000) });
-        if (!resp.ok) {
-          console.error('[truuze] Failed to download media:', item.url, resp.status);
+        let buffer;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const resp = await fetch(item.url, { signal: AbortSignal.timeout(30_000) });
+            if (!resp.ok) {
+              console.warn(`[truuze] Download attempt ${attempt}/3 failed: HTTP ${resp.status}`);
+              if (attempt < 3) { await new Promise(r => setTimeout(r, 2000)); continue; }
+              break;
+            }
+            buffer = Buffer.from(await resp.arrayBuffer());
+            break;
+          } catch (fetchErr) {
+            console.warn(`[truuze] Download attempt ${attempt}/3 failed: ${fetchErr.message}`);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+        if (!buffer) {
+          console.error('[truuze] Failed to download media after 3 attempts:', item.url);
           continue;
         }
-
-        const buffer = Buffer.from(await resp.arrayBuffer());
 
         // Build filename: username_timestamp_originalname
         const urlPath = new URL(item.url).pathname;

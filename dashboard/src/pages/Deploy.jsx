@@ -380,9 +380,13 @@ export default function Deploy() {
                     ) : (
                       <>
                         <div className="deploy-profile">
-                          <div className="deploy-profile-avatar" style={{ background: config.avatarBgColor || meta.color }}>
-                            {initials}
-                          </div>
+                          {config.agentPhoto ? (
+                            <img className="deploy-profile-avatar" src={config.agentPhoto} alt={config.agentName || 'Agent'} style={{ objectFit: 'cover' }} />
+                          ) : (
+                            <div className="deploy-profile-avatar" style={{ background: config.avatarBgColor || meta.color }}>
+                              {initials}
+                            </div>
+                          )}
                           <div className="deploy-profile-info">
                             <div className="deploy-profile-name">{config.agentName || config.agentUsername || `Agent #${config.agentId}`}</div>
                             {config.agentUsername && <div className="deploy-profile-username">@{config.agentUsername}</div>}

@@ -14,6 +14,46 @@ import { extractFiles } from '../connectors/media.js';
 
 const __api_dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const TRUUZE_SKILL_REWRITE_PROMPT = `You are rewriting a platform SKILL.md file for an AI agent that has already been onboarded.
+
+The agent is already signed up and connected. Rewrite the SKILL.md below with these changes:
+1. REMOVE all signup/registration instructions (Step 1: Register, provisioning token usage, etc.)
+2. REMOVE credential storage instructions (saving API keys, credentials.json, etc.)
+3. REMOVE heartbeat/polling setup instructions (events are delivered automatically)
+4. REMOVE "where to place this file" or installation instructions
+5. REMOVE authentication setup instructions (auth headers are handled automatically)
+6. KEEP all API endpoint documentation intact (messaging, escrow, kookies, profiles, etc.)
+7. KEEP behavioral guidance (community guidelines, best practices, owner priority)
+8. KEEP the frontmatter (--- block at the top) unchanged
+9. Return ONLY the rewritten SKILL.md content, nothing else — no explanations, no wrapping
+
+Original SKILL.md:
+`;
+
+/**
+ * Use the LLM to strip onboarding sections from a Truuze skill.
+ * Returns the original if no provider is available or rewrite fails.
+ */
+async function rewriteTruuzeSkill(engine, rawSkill) {
+  try {
+    if (!engine?.provider) {
+      await engine?.initialize?.();
+      if (!engine?.provider) return rawSkill;
+    }
+    const result = await engine.provider.chat([
+      { role: 'user', content: TRUUZE_SKILL_REWRITE_PROMPT + rawSkill },
+    ], { maxTokens: 8000, temperature: 0 });
+    const rewritten = result.content?.trim();
+    if (rewritten && rewritten.length > 500) {
+      console.log('[truuze-connect] SKILL.md rewritten by LLM (' + rewritten.length + ' chars)');
+      return rewritten;
+    }
+  } catch (err) {
+    console.log('[truuze-connect] Skill rewrite failed, using original:', err.message);
+  }
+  return rawSkill;
+}
+
 export function apiRouter(workspace) {
   const router = express.Router();
   const paths = getWorkspacePaths(workspace);
@@ -819,6 +859,7 @@ export function apiRouter(workspace) {
             agentName: data.name || `${data.first_name || ''} ${data.last_name || ''}`.trim(),
             agentProvider: data.agent_provider,
             agentDescription: data.agent_description,
+            agentPhoto: data.photo || null,
             avatarBgColor: data.avatar_bg_color,
             jobTitle: data.job_title,
             ownerUsername: data.owner_username,
@@ -826,7 +867,7 @@ export function apiRouter(workspace) {
             connectedAt: new Date().toISOString(),
           });
 
-          // Fetch the appropriate skill template from the refresh endpoint
+          // Fetch the skill template and rewrite with LLM
           const skillPath = path.join(workspace, 'skills', 'truuze', 'SKILL.md');
           fs.mkdirSync(path.dirname(skillPath), { recursive: true });
           const wsConfig = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
@@ -837,31 +878,27 @@ export function apiRouter(workspace) {
             const skillResp = await fetch(refreshUrl, {
               headers: { 'X-Agent-Key': data.api_key, 'X-Api-Key': PLATFORM_API_KEY },
             });
-            console.log('[truuze-connect] Refresh response status:', skillResp.status);
+            let rawSkill = null;
             if (skillResp.ok) {
               const skillData = await skillResp.json();
-              const refreshedSkill = skillData.content || skillData.skills_md;
-              if (refreshedSkill) {
-                console.log('[truuze-connect] Got refreshed skill, length:', refreshedSkill.length);
-                fs.writeFileSync(skillPath, refreshedSkill);
-              } else {
-                console.log('[truuze-connect] No content in refresh response, saving original');
-                fs.writeFileSync(skillPath, skillContent);
-              }
-            } else {
-              const errText = await skillResp.text();
-              console.log('[truuze-connect] Refresh failed:', errText.slice(0, 200));
-              fs.writeFileSync(skillPath, skillContent);
+              rawSkill = skillData.content || skillData.skills_md;
             }
+            const finalSkill = rawSkill || skillContent;
+            // Rewrite with LLM to strip onboarding sections (non-blocking failure)
+            let eng = null;
+            try { eng = await getEngine(); } catch { /* no provider configured yet */ }
+            const processed = eng ? await rewriteTruuzeSkill(eng, finalSkill) : finalSkill;
+            fs.writeFileSync(skillPath, processed);
           } catch (err) {
-            console.log('[truuze-connect] Refresh error:', err.message);
+            console.log('[truuze-connect] Skill fetch/rewrite error:', err.message);
             fs.writeFileSync(skillPath, skillContent);
           }
         } else if (agentKey) {
+          const trimmedKey = agentKey.trim();
           const url = baseUrl || 'https://origin.truuze.com/api/v1';
           // Verify existing key
           const resp = await fetch(`${url}/account/agent/profile/`, {
-            headers: { 'X-Agent-Key': agentKey, 'X-Api-Key': PLATFORM_API_KEY },
+            headers: { 'X-Agent-Key': trimmedKey, 'X-Api-Key': PLATFORM_API_KEY },
           });
           if (!resp.ok) return res.status(400).json({ error: 'Invalid agent key' });
           const profile = await resp.json();
@@ -870,40 +907,45 @@ export function apiRouter(workspace) {
           let accountData = {};
           try {
             const accResp = await fetch(`${url}/account/agent/updates/`, {
-              headers: { 'X-Agent-Key': agentKey, 'X-Api-Key': PLATFORM_API_KEY },
+              headers: { 'X-Agent-Key': trimmedKey, 'X-Api-Key': PLATFORM_API_KEY },
             });
             if (accResp.ok) accountData = await accResp.json();
           } catch { /* non-critical */ }
 
           saveConnection(workspace, 'truuze', {
             baseUrl: url,
-            agentKey,
+            agentKey: trimmedKey,
             platformApiKey: PLATFORM_API_KEY,
             agentId: profile.agent || profile.id,
-            agentUsername: accountData.username || profile.username,
-            agentName: profile.bio ? undefined : `Agent #${profile.agent || profile.id}`,
+            agentUsername: profile.username || accountData.username,
+            agentName: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || undefined,
             agentProvider: profile.agent_provider,
-            agentDescription: profile.bio,
+            agentDescription: profile.agent_description || profile.bio,
+            agentPhoto: profile.photo || null,
             avatarBgColor: profile.avatar_bg_color,
+            jobTitle: profile.job_title,
             ownerUsername: profile.owner_username || accountData.owner_username,
             heartbeatInterval: 30,
             connectedAt: new Date().toISOString(),
           });
 
-          // Fetch the appropriate skill template from the refresh endpoint
+          // Fetch the skill template and rewrite with LLM
           const wsConfig = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
           const agentType = wsConfig.agentType || 'service';
           try {
             const skillResp = await fetch(`${url}/account/agent/skills/refresh/?type=${agentType}`, {
-              headers: { 'X-Agent-Key': agentKey, 'X-Api-Key': PLATFORM_API_KEY },
+              headers: { 'X-Agent-Key': trimmedKey, 'X-Api-Key': PLATFORM_API_KEY },
             });
             if (skillResp.ok) {
               const skillData = await skillResp.json();
-              const refreshedSkill = skillData.content || skillData.skills_md;
-              if (refreshedSkill) {
+              const rawSkill = skillData.content || skillData.skills_md;
+              if (rawSkill) {
+                let eng = null;
+                try { eng = await getEngine(); } catch { /* no provider configured yet */ }
+                const processed = eng ? await rewriteTruuzeSkill(eng, rawSkill) : rawSkill;
                 const skillPath = path.join(workspace, 'skills', 'truuze', 'SKILL.md');
                 fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-                fs.writeFileSync(skillPath, refreshedSkill);
+                fs.writeFileSync(skillPath, processed);
               }
             }
           } catch { /* non-critical */ }
@@ -943,6 +985,7 @@ export function apiRouter(workspace) {
             agentName: data.name || `${data.first_name || ''} ${data.last_name || ''}`.trim(),
             agentProvider: data.agent_provider,
             agentDescription: data.agent_description,
+            agentPhoto: data.photo || null,
             avatarBgColor: data.avatar_bg_color,
             jobTitle: data.job_title,
             ownerUsername: data.owner_username,
@@ -950,7 +993,7 @@ export function apiRouter(workspace) {
             connectedAt: new Date().toISOString(),
           });
 
-          // Fetch the appropriate skill template from the refresh endpoint
+          // Fetch the skill template and rewrite with LLM
           const wsConfig3 = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
           const agentType3 = wsConfig3.agentType || 'service';
           try {
@@ -959,11 +1002,14 @@ export function apiRouter(workspace) {
             });
             if (skillResp.ok) {
               const skillData = await skillResp.json();
-              const refreshedSkill = skillData.content || skillData.skills_md;
-              if (refreshedSkill) {
+              const rawSkill = skillData.content || skillData.skills_md;
+              if (rawSkill) {
+                let eng = null;
+                try { eng = await getEngine(); } catch { /* no provider configured yet */ }
+                const processed = eng ? await rewriteTruuzeSkill(eng, rawSkill) : rawSkill;
                 const skillPath = path.join(workspace, 'skills', 'truuze', 'SKILL.md');
                 fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-                fs.writeFileSync(skillPath, refreshedSkill);
+                fs.writeFileSync(skillPath, processed);
               }
             }
           } catch { /* non-critical */ }

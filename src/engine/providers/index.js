@@ -15,18 +15,18 @@ export class BaseProvider {
 
   /**
    * Send messages to the LLM and get a response.
-   * Subclasses implement _chat(). This wrapper adds retry on rate limits.
+   * Subclasses implement _chat(). This wrapper adds retry on transient errors.
    */
   async chat(messages, options = {}) {
-    const maxRetries = 2;
-    const delayMs = 8000;
+    const maxRetries = 4;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await this._chat(messages, options);
       } catch (err) {
-        if (attempt < maxRetries && isRateLimitError(err)) {
-          console.log(`[${this.name}] Rate limited (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delayMs / 1000}s...`);
+        if (attempt < maxRetries && isRetriableError(err)) {
+          const delayMs = isRateLimitError(err) ? 8000 : 3000;
+          console.warn(`[${this.name}] ${err.message} (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delayMs / 1000}s...`);
           await sleep(delayMs);
           continue;
         }
@@ -47,6 +47,27 @@ export class BaseProvider {
 function isRateLimitError(err) {
   const msg = (err.message || '').toLowerCase();
   return msg.includes('429') || msg.includes('rate limit') || msg.includes('too many requests');
+}
+
+function isRetriableError(err) {
+  if (isRateLimitError(err)) return true;
+
+  const msg = (err.message || '').toLowerCase();
+
+  // Network-level failures
+  if (msg.includes('fetch failed') || msg.includes('econnreset') || msg.includes('econnrefused') ||
+      msg.includes('etimedout') || msg.includes('socket hang up') || msg.includes('network') ||
+      msg.includes('abort') || msg.includes('timeout')) {
+    return true;
+  }
+
+  // Server errors (5xx)
+  if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('529') ||
+      msg.includes('server error') || msg.includes('overloaded') || msg.includes('internal error')) {
+    return true;
+  }
+
+  return false;
 }
 
 function sleep(ms) {

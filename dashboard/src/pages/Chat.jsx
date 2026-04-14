@@ -140,7 +140,37 @@ export default function Chat() {
       setMessages(prev => [...prev, { role: 'agent', text: data.response, files: data.files, time: new Date() }]);
     } catch (e) {
       setError(e.message);
-      setMessages(prev => [...prev, { role: 'error', text: e.message, time: new Date() }]);
+      setMessages(prev => [...prev, { role: 'error', text: e.message, time: new Date(), _retryMsg: msg, _retryFiles: files }]);
+    }
+    setSending(false);
+    inputRef.current?.focus();
+  }
+
+  async function handleRetry(errorMsg) {
+    setMessages(prev => prev.filter(m => m !== errorMsg));
+    setError(null);
+    setSending(true);
+
+    try {
+      const body = { message: errorMsg._retryMsg, mode };
+      if (errorMsg._retryFiles?.length > 0) body.files = errorMsg._retryFiles;
+
+      const res = await fetch(resolve('/api/chat'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `${res.status} ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      setMessages(prev => [...prev, { role: 'agent', text: data.response, files: data.files, time: new Date() }]);
+    } catch (e) {
+      setError(e.message);
+      setMessages(prev => [...prev, { role: 'error', text: e.message, time: new Date(), _retryMsg: errorMsg._retryMsg, _retryFiles: errorMsg._retryFiles }]);
     }
     setSending(false);
     inputRef.current?.focus();
@@ -269,6 +299,15 @@ export default function Chat() {
                     </a>
                   ))}
                 </div>
+              )}
+              {msg.role === 'error' && i === messages.length - 1 && !sending && (
+                <button className="chat-retry-btn" onClick={() => handleRetry(msg)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" />
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                  </svg>
+                  Retry
+                </button>
               )}
             </div>
           </div>
