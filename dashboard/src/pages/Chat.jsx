@@ -140,20 +140,22 @@ export default function Chat() {
       setMessages(prev => [...prev, { role: 'agent', text: data.response, files: data.files, time: new Date() }]);
     } catch (e) {
       setError(e.message);
-      setMessages(prev => [...prev, { role: 'error', text: e.message, time: new Date(), _retryMsg: msg, _retryFiles: files }]);
     }
     setSending(false);
     inputRef.current?.focus();
   }
 
-  async function handleRetry(errorMsg) {
-    setMessages(prev => prev.filter(m => m !== errorMsg));
+  async function handleResend() {
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.role !== 'user' || sending) return;
+
     setError(null);
     setSending(true);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 0);
 
     try {
-      const body = { message: errorMsg._retryMsg, mode };
-      if (errorMsg._retryFiles?.length > 0) body.files = errorMsg._retryFiles;
+      const body = { message: lastMsg.text, mode };
+      if (lastMsg.files?.length > 0) body.files = lastMsg.files;
 
       const res = await fetch(resolve('/api/chat'), {
         method: 'POST',
@@ -170,7 +172,6 @@ export default function Chat() {
       setMessages(prev => [...prev, { role: 'agent', text: data.response, files: data.files, time: new Date() }]);
     } catch (e) {
       setError(e.message);
-      setMessages(prev => [...prev, { role: 'error', text: e.message, time: new Date(), _retryMsg: errorMsg._retryMsg, _retryFiles: errorMsg._retryFiles }]);
     }
     setSending(false);
     inputRef.current?.focus();
@@ -258,13 +259,6 @@ export default function Chat() {
         </div>
       )}
 
-      {error && (
-        <div style={{ padding: '8px 12px', background: 'rgba(212,90,90,0.1)', border: '1px solid var(--red)', borderRadius: 6, color: 'var(--red)', fontSize: 13, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>{error}</span>
-          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16 }}>✕</button>
-        </div>
-      )}
-
       <div className="chat-messages">
         {messages.length === 0 && hasProvider && (
           <div className="chat-empty">
@@ -300,14 +294,20 @@ export default function Chat() {
                   ))}
                 </div>
               )}
-              {msg.role === 'error' && i === messages.length - 1 && !sending && (
-                <button className="chat-retry-btn" onClick={() => handleRetry(msg)}>
+              {msg.role === 'user' && i === messages.length - 1 && !sending && (
+                <button className="chat-resend-btn" onClick={handleResend}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="23 4 23 10 17 10" />
                     <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                   </svg>
-                  Retry
+                  Resend
                 </button>
+              )}
+              {msg.role === 'user' && i === messages.length - 1 && !sending && error && (
+                <div className="chat-error-inline">
+                  <span>{error}</span>
+                  <button onClick={() => setError(null)} className="chat-error-dismiss">✕</button>
+                </div>
               )}
             </div>
           </div>

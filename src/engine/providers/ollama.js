@@ -31,11 +31,20 @@ export default class OllamaProvider extends BaseProvider {
 
     const url = `${this.ollamaUrl}/api/chat`;
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      const msg = (err.message || '').toLowerCase();
+      if (msg.includes('econnrefused') || msg.includes('fetch failed') || msg.includes('enotfound')) {
+        throw new Error(`Cannot connect to Ollama at ${this.ollamaUrl}. Make sure Ollama is installed and running. Download from https://ollama.com then run: ollama serve`);
+      }
+      throw err;
+    }
 
     if (!res.ok) {
       const err = await res.text();

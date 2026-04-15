@@ -247,57 +247,56 @@ export default class SlackConnector extends BaseConnector {
 
     const threadTs = event.metadata?.threadTs;
 
-    // Upload files via Slack's 3-step flow
+    // Upload files via Slack's 3-step flow (with retry)
     for (const file of files) {
-      try {
-        const buffer = await readFileBuffer(file);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const buffer = await readFileBuffer(file);
 
-        // Step 1: Get an upload URL
-        const urlResp = await fetch(`${this.apiBase}/files.getUploadURLExternal`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${this.botToken}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            filename: file.filename,
-            length: String(buffer.length),
-          }),
-        });
-        const urlData = await urlResp.json();
-        if (!urlData.ok) {
-          console.error(`[slack] getUploadURLExternal failed:`, urlData.error);
-          continue;
+          // Step 1: Get an upload URL
+          const urlResp = await fetch(`${this.apiBase}/files.getUploadURLExternal`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${this.botToken}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              filename: file.filename,
+              length: String(buffer.length),
+            }),
+          });
+          const urlData = await urlResp.json();
+          if (!urlData.ok) throw new Error(`getUploadURLExternal: ${urlData.error}`);
+
+          // Step 2: Upload file to the presigned URL
+          const uploadResp = await fetch(urlData.upload_url, {
+            method: 'POST',
+            body: buffer,
+            headers: { 'Content-Type': file.mimeType },
+          });
+          if (!uploadResp.ok) throw new Error(`File upload: HTTP ${uploadResp.status}`);
+
+          // Step 3: Complete the upload and share to channel
+          const completeBody = {
+            files: [{ id: urlData.file_id, title: file.alt || file.filename }],
+            channel_id: channelId,
+          };
+          if (threadTs) completeBody.thread_ts = threadTs;
+
+          await fetch(`${this.apiBase}/files.completeUploadExternal`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${this.botToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(completeBody),
+          });
+          break; // success
+        } catch (err) {
+          console.warn(`[slack] File upload attempt ${attempt}/3 failed for ${file.filename}: ${err.message}`);
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          else console.error(`[slack] Failed to upload file ${file.filename} after 3 attempts`);
         }
-
-        // Step 2: Upload file to the presigned URL
-        const uploadResp = await fetch(urlData.upload_url, {
-          method: 'POST',
-          body: buffer,
-          headers: { 'Content-Type': file.mimeType },
-        });
-        if (!uploadResp.ok) {
-          console.error(`[slack] File upload failed:`, uploadResp.status);
-          continue;
-        }
-
-        // Step 3: Complete the upload and share to channel
-        const completeBody = {
-          files: [{ id: urlData.file_id, title: file.alt || file.filename }],
-          channel_id: channelId,
-        };
-        if (threadTs) completeBody.thread_ts = threadTs;
-
-        await fetch(`${this.apiBase}/files.completeUploadExternal`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${this.botToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(completeBody),
-        });
-      } catch (err) {
-        console.error(`[slack] Failed to upload file ${file.filename}:`, err.message);
       }
     }
 

@@ -293,41 +293,45 @@ export default class DiscordConnector extends BaseConnector {
     const channelId = event.metadata?.channelId;
     if (!channelId) return;
 
-    // If there are files, send the first message with attachments via multipart
+    // If there are files, send the first message with attachments via multipart (with retry)
     if (files.length > 0) {
-      try {
-        const formData = new FormData();
-        const payload = { content: response ? this._splitMessage(response, 2000)[0] : '' };
-        formData.append('payload_json', JSON.stringify(payload));
+      let fileSent = false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const formData = new FormData();
+          const payload = { content: response ? this._splitMessage(response, 2000)[0] : '' };
+          formData.append('payload_json', JSON.stringify(payload));
 
-        for (let i = 0; i < files.length && i < 10; i++) {
-          const buffer = await readFileBuffer(files[i]);
-          const blob = new Blob([buffer], { type: files[i].mimeType });
-          formData.append(`files[${i}]`, blob, files[i].filename);
+          for (let i = 0; i < files.length && i < 10; i++) {
+            const buffer = await readFileBuffer(files[i]);
+            const blob = new Blob([buffer], { type: files[i].mimeType });
+            formData.append(`files[${i}]`, blob, files[i].filename);
+          }
+
+          const resp = await fetch(`${this.apiBase}/channels/${channelId}/messages`, {
+            method: 'POST',
+            headers: { Authorization: `Bot ${this.token}` },
+            body: formData,
+          });
+          if (resp.ok) { fileSent = true; break; }
+          console.warn(`[discord] File send attempt ${attempt}/3 failed: HTTP ${resp.status}`);
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+        } catch (err) {
+          console.warn(`[discord] File send attempt ${attempt}/3 failed: ${err.message}`);
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
         }
+      }
 
-        await fetch(`${this.apiBase}/channels/${channelId}/messages`, {
-          method: 'POST',
-          headers: { Authorization: `Bot ${this.token}` },
-          body: formData,
-        });
-
+      if (fileSent) {
         // Send remaining text chunks if the response was too long
         if (response && response.length > 2000) {
           const chunks = this._splitMessage(response, 2000);
           for (let i = 1; i < chunks.length; i++) {
-            await fetch(`${this.apiBase}/channels/${channelId}/messages`, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bot ${this.token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ content: chunks[i] }),
-            });
+            await this._sendTextOnly(channelId, chunks[i]);
           }
         }
-      } catch (err) {
-        console.error('[discord] Failed to send files:', err.message);
+      } else {
+        console.error('[discord] Failed to send files after 3 attempts');
         // Fallback to text-only
         if (response) {
           await this._sendTextOnly(channelId, response);

@@ -210,61 +210,63 @@ export default class WhatsAppConnector extends BaseConnector {
     const phoneNumber = event.metadata?.phoneNumber;
     if (!phoneNumber) return;
 
-    // Send files first via WhatsApp media messages
+    // Send files first via WhatsApp media messages (with retry)
     for (const file of files) {
-      try {
-        // Step 1: Upload media to WhatsApp
-        const buffer = await readFileBuffer(file);
-        const blob = new Blob([buffer], { type: file.mimeType });
-        const uploadForm = new FormData();
-        uploadForm.append('file', blob, file.filename);
-        uploadForm.append('messaging_product', 'whatsapp');
-        uploadForm.append('type', file.mimeType);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          // Step 1: Upload media to WhatsApp
+          const buffer = await readFileBuffer(file);
+          const blob = new Blob([buffer], { type: file.mimeType });
+          const uploadForm = new FormData();
+          uploadForm.append('file', blob, file.filename);
+          uploadForm.append('messaging_product', 'whatsapp');
+          uploadForm.append('type', file.mimeType);
 
-        const uploadResp = await fetch(
-          `${this.apiBase}/${this.phoneNumberId}/media`,
-          {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${this.accessToken}` },
-            body: uploadForm,
-          }
-        );
+          const uploadResp = await fetch(
+            `${this.apiBase}/${this.phoneNumberId}/media`,
+            {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${this.accessToken}` },
+              body: uploadForm,
+            }
+          );
+          if (!uploadResp.ok) throw new Error(`Media upload: HTTP ${uploadResp.status}`);
 
-        if (!uploadResp.ok) {
-          console.error('[whatsapp] Media upload failed:', uploadResp.status);
-          continue;
+          const { id: mediaId } = await uploadResp.json();
+
+          // Step 2: Send media message
+          const mediaType = file.type === 'image' ? 'image'
+            : file.type === 'audio' ? 'audio'
+            : file.type === 'video' ? 'video'
+            : 'document';
+
+          const mediaBody = { id: mediaId };
+          if (file.alt && mediaType !== 'audio') mediaBody.caption = file.alt;
+          if (mediaType === 'document') mediaBody.filename = file.filename;
+
+          const sendResp = await fetch(
+            `${this.apiBase}/${this.phoneNumberId}/messages`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${this.accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                messaging_product: 'whatsapp',
+                to: phoneNumber,
+                type: mediaType,
+                [mediaType]: mediaBody,
+              }),
+            }
+          );
+          if (!sendResp.ok) throw new Error(`Media send: HTTP ${sendResp.status}`);
+          break; // success
+        } catch (err) {
+          console.warn(`[whatsapp] File send attempt ${attempt}/3 failed for ${file.filename}: ${err.message}`);
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+          else console.error(`[whatsapp] Failed to send file ${file.filename} after 3 attempts`);
         }
-
-        const { id: mediaId } = await uploadResp.json();
-
-        // Step 2: Send media message
-        const mediaType = file.type === 'image' ? 'image'
-          : file.type === 'audio' ? 'audio'
-          : file.type === 'video' ? 'video'
-          : 'document';
-
-        const mediaBody = { id: mediaId };
-        if (file.alt && mediaType !== 'audio') mediaBody.caption = file.alt;
-        if (mediaType === 'document') mediaBody.filename = file.filename;
-
-        await fetch(
-          `${this.apiBase}/${this.phoneNumberId}/messages`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${this.accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              messaging_product: 'whatsapp',
-              to: phoneNumber,
-              type: mediaType,
-              [mediaType]: mediaBody,
-            }),
-          }
-        );
-      } catch (err) {
-        console.error(`[whatsapp] Failed to send file ${file.filename}:`, err.message);
       }
     }
 

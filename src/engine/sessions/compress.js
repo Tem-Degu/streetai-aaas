@@ -34,17 +34,24 @@ export async function compressSession(provider, session, { maxTokens = 4000, kee
     ? `Previous summary: ${session.summary}\n\nContinuation:\n${conversationText}`
     : conversationText;
 
-  try {
-    const result = await provider.chat([
-      { role: 'system', content: COMPRESS_PROMPT },
-      { role: 'user', content: fullText },
-    ], { maxTokens: 500, temperature: 0 });
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const result = await provider.chat([
+        { role: 'system', content: COMPRESS_PROMPT },
+        { role: 'user', content: fullText },
+      ], { maxTokens: 500, temperature: 0 });
 
-    return result.content;
-  } catch {
-    // Fallback: simple truncation — keep last sentence of each old message
-    return toCompress
-      .map(m => `${m.role}: ${(m.content || '').slice(0, 100)}`)
-      .join('; ');
+      return result.content;
+    } catch (err) {
+      if (attempt < 2) {
+        console.warn('[compress] Summarization failed, retrying:', err.message);
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+      // Fallback: simple truncation — keep last sentence of each old message
+      return toCompress
+        .map(m => `${m.role}: ${(m.content || '').slice(0, 100)}`)
+        .join('; ');
+    }
   }
 }

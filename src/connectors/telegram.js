@@ -171,33 +171,41 @@ export default class TelegramConnector extends BaseConnector {
     const chatId = event.metadata?.chatId;
     if (!chatId) return;
 
-    // Send files first
+    // Send files first (with retry)
     for (const file of files) {
-      try {
-        const buffer = await readFileBuffer(file);
-        const blob = new Blob([buffer], { type: file.mimeType });
-        const formData = new FormData();
-        formData.append('chat_id', chatId);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const buffer = await readFileBuffer(file);
+          const blob = new Blob([buffer], { type: file.mimeType });
+          const formData = new FormData();
+          formData.append('chat_id', chatId);
 
-        if (file.type === 'image') {
-          formData.append('photo', blob, file.filename);
+          let endpoint;
+          if (file.type === 'image') {
+            formData.append('photo', blob, file.filename);
+            endpoint = 'sendPhoto';
+          } else if (file.type === 'audio') {
+            formData.append('audio', blob, file.filename);
+            endpoint = 'sendAudio';
+          } else if (file.type === 'video') {
+            formData.append('video', blob, file.filename);
+            endpoint = 'sendVideo';
+          } else {
+            formData.append('document', blob, file.filename);
+            endpoint = 'sendDocument';
+          }
           if (file.alt) formData.append('caption', file.alt);
-          await fetch(`${this.apiBase}/sendPhoto`, { method: 'POST', body: formData });
-        } else if (file.type === 'audio') {
-          formData.append('audio', blob, file.filename);
-          if (file.alt) formData.append('caption', file.alt);
-          await fetch(`${this.apiBase}/sendAudio`, { method: 'POST', body: formData });
-        } else if (file.type === 'video') {
-          formData.append('video', blob, file.filename);
-          if (file.alt) formData.append('caption', file.alt);
-          await fetch(`${this.apiBase}/sendVideo`, { method: 'POST', body: formData });
-        } else {
-          formData.append('document', blob, file.filename);
-          if (file.alt) formData.append('caption', file.alt);
-          await fetch(`${this.apiBase}/sendDocument`, { method: 'POST', body: formData });
+
+          const resp = await fetch(`${this.apiBase}/${endpoint}`, { method: 'POST', body: formData });
+          if (resp.ok) break;
+          console.warn(`[telegram] File send attempt ${attempt}/3 failed: HTTP ${resp.status}`);
+          if (attempt < 3) await this._sleep(2000);
+          else console.error(`[telegram] Failed to send file ${file.filename} after 3 attempts`);
+        } catch (err) {
+          console.warn(`[telegram] File send attempt ${attempt}/3 failed: ${err.message}`);
+          if (attempt < 3) await this._sleep(2000);
+          else console.error(`[telegram] Failed to send file ${file.filename} after 3 attempts`);
         }
-      } catch (err) {
-        console.error(`[telegram] Failed to send file ${file.filename}:`, err.message);
       }
     }
 

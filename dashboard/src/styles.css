@@ -1068,26 +1068,49 @@ select.input {
   color: var(--red);
 }
 
-.chat-retry-btn {
+.chat-resend-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   margin-top: 8px;
-  padding: 6px 14px;
+  padding: 5px 14px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--red);
+  color: var(--text-muted);
   background: transparent;
-  border: 1px solid var(--red);
+  border: 1px solid var(--border);
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.chat-retry-btn:hover {
-  background: var(--red);
-  color: #fff;
+.chat-resend-btn:hover {
+  background: var(--bg-alt);
+  color: var(--text);
+  border-color: var(--text-muted);
 }
-.chat-retry-btn svg { flex-shrink: 0; }
+.chat-resend-btn svg { flex-shrink: 0; }
+.chat-error-inline {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: rgba(212,90,90,0.1);
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  color: var(--red);
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.chat-error-dismiss {
+  background: none;
+  border: none;
+  color: var(--red);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
 
 .chat-typing {
   color: var(--text-muted);

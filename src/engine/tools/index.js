@@ -362,7 +362,7 @@ export class ToolRegistry {
         case 'save_memory':
           return saveMemory(this.paths, args);
         case 'call_extension':
-          return await callExtension(this.paths, args);
+          return await this._retryNetworkTool(() => callExtension(this.paths, args), 'call_extension');
         case 'create_transaction':
           return createTransaction(this.paths, args);
         case 'update_transaction':
@@ -404,18 +404,37 @@ export class ToolRegistry {
         case 'list_tables':
           return listTables(this.paths);
         case 'platform_request':
-          result = await platformRequest(this.workspace, args);
+          result = await this._retryNetworkTool(() => platformRequest(this.workspace, args), 'platform_request');
           console.log('[executeTool] platform_request result:', result?.slice(0, 500));
           return result;
         case 'web_search':
-          return await webSearch(this.config, args);
+          return await this._retryNetworkTool(() => webSearch(this.config, args), 'web_search');
         case 'web_fetch':
-          return await webFetch(args);
+          return await this._retryNetworkTool(() => webFetch(args), 'web_fetch');
         default:
           return JSON.stringify({ error: `Unknown tool: ${name}` });
       }
     } catch (err) {
       return JSON.stringify({ error: err.message });
+    }
+  }
+
+  async _retryNetworkTool(fn, toolName) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        const msg = (err.message || '').toLowerCase();
+        const isTransient = msg.includes('fetch failed') || msg.includes('econnreset') ||
+          msg.includes('econnrefused') || msg.includes('etimedout') || msg.includes('socket hang up') ||
+          msg.includes('timeout') || msg.includes('abort') || msg.includes('502') || msg.includes('503');
+        if (attempt < 3 && isTransient) {
+          console.warn(`[${toolName}] Attempt ${attempt}/3 failed: ${err.message}, retrying...`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        throw err;
+      }
     }
   }
 }
