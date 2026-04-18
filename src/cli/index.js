@@ -341,10 +341,10 @@ program
   .action(disconnectCommand);
 
 program
-  .command('run')
-  .description('Start the agent with all connected platforms')
+  .command('run [platforms...]')
+  .description('Start the agent with all connected platforms, or only the ones listed')
   .option('--daemon', 'Run in background')
-  .action(runCommand);
+  .action((platforms, opts) => runCommand(platforms, opts));
 
 program
   .command('stop')

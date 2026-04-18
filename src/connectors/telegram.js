@@ -97,6 +97,13 @@ export default class TelegramConnector extends BaseConnector {
         );
 
         if (!resp.ok) {
+          if (resp.status === 409) {
+            console.error('[telegram] Conflict: another process is polling this bot token. Stop the other instance and try again.');
+            this.status = 'error';
+            this.error = 'Another instance is polling this bot token. Stop the other instance and try again.';
+            this.polling = false;
+            break;
+          }
           this.pollFailures++;
           if (this.pollFailures >= 3) {
             console.error(`[telegram] Persistent poll failure (${this.pollFailures}x): HTTP ${resp.status}`);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { useApi } from '../hooks/useApi.js';
+import { useNavigate } from 'react-router-dom';
+import { useApi, WorkspaceContext } from '../hooks/useApi.js';
 import { ThemeContext } from '../hooks/useTheme.js';
 
 const PROVIDERS = [
@@ -13,6 +14,8 @@ const PROVIDERS = [
 
 export default function Settings() {
   const api = useApi();
+  const workspace = useContext(WorkspaceContext);
+  const navigate = useNavigate();
   const themeCtx = useContext(ThemeContext);
   const theme = themeCtx?.theme || 'dark';
   const setTheme = themeCtx?.setTheme || (() => {});
@@ -26,6 +29,7 @@ export default function Settings() {
   const [customModel, setCustomModel] = useState(false);
   const [agentType, setAgentType] = useState('service');
   const [saveMsg, setSaveMsg] = useState('');
+  const [showRestartNotice, setShowRestartNotice] = useState(false);
 
   // API key form
   const [keyProvider, setKeyProvider] = useState('');
@@ -89,12 +93,25 @@ export default function Settings() {
   const save = async () => {
     setSaving(true);
     setSaveMsg('');
+    setShowRestartNotice(false);
     try {
+      const providerChanged = provider !== (config?.provider || '');
+      const modelChanged = model !== (config?.model || '');
       await api.put('/api/config', { provider, model, agentType });
       const cfg = await api.get('/api/config');
       setConfig(cfg);
       setSaveMsg('Saved!');
       setTimeout(() => setSaveMsg(''), 2500);
+
+      // Only workspace mode runs an agent daemon — skip in hub mode.
+      if (workspace && (providerChanged || modelChanged)) {
+        try {
+          const status = await api.get('/api/deploy/status');
+          if (status?.daemonRunning || status?.sessionRunning) {
+            setShowRestartNotice(true);
+          }
+        } catch { /* non-critical */ }
+      }
     } catch (err) {
       setSaveMsg('Error: ' + err.message);
     }
@@ -307,6 +324,14 @@ export default function Settings() {
               <p className="form-hint" style={{ marginTop: 8, color: saveMsg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
                 {saveMsg}
               </p>
+            )}
+            {showRestartNotice && (
+              <div className="deploy-banner" style={{ marginTop: 12, marginBottom: 0, justifyContent: 'space-between' }}>
+                <span>Your running connectors are still using the previous provider/model. Stop and start them on the Deploy page to apply the change.</span>
+                <button className="btn btn-sm" onClick={() => navigate(`/ws/${workspace}/deploy`)}>
+                  Go to Deploy
+                </button>
+              </div>
             )}
           </div>
         </div>

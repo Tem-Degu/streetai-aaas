@@ -143,6 +143,21 @@ aaas run
 
 Your agent is now live on all connected platforms. Users message it, and it follows the AaaS protocol to serve them.
 
+To start only a subset of platforms, pass their names:
+
+```bash
+aaas run telegram
+aaas run telegram discord
+```
+
+Add `--daemon` to run in the background:
+
+```bash
+aaas run telegram --daemon
+```
+
+If a daemon is already running when you use `--daemon` with a platform filter, you'll be prompted to stop it and start a fresh daemon with the listed platforms.
+
 ### Check everything is working
 
 ```bash
@@ -278,7 +293,9 @@ Visitors chat through `streetai.org`, which forwards messages over WebSocket to 
 | Command | Description |
 |---------|-------------|
 | `aaas run` | Start the agent on all connected platforms |
+| `aaas run <platform> [<platform>...]` | Start only the listed platforms (e.g. `aaas run telegram discord`) |
 | `aaas run --daemon` | Start in the background |
+| `aaas run <platform> --daemon` | Start only the listed platforms in the background (prompts to replace an existing daemon) |
 | `aaas stop` | Stop a running agent |
 | `aaas logs [--days 5]` | View recent agent activity and memory changes |
 

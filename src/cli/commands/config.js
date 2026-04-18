@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import chalk from 'chalk';
@@ -11,6 +12,22 @@ import {
   getCredentialsPath,
 } from '../../auth/credentials.js';
 import { listAvailableProviders, getDefaultModel, createProvider } from '../../engine/providers/index.js';
+
+function runningDaemonPid(ws) {
+  const pidFile = path.join(ws, '.aaas', 'agent.pid');
+  if (!fs.existsSync(pidFile)) return null;
+  const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim());
+  if (!pid) return null;
+  try { process.kill(pid, 0); return pid; } catch { return null; }
+}
+
+function warnIfDaemonStale(ws, prevProvider, prevModel, newProvider, newModel) {
+  if (prevProvider === newProvider && prevModel === newModel) return;
+  const pid = runningDaemonPid(ws);
+  if (!pid) return;
+  console.log(chalk.yellow(`  ⚠ Agent is running (PID ${pid}) with the previous provider/model.`));
+  console.log(chalk.yellow(`    Restart it to apply the change:  aaas stop  &&  aaas start\n`));
+}
 
 export async function configCommand(opts) {
   const ws = requireWorkspace();
@@ -97,6 +114,8 @@ async function nonInteractive(ws, configPath, opts) {
 
   // Save workspace config
   const config = readJson(configPath) || {};
+  const prevProvider = config.provider;
+  const prevModel = config.model;
   config.provider = providerName;
   config.model = model;
   if (!config.context) {
@@ -109,6 +128,7 @@ async function nonInteractive(ws, configPath, opts) {
   writeJson(configPath, config);
 
   console.log(chalk.green(`\n  Configured: ${providerName} / ${model}\n`));
+  warnIfDaemonStale(ws, prevProvider, prevModel, providerName, model);
 }
 
 async function interactive(ws, configPath) {
@@ -185,6 +205,8 @@ async function interactive(ws, configPath) {
 
     // 4. Save workspace config
     const config = readJson(configPath) || {};
+    const prevProvider = config.provider;
+    const prevModel = config.model;
     config.provider = providerName;
     config.model = model;
     if (!config.context) {
@@ -214,6 +236,7 @@ async function interactive(ws, configPath) {
     }
 
     console.log(chalk.green(`\n  Ready! Run ${chalk.bold('aaas chat')} to talk to your agent.\n`));
+    warnIfDaemonStale(ws, prevProvider, prevModel, providerName, model);
     rl.close();
   } catch (err) {
     console.error(chalk.red(`\n  Error: ${err.message}\n`));

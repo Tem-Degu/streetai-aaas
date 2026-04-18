@@ -695,8 +695,15 @@ The relay replaces the need for a local HTTP server and WhatsApp webhook server.
 # Start all connected platforms
 aaas run
 
+# Start only specific platforms
+aaas run telegram
+aaas run telegram discord
+
 # Run in the background
 aaas run --daemon
+
+# Run only specific platforms in the background
+aaas run telegram --daemon
 
 # Stop a running agent
 aaas stop
@@ -707,7 +714,11 @@ aaas status
 
 ### Multiple platforms
 
-Your agent can be connected to multiple platforms at the same time. Each platform gets its own connection config in \`.aaas/connections/\`. When you run \`aaas run\`, all platforms start simultaneously.`,
+Your agent can be connected to multiple platforms at the same time. Each platform gets its own connection config in \`.aaas/connections/\`. When you run \`aaas run\` with no arguments, all platforms start simultaneously. Pass one or more platform names to start only those.
+
+### Swapping platforms on a running daemon
+
+If a daemon is already running and you use \`--daemon\` with a platform filter (e.g. \`aaas run discord --daemon\`), you'll be prompted to stop the existing daemon and start a fresh one with only the listed platforms. Answer **y** to swap, or **N** to leave the current daemon alone.`,
   },
   {
     id: 'memory',
@@ -986,7 +997,9 @@ aaas connect http --port 3300     # Start an HTTP API
 aaas connections                  # List all connected platforms
 aaas disconnect <platform>        # Remove a platform connection
 aaas run                          # Start the agent on all platforms
+aaas run <platform> [<platform>]  # Start only the listed platforms
 aaas run --daemon                 # Start in the background
+aaas run <platform> --daemon      # Start only the listed platforms in the background
 aaas stop                         # Stop a running agent
 \`\`\`
 

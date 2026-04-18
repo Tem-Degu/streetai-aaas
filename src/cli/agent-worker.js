@@ -5,7 +5,7 @@
  * Spawned by `aaas run --daemon` or by the dashboard.
  * Runs the engine + all configured connectors as a standalone process.
  *
- * Usage: node agent-worker.js <workspace-path>
+ * Usage: node agent-worker.js <workspace-path> [platform...]
  */
 
 import fs from 'fs';
@@ -15,8 +15,9 @@ import { loadAllConnectors } from '../connectors/index.js';
 import { getProviderCredential } from '../auth/credentials.js';
 
 const workspace = process.argv[2];
+const platforms = process.argv.slice(3).filter(Boolean);
 if (!workspace || !fs.existsSync(workspace)) {
-  console.error('Usage: node agent-worker.js <workspace-path>');
+  console.error('Usage: node agent-worker.js <workspace-path> [platform...]');
   process.exit(1);
 }
 
@@ -39,6 +40,7 @@ async function main() {
   fs.writeFileSync(logFile, '');
   log(`Agent worker started (PID ${process.pid})`);
   log(`Workspace: ${workspace}`);
+  if (platforms.length > 0) log(`Platform filter: ${platforms.join(', ')}`);
 
   // Load config
   const configPath = path.join(workspace, '.aaas', 'config.json');
@@ -71,10 +73,14 @@ async function main() {
   }
 
   // Load and start connectors
-  const connectors = await loadAllConnectors(workspace, engine);
+  const connectors = await loadAllConnectors(workspace, engine, { platforms });
 
   if (connectors.length === 0) {
-    log('WARNING: No connections configured.');
+    if (platforms.length > 0) {
+      log(`WARNING: No connection configured for: ${platforms.join(', ')}`);
+    } else {
+      log('WARNING: No connections configured.');
+    }
     cleanup();
     process.exit(1);
   }

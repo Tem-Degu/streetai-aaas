@@ -109,10 +109,22 @@ export async function loadConnector(platform) {
  * Load and instantiate all configured connectors for a workspace.
  * When a relay connection exists, skip starting local servers for
  * whatsapp and http — the relay connector handles their traffic.
+ *
+ * @param {string} workspace
+ * @param {object} engine
+ * @param {object} [options]
+ * @param {string[]} [options.platforms] - If non-empty, only load these platforms.
  */
-export async function loadAllConnectors(workspace, engine) {
-  const connections = listConnections(workspace);
+export async function loadAllConnectors(workspace, engine, options = {}) {
+  let connections = listConnections(workspace);
   const connectors = [];
+
+  const filter = Array.isArray(options.platforms) && options.platforms.length > 0
+    ? new Set(options.platforms)
+    : null;
+  if (filter) {
+    connections = connections.filter(c => filter.has(c.platform));
+  }
 
   const hasRelay = connections.some(c => c.platform === 'relay');
   // Platforms whose local servers are replaced by the relay

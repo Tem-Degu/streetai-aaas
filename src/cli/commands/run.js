@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import readline from 'readline';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import chalk from 'chalk';
@@ -8,9 +9,31 @@ import { getProviderCredential } from '../../auth/credentials.js';
 import { AgentEngine } from '../../engine/index.js';
 import { loadAllConnectors } from '../../connectors/index.js';
 
+function prompt(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export async function runCommand(opts) {
+export async function runCommand(platforms, opts) {
+  // Backwards compatibility: if called with only opts (old single-arg signature), shift args
+  if (platforms && !Array.isArray(platforms) && typeof platforms === 'object') {
+    opts = platforms;
+    platforms = [];
+  }
+  platforms = platforms || [];
+  opts = opts || {};
+
   const ws = requireWorkspace();
 
   // 1. Load config
@@ -33,13 +56,36 @@ export async function runCommand(opts) {
   const pidFile = path.join(ws, '.aaas', 'agent.pid');
   if (fs.existsSync(pidFile)) {
     const existingPid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim());
+    let alive = false;
     try {
       process.kill(existingPid, 0); // Check if process exists
-      console.error(chalk.red(`\n  Agent already running (PID ${existingPid}). Run: aaas stop\n`));
-      return;
+      alive = true;
     } catch {
       // Process doesn't exist — clean up stale PID file
       fs.unlinkSync(pidFile);
+    }
+
+    if (alive) {
+      // If --daemon is set with a platform filter, offer to replace the running daemon.
+      if (opts.daemon && platforms.length > 0) {
+        const answer = await prompt(
+          chalk.yellow(`\n  A daemon is already running (PID ${existingPid}).\n`) +
+          chalk.yellow(`  Stop it and start a new daemon with: ${platforms.join(', ')}? (y/N) `)
+        );
+        if (answer.trim().toLowerCase() !== 'y') {
+          console.log(chalk.gray('\n  Keeping existing daemon. Nothing changed.\n'));
+          return;
+        }
+
+        console.log(chalk.gray(`\n  Stopping PID ${existingPid}...`));
+        try { process.kill(existingPid, 'SIGTERM'); } catch { /* already gone */ }
+        // Wait briefly for the daemon to shut down and release its connectors
+        await sleep(1500);
+        try { fs.unlinkSync(pidFile); } catch { /* already gone */ }
+      } else {
+        console.error(chalk.red(`\n  Agent already running (PID ${existingPid}). Run: aaas stop\n`));
+        return;
+      }
     }
   }
 
@@ -54,7 +100,7 @@ export async function runCommand(opts) {
       const out = fs.openSync(logPath, 'a');
       const err = fs.openSync(logPath, 'a');
 
-      const child = spawn(process.execPath, [workerPath, ws], {
+      const child = spawn(process.execPath, [workerPath, ws, ...platforms], {
         detached: true,
         stdio: ['ignore', out, err],
         cwd: ws,
@@ -63,6 +109,7 @@ export async function runCommand(opts) {
       child.unref();
 
       console.log(chalk.green(`\n  Agent started in background (PID ${child.pid})`));
+      if (platforms.length > 0) console.log(chalk.gray(`  Platforms: ${platforms.join(', ')}`));
       console.log(chalk.gray(`  Log: ${logPath}`));
       console.log(chalk.gray('  Run "aaas stop" to stop the agent.\n'));
       return;
@@ -86,11 +133,16 @@ export async function runCommand(opts) {
   }
 
   // 6. Load and start connectors
-  const connectors = await loadAllConnectors(ws, engine);
+  const connectors = await loadAllConnectors(ws, engine, { platforms });
 
   if (connectors.length === 0) {
-    console.log(chalk.yellow('\n  No connections configured. Run: aaas connect <platform>'));
-    console.log(chalk.gray('  Available: truuze, http, openclaw\n'));
+    if (platforms.length > 0) {
+      console.log(chalk.yellow(`\n  No connection configured for: ${platforms.join(', ')}`));
+      console.log(chalk.gray('  Run: aaas connect <platform>\n'));
+    } else {
+      console.log(chalk.yellow('\n  No connections configured. Run: aaas connect <platform>'));
+      console.log(chalk.gray('  Available: truuze, http, openclaw\n'));
+    }
     return;
   }
 
