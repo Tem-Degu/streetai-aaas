@@ -66,20 +66,20 @@ export async function runCommand(platforms, opts) {
     }
 
     if (alive) {
-      // If --daemon is set with a platform filter, offer to replace the running daemon.
-      if (opts.daemon && platforms.length > 0) {
+      // If a platform filter is set, offer to replace the running agent.
+      if (platforms.length > 0) {
         const answer = await prompt(
-          chalk.yellow(`\n  A daemon is already running (PID ${existingPid}).\n`) +
-          chalk.yellow(`  Stop it and start a new daemon with: ${platforms.join(', ')}? (y/N) `)
+          chalk.yellow(`\n  An agent is already running (PID ${existingPid}).\n`) +
+          chalk.yellow(`  Stop it and start a new agent with: ${platforms.join(', ')}? (y/N) `)
         );
         if (answer.trim().toLowerCase() !== 'y') {
-          console.log(chalk.gray('\n  Keeping existing daemon. Nothing changed.\n'));
+          console.log(chalk.gray('\n  Keeping existing agent. Nothing changed.\n'));
           return;
         }
 
         console.log(chalk.gray(`\n  Stopping PID ${existingPid}...`));
         try { process.kill(existingPid, 'SIGTERM'); } catch { /* already gone */ }
-        // Wait briefly for the daemon to shut down and release its connectors
+        // Wait briefly for the agent to shut down and release its connectors
         await sleep(1500);
         try { fs.unlinkSync(pidFile); } catch { /* already gone */ }
       } else {
