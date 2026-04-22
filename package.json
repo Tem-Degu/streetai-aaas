@@ -1,6 +1,6 @@
 {
   "name": "@streetai/aaas",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Agent as a Service — turn expertise into an AI-powered service business, no code required",
   "type": "module",
   "main": "src/cli/index.js",
@@ -24,14 +24,14 @@
     "streetai"
   ],
   "author": "Street Agent <hello@streetai.org>",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/streetai/aaas"
+    "url": "https://github.com/Tem-Degu/streetai-aaas"
   },
   "homepage": "https://streetai.org",
   "bugs": {
-    "url": "https://github.com/streetai/aaas/issues"
+    "url": "https://github.com/Tem-Degu/streetai-aaas/issues"
   },
   "engines": {
     "node": ">=18.0.0"

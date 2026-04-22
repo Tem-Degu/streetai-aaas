@@ -27,6 +27,9 @@ export default class TruuzeConnector extends BaseConnector {
     this._pollDebounceTimer = null;
     this._processing = false; // guard against concurrent polls
     this._processedIds = new Set(); // track processed event IDs to avoid duplicates
+    this._processedIdsPath = null;  // set during connect() once workspace is known
+    this._persistTimer = null;      // debounce disk writes
+    this._healthCheckTimer = null;  // hourly ping safety net
   }
 
   get platformName() { return 'truuze'; }
@@ -39,6 +42,9 @@ export default class TruuzeConnector extends BaseConnector {
       const res = await this._fetch('/account/agent/profile/');
       if (!res.ok) throw new Error(`Profile check failed: ${res.status}`);
       this.consecutiveFailures = 0;
+
+      // Load the persisted processed-IDs set so restarts don't re-bill the LLM
+      this._loadProcessedIds();
 
       // Fetch and save platform SKILL.md (skip if already exists from Connect step)
       const skillPath = getPlatformSkillPath(this.engine?.workspace, 'truuze');
@@ -64,6 +70,9 @@ export default class TruuzeConnector extends BaseConnector {
           }
         }
       }
+
+      // Hourly health check ping (safety net while we rely on the WS push)
+      this._startHealthCheck();
     } catch (err) {
       this.status = 'error';
       this.error = err.message;
@@ -194,9 +203,14 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
       clearTimeout(this._pollDebounceTimer);
       this._pollDebounceTimer = null;
     }
-    if (this._adaptiveTimer) {
-      clearTimeout(this._adaptiveTimer);
-      this._adaptiveTimer = null;
+    if (this._healthCheckTimer) {
+      clearInterval(this._healthCheckTimer);
+      this._healthCheckTimer = null;
+    }
+    if (this._persistTimer) {
+      clearTimeout(this._persistTimer);
+      this._persistTimer = null;
+      this._persistProcessedIds();  // final flush
     }
     await super.disconnect();
   }
@@ -236,9 +250,8 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
           }
         }, 30_000);
 
-        // Do one heartbeat fetch to catch up on missed events, then start adaptive polling
+        // Do one heartbeat fetch to catch up on missed events
         this._poll().then(resolve).catch(resolve);
-        this._startAdaptivePolling();
       });
 
       this.ws.on('message', (raw) => {
@@ -279,9 +292,7 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
 
     console.log('[truuze] WebSocket event:', source);
 
-    // WebSocket notification received — reset to fast polling and fetch details
-    if (this._adaptiveDelay) this._resetAdaptivePolling();
-    // Debounce to avoid multiple fetches when several events fire at once
+    // WebSocket push received — fetch details. Debounce to coalesce bursts.
     if (this._pollDebounceTimer) clearTimeout(this._pollDebounceTimer);
     this._pollDebounceTimer = setTimeout(() => {
       this._poll();
@@ -324,32 +335,28 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
   }
 
   /**
-   * Adaptive safety-net polling for WebSocket mode.
-   * Starts fast (15s) after activity, doubles interval on each empty poll,
-   * caps at 16 minutes. Resets to fast on any new activity.
+   * Hourly lightweight health check via GET /account/agent/ping/.
+   * Returns just a count — no event details, so no LLM spend.
+   * Triggers a full _poll() only when the server reports pending work,
+   * which handles the rare case where a WebSocket push was missed.
    */
-  _startAdaptivePolling() {
-    this._adaptiveDelay = 15_000; // start at 15s
-    this._scheduleNextPoll();
-  }
-
-  _scheduleNextPoll() {
-    if (this._adaptiveTimer) clearTimeout(this._adaptiveTimer);
-    this._adaptiveTimer = setTimeout(() => {
-      this._poll();
-      this._scheduleNextPoll();
-    }, this._adaptiveDelay);
-  }
-
-  _resetAdaptivePolling() {
-    this._adaptiveDelay = 15_000;
-    this._scheduleNextPoll();
-  }
-
-  _backOffAdaptivePolling() {
-    const MAX_DELAY = 16 * 60 * 1000; // 16 minutes
-    this._adaptiveDelay = Math.min(this._adaptiveDelay * 2, MAX_DELAY);
-    this._scheduleNextPoll();
+  _startHealthCheck() {
+    const HOUR = 60 * 60 * 1000;
+    if (this._healthCheckTimer) clearInterval(this._healthCheckTimer);
+    this._healthCheckTimer = setInterval(async () => {
+      try {
+        const res = await this._fetch('/account/agent/ping/');
+        if (!res.ok) return;
+        const data = await res.json();
+        const pending = Number(data.pending || 0);
+        if (pending > 0) {
+          console.log('[truuze] Health check: %d pending — fetching updates', pending);
+          this._poll();
+        }
+      } catch (err) {
+        console.log('[truuze] Health check failed:', err.message);
+      }
+    }, HOUR);
   }
 
   // ─── Polling Mode (fallback) ───────────────────────
@@ -392,11 +399,6 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
       if (total > 0) {
         console.log('[truuze] Heartbeat returned updates:', JSON.stringify(counts));
         await this._processUpdates(data);
-        // Activity found — reset to fast polling
-        if (this._adaptiveDelay) this._resetAdaptivePolling();
-      } else {
-        // No updates — slow down
-        if (this._adaptiveDelay) this._backOffAdaptivePolling();
       }
     } catch (err) {
       this.consecutiveFailures++;
@@ -426,36 +428,177 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
   async _processUpdates(data) {
     const updates = data.updates || {};
 
-    // Process messages
+    // Messages are real conversations — keep individual processing and
+    // server-side auto-mark-as-seen (unchanged for UX reasons).
     for (const msg of (updates.messages || [])) {
       if (this._isProcessed('msg', msg.id)) continue;
       await this._handleMessage(msg);
     }
 
-    // Process comments on agent's content
+    // Everything else (comments, mentions, reactions, listeners, new daybooks,
+    // bond requests) gets aggregated into ONE LLM call. The agent decides what
+    // to do — reply, ignore, accept a bond, follow back — via platform_request.
+    const batch = [];
+
     for (const comment of (updates.comments || [])) {
       if (this._isProcessed('comment', comment.id)) continue;
-      await this._handleComment(comment);
+      batch.push({ kind: 'comment', category: 'event', item: comment });
     }
-
-    // Process @mentions
     for (const mention of (updates.mentions || [])) {
       if (this._isProcessed('mention', mention.id)) continue;
-      await this._handleMention(mention);
+      batch.push({ kind: 'mention', category: 'event', item: mention });
     }
-
-    // Process new listeners
+    for (const reaction of (updates.reactions || [])) {
+      if (this._isProcessed('reaction', reaction.id)) continue;
+      batch.push({ kind: 'reaction', category: 'event', item: reaction });
+    }
     for (const listener of (updates.new_listeners || [])) {
       if (this._isProcessed('listener', listener.id)) continue;
-      await this._handleNewListener(listener);
+      batch.push({ kind: 'new_listener', category: 'listener', item: listener });
     }
-
-    // Bond requests
+    for (const daybook of (updates.new_daybooks || [])) {
+      if (this._isProcessed('daybook', daybook.id)) continue;
+      batch.push({ kind: 'new_daybook', category: 'daybook', item: daybook });
+    }
     for (const bond of (updates.bond_requests || [])) {
       if (this._isProcessed('bond', bond.id)) continue;
-      await this._handleBondRequest(bond);
+      batch.push({ kind: 'bond_request', category: 'bond_request', item: bond });
     }
 
+    if (batch.length > 0) {
+      await this._handleBatch(batch);
+    }
+
+    // Persist the processed-IDs set so a restart doesn't re-bill the LLM.
+    this._persistProcessedIds();
+  }
+
+  /**
+   * Send one consolidated event to the engine summarizing every non-message
+   * update, then mark each server-side record as read. The agent is free to
+   * act (reply, follow back, accept a bond) via platform_request inside the
+   * single LLM call; we don't auto-take any actions here.
+   */
+  async _handleBatch(batch) {
+    const summary = this._formatBatchSummary(batch);
+    console.log('[truuze] Processing batch: %d item(s)', batch.length);
+
+    const event = {
+      platform: 'truuze',
+      userId: 'truuze-activity',
+      userName: 'Truuze Activity',
+      type: 'activity_batch',
+      content: summary,
+      metadata: {
+        mode: 'customer',
+        batch_size: batch.length,
+        items: batch.map(b => ({ kind: b.kind, id: b.item.id })),
+      },
+    };
+
+    try {
+      await this.engine.processEvent(event);
+    } catch (err) {
+      console.error('[truuze] Batch handler error:', err);
+      this.error = `Batch handler error: ${err.message}`;
+    }
+
+    // Mark every item read regardless of whether the agent responded — the
+    // heartbeat filters on is_unread, so leaving these unread would redeliver
+    // the same batch on every poll and re-bill the LLM.
+    for (const { category, item } of batch) {
+      try {
+        await this._markAsRead(category, item.id);
+      } catch (err) {
+        console.warn('[truuze] mark-as-read failed (%s %s): %s', category, item.id, err.message);
+      }
+    }
+  }
+
+  /**
+   * Build a human-readable summary the LLM can reason over. Keeps each entry
+   * short so a batch of 20 stays well under a few hundred tokens.
+   */
+  _formatBatchSummary(batch) {
+    const lines = [`You have ${batch.length} new activity notification(s) on Truuze:`, ''];
+
+    for (const { kind, item } of batch) {
+      const from = item.from_username || item.requester_username || item.username || item.owner_username || 'someone';
+      if (kind === 'comment') {
+        const text = (item.text || '').slice(0, 200);
+        lines.push(`- @${from} commented on your daybook ${item.voice_id}: "${text}"`);
+      } else if (kind === 'mention') {
+        lines.push(`- @${from} mentioned you in ${item.mention_in || 'a post'} (voice ${item.voice_id || '?'}${item.comment_id ? `, comment ${item.comment_id}` : ''})`);
+      } else if (kind === 'reaction') {
+        lines.push(`- @${from} reacted (${item.event_type}) on voice ${item.voice_id || '?'}${item.comment_id ? `, comment ${item.comment_id}` : ''}`);
+      } else if (kind === 'new_listener') {
+        lines.push(`- @${from} started listening to you (${item.account_type || 'user'})`);
+      } else if (kind === 'new_daybook') {
+        lines.push(`- @${from} posted a new daybook (voice ${item.voice_id})`);
+      } else if (kind === 'bond_request') {
+        lines.push(`- @${from} sent you a bond request (request ${item.id}, ${item.requester_account_type || 'user'})`);
+      }
+    }
+
+    lines.push('');
+    lines.push('Decide what (if anything) to do. You may reply, follow back, accept/reject bonds, or simply note them. Use platform_request for any action. If nothing warrants a response, say nothing.');
+    return lines.join('\n');
+  }
+
+  /**
+   * Mark a server-side record as read so the heartbeat stops redelivering it.
+   * Categories match MarkAsReadAPIView: event, listener, bond_request, daybook.
+   */
+  async _markAsRead(category, id) {
+    const res = await this._fetch('/account/mark-as-read/', {
+      method: 'PATCH',
+      body: JSON.stringify({ category, id }),
+    });
+    if (!res.ok && res.status !== 204) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+  }
+
+  /**
+   * Restore the processed-IDs set from disk so a connector restart doesn't
+   * re-bill the LLM on every event that arrived while we were offline.
+   */
+  _loadProcessedIds() {
+    try {
+      const ws = this.engine?.workspace;
+      if (!ws) return;
+      this._processedIdsPath = path.join(ws, '.aaas', 'truuze-processed.json');
+      if (!fs.existsSync(this._processedIdsPath)) return;
+      const raw = fs.readFileSync(this._processedIdsPath, 'utf-8');
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        this._processedIds = new Set(arr);
+        console.log('[truuze] Loaded %d processed IDs from disk', this._processedIds.size);
+      }
+    } catch (err) {
+      console.log('[truuze] Could not load processed IDs:', err.message);
+    }
+  }
+
+  /**
+   * Persist the processed-IDs set. Debounced to avoid hammering disk when a
+   * burst of events arrives.
+   */
+  _persistProcessedIds() {
+    if (!this._processedIdsPath) return;
+    if (this._persistTimer) clearTimeout(this._persistTimer);
+    this._persistTimer = setTimeout(() => {
+      this._persistTimer = null;
+      try {
+        fs.mkdirSync(path.dirname(this._processedIdsPath), { recursive: true });
+        fs.writeFileSync(
+          this._processedIdsPath,
+          JSON.stringify([...this._processedIds]),
+        );
+      } catch (err) {
+        console.log('[truuze] Could not persist processed IDs:', err.message);
+      }
+    }, 1000);
   }
 
   async _handleMessage(msg) {
@@ -507,6 +650,11 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
       },
     };
 
+    // Ack the message as soon as we accept it for processing. Fire-and-forget
+    // so the network round-trip doesn't delay the LLM call. The server-side
+    // auto-mark has been removed, so this is the authoritative ack.
+    this._ackMessage(msg.id, msg.chat_type);
+
     try {
       const result = await this.engine.processEvent(event);
       const toolNames = (result.toolsUsed || []).map(t => typeof t === 'string' ? t : t.name);
@@ -531,149 +679,25 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
     }
   }
 
-  async _handleComment(comment) {
-    console.log('[truuze] Processing comment from @%s on voice %s', comment.from_username, comment.voice_id);
-
-    // Read the daybook content for context
-    let daybook = null;
-    if (comment.voice_id) {
-      try {
-        const res = await this._fetch(`/daybook/voice/${comment.voice_id}/`);
-        if (res.ok) daybook = await res.json();
-      } catch { /* skip context */ }
-    }
-
-    const event = {
-      platform: 'truuze',
-      userId: comment.from_username || String(comment.from_user_id),
-      userName: comment.from_username,
-      type: 'comment',
-      content: comment.text || 'commented on your post',
-      metadata: {
-        mode: 'customer',
-        voice_id: comment.voice_id,
-        comment_id: comment.comment_id,
-        parent_comment_id: comment.parent_comment_id,
-        event_type: comment.event_type,
-        daybook_text: daybook?.text_content || null,
-      },
-    };
-
-    try {
-      const result = await this.engine.processEvent(event);
-      const commentSent = (result.toolsUsed || []).some(t => {
-        if (typeof t === 'string') return false;
-        if (t.name !== 'platform_request') return false;
-        const args = t.arguments || {};
-        const method = (args.method || '').toUpperCase();
-        const url = (args.url || '');
-        return method === 'POST' && (url.includes('/comment/') || url.includes('/message/create'));
-      });
-      if (result.response && !commentSent) {
-        await this._postComment(comment.voice_id, result.response, comment.comment_id);
-        console.log('[truuze] Comment reply sent to voice %s', comment.voice_id);
+  /**
+   * Mark a chat message as SEEN on the server. Fire-and-forget: the agent
+   * shouldn't wait on this before thinking. Handles both regular chats and
+   * bond rooms — the server endpoint fires every side effect a human client
+   * would trigger via the `mark.as.seen` WebSocket frame.
+   */
+  _ackMessage(messageId, chatType) {
+    if (!messageId) return;
+    const faRoom = chatType === 'bondroom';
+    this._fetch('/account/agent/message-ack/', {
+      method: 'PATCH',
+      body: JSON.stringify({ message_id: messageId, fa_room: faRoom }),
+    }).then((res) => {
+      if (!res.ok && res.status !== 204) {
+        console.warn('[truuze] message-ack failed for %s: HTTP %d', messageId, res.status);
       }
-    } catch (err) {
-      console.error('[truuze] Comment handler error:', err);
-      this.error = `Comment handler error: ${err.message}`;
-    }
-  }
-
-  async _handleMention(mention) {
-    console.log('[truuze] Processing mention from @%s in %s', mention.from_username, mention.mention_in);
-
-    // Read the content where we were mentioned
-    let context = '';
-    if (mention.voice_id) {
-      try {
-        const res = await this._fetch(`/daybook/voice/${mention.voice_id}/`);
-        if (res.ok) {
-          const daybook = await res.json();
-          context = daybook.text_content || '';
-        }
-      } catch { /* skip */ }
-    }
-
-    const event = {
-      platform: 'truuze',
-      userId: mention.from_username || String(mention.from_user_id),
-      userName: mention.from_username,
-      type: 'mention',
-      content: context || `You were mentioned by @${mention.from_username}`,
-      metadata: {
-        mode: 'customer',
-        mention_in: mention.mention_in,
-        voice_id: mention.voice_id,
-        comment_id: mention.comment_id,
-        reply_to: mention.reply_to,
-      },
-    };
-
-    try {
-      const result = await this.engine.processEvent(event);
-      const mentionSent = (result.toolsUsed || []).some(t => {
-        if (typeof t === 'string') return false;
-        if (t.name !== 'platform_request') return false;
-        const args = t.arguments || {};
-        const method = (args.method || '').toUpperCase();
-        const url = (args.url || '');
-        return method === 'POST' && (url.includes('/comment/') || url.includes('/message/create'));
-      });
-      if (result.response && !mentionSent) {
-        await this._postComment(mention.voice_id, result.response, mention.reply_to);
-        console.log('[truuze] Mention reply sent to voice %s', mention.voice_id);
-      }
-    } catch (err) {
-      console.error('[truuze] Mention handler error:', err);
-      this.error = `Mention handler error: ${err.message}`;
-    }
-  }
-
-  async _handleNewListener(listener) {
-    console.log('[truuze] New listener: @%s', listener.username);
-
-    const event = {
-      platform: 'truuze',
-      userId: listener.username || String(listener.user_id),
-      userName: listener.name || listener.username,
-      type: 'new_listener',
-      content: `@${listener.username} started listening to you.`,
-      metadata: {
-        mode: 'customer',
-        account_type: listener.account_type,
-      },
-    };
-
-    try {
-      const result = await this.engine.processEvent(event);
-      if (result.response?.toLowerCase().includes('follow back')) {
-        await this._toggleListen(listener.user_id);
-      }
-    } catch { /* non-critical */ }
-  }
-
-  async _handleBondRequest(bond) {
-    console.log('[truuze] Bond request from @%s', bond.requester_username);
-
-    const event = {
-      platform: 'truuze',
-      userId: bond.requester_username || String(bond.requester_id),
-      userName: bond.requester_name || bond.requester_username,
-      type: 'bond_request',
-      content: `@${bond.requester_username} sent you a bond request.`,
-      metadata: {
-        mode: 'customer',
-        request_id: bond.id,
-        account_type: bond.requester_account_type,
-      },
-    };
-
-    try {
-      const result = await this.engine.processEvent(event);
-      if (!result.response?.toLowerCase().includes('reject')) {
-        await this._respondBond(bond.id, 'accept');
-      }
-    } catch { /* non-critical */ }
+    }).catch((err) => {
+      console.warn('[truuze] message-ack error for %s: %s', messageId, err.message);
+    });
   }
 
   // ─── Truuze API Helpers ────────────────────────────
@@ -728,18 +752,6 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
     }
   }
 
-  async _postComment(voiceId, text, parentId) {
-    const formData = new FormData();
-    formData.append('voice', voiceId);
-    formData.append('text_0_1', text);
-    if (parentId) formData.append('parent', parentId);
-
-    await this._fetch('/daybook/add/comment/', {
-      method: 'POST',
-      body: formData,
-    });
-  }
-
   async _downloadMedia(mediaItems, username) {
     const inboxDir = path.join(this.engine.workspace, 'data', 'inbox');
     fs.mkdirSync(inboxDir, { recursive: true });
@@ -788,20 +800,6 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
       }
     }
     return saved;
-  }
-
-  async _toggleListen(userId) {
-    await this._fetch('/account/listening/', {
-      method: 'POST',
-      body: JSON.stringify({ id: userId }),
-    });
-  }
-
-  async _respondBond(requestId, action) {
-    await this._fetch(`/account/agent/bond-request/${requestId}/respond/`, {
-      method: 'POST',
-      body: JSON.stringify({ action }),
-    });
   }
 
   getStatus() {
