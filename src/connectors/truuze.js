@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import WebSocket from 'ws';
 import { BaseConnector } from './index.js';
-import { getPlatformSkillPath } from '../utils/workspace.js';
+import { buildPlatformSkill } from './truuze-skill.js';
 
 /**
  * Truuze connector — connects to Truuze via WebSocket for real-time events,
@@ -26,10 +26,15 @@ export default class TruuzeConnector extends BaseConnector {
     this.reconnecting = false;
     this._pollDebounceTimer = null;
     this._processing = false; // guard against concurrent polls
+    this._pollPending = false; // a poll was requested while busy — run one more after
     this._processedIds = new Set(); // track processed event IDs to avoid duplicates
     this._processedIdsPath = null;  // set during connect() once workspace is known
     this._persistTimer = null;      // debounce disk writes
-    this._healthCheckTimer = null;  // hourly ping safety net
+    // Escrow state cache: id → { status, snapshot }. Diffed on every poll to
+    // synthesize platform-event style notifications (accepted, disputed, etc.)
+    // without requiring the agent to read "Escrow XXXXXX" chat messages.
+    this._escrowStates = new Map();
+    this._escrowsInitialized = false;
   }
 
   get platformName() { return 'truuze'; }
@@ -46,10 +51,14 @@ export default class TruuzeConnector extends BaseConnector {
       // Load the persisted processed-IDs set so restarts don't re-bill the LLM
       this._loadProcessedIds();
 
-      // Fetch and save platform SKILL.md (skip if already exists from Connect step)
-      const skillPath = getPlatformSkillPath(this.engine?.workspace, 'truuze');
-      if (!skillPath || !fs.existsSync(skillPath)) {
-        await this._fetchPlatformSkill();
+      // Build the Truuze platform SKILL.md from the connector's template +
+      // fields extracted from the owner's uploaded SKILL.md. Skipped if the
+      // file already exists — trust the workspace.
+      const skillPath = this.engine?.workspace
+        ? path.join(this.engine.workspace, 'skills', 'truuze', 'SKILL.md')
+        : null;
+      if (skillPath && !fs.existsSync(skillPath)) {
+        await this._buildPlatformSkill();
       }
 
       // Connect based on mode
@@ -71,8 +80,6 @@ export default class TruuzeConnector extends BaseConnector {
         }
       }
 
-      // Hourly health check ping (safety net while we rely on the WS push)
-      this._startHealthCheck();
     } catch (err) {
       this.status = 'error';
       this.error = err.message;
@@ -81,108 +88,23 @@ export default class TruuzeConnector extends BaseConnector {
   }
 
   /**
-   * Fetch the Truuze platform skill from the API, rewrite with LLM to strip
-   * onboarding instructions, and save to skills/truuze/SKILL.md.
+   * Render the Truuze platform SKILL.md from the connector-shipped template,
+   * extracting the owner's service config from their uploaded SKILL.md.
+   * Non-critical — failure here should never block connection.
    */
-  async _fetchPlatformSkill() {
+  async _buildPlatformSkill() {
     try {
-      const agentType = this.agentType || 'service';
-      const res = await this._fetch(`/account/agent/skills/refresh/?type=${agentType}`);
-      if (!res.ok) return;
-
-      const data = await res.json();
-      let skillContent = data.content || data.skills_md || data;
-
-      if (typeof skillContent !== 'string' || skillContent.length === 0) return;
-
-      // Rewrite with LLM to strip signup/onboarding instructions (agent is already connected)
-      try {
-        skillContent = await this._rewriteSkill(skillContent);
-      } catch (err) {
-        console.log('[truuze] Skill rewrite failed, using original:', err.message);
-      }
-
-      // Inject AaaS-specific call guidance (the template is runtime-neutral)
-      skillContent = this._injectAaasGuidance(skillContent);
-
-      const skillPath = getPlatformSkillPath(this.engine.workspace, 'truuze');
-      fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-      fs.writeFileSync(skillPath, skillContent);
-    } catch {
-      // Non-critical
+      await buildPlatformSkill({
+        workspace: this.engine?.workspace,
+        engine: this.engine,
+        connection: {
+          baseUrl: this.baseUrl,
+          ownerUsername: this.ownerUsername,
+        },
+      });
+    } catch (err) {
+      console.log('[truuze] Failed to build platform skill:', err.message);
     }
-  }
-
-  /**
-   * Use the LLM to strip onboarding/signup sections from the platform skill,
-   * since the agent is already registered and connected.
-   */
-  async _rewriteSkill(originalSkill) {
-    if (!this.engine?.provider) {
-      await this.engine?.initialize?.();
-      if (!this.engine?.provider) return originalSkill;
-    }
-
-    const prompt = `You are rewriting a platform SKILL.md file for an AI agent that has already been onboarded.
-
-The agent is already signed up and connected. Rewrite the SKILL.md below with these changes:
-1. REMOVE all signup/registration instructions (Step 1: Register, provisioning token usage, etc.)
-2. REMOVE credential storage instructions (saving API keys, credentials.json, etc.)
-3. REMOVE heartbeat/polling setup instructions (events are delivered automatically)
-4. REMOVE "where to place this file" or installation instructions
-5. REMOVE authentication setup instructions (auth headers are handled automatically)
-6. KEEP all API endpoint documentation intact (messaging, escrow, kookies, profiles, etc.)
-7. KEEP behavioral guidance (community guidelines, best practices, owner priority)
-8. KEEP the frontmatter (--- block at the top) unchanged
-9. Return ONLY the rewritten SKILL.md content, nothing else — no explanations, no wrapping
-
-Original SKILL.md:
-${originalSkill}`;
-
-    const result = await this.engine.provider.chat([
-      { role: 'user', content: prompt },
-    ], { maxTokens: 8000, temperature: 0 });
-
-    const rewritten = result.content?.trim();
-    if (rewritten && rewritten.length > 500) {
-      console.log('[truuze] SKILL.md rewritten by LLM (' + rewritten.length + ' chars)');
-      return rewritten;
-    }
-    return originalSkill;
-  }
-
-  /**
-   * Inject AaaS-specific instructions into the skill. The Truuze template is
-   * intentionally runtime-neutral — the connector is responsible for telling
-   * the agent how to actually make calls on this particular platform.
-   */
-  _injectAaasGuidance(skillContent) {
-    const block = `
-## How to Call Truuze APIs (AaaS runtime)
-
-You are running on the AaaS platform. Use the \`platform_request\` tool for ALL Truuze API calls. Auth headers (X-Api-Key, X-Agent-Key) are added automatically — never add them yourself.
-
-\`\`\`
-platform_request({
-  url: "<full truuze url>",
-  method: "POST",
-  body: { ... }
-})
-\`\`\`
-
-Never use \`create_transaction\` for Truuze. That tool is for internal record-keeping only — it does NOT charge users or create escrows. Always use \`platform_request\`.
-
----
-`;
-
-    // Insert after the frontmatter block (between the closing --- and the rest)
-    const fmMatch = skillContent.match(/^---\n[\s\S]*?\n---\n/);
-    if (fmMatch) {
-      const idx = fmMatch[0].length;
-      return skillContent.slice(0, idx) + block + skillContent.slice(idx);
-    }
-    // No frontmatter — prepend
-    return block + skillContent;
   }
 
   async disconnect() {
@@ -202,10 +124,6 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
     if (this._pollDebounceTimer) {
       clearTimeout(this._pollDebounceTimer);
       this._pollDebounceTimer = null;
-    }
-    if (this._healthCheckTimer) {
-      clearInterval(this._healthCheckTimer);
-      this._healthCheckTimer = null;
     }
     if (this._persistTimer) {
       clearTimeout(this._persistTimer);
@@ -287,8 +205,19 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
     const source = data.source;
     if (!source) return;
 
-    // Ignore pong, connection confirmations
-    if (source === 'pong') return;
+    // Pong carries a `pending` count — the server's view of how many unread
+    // events this agent has. If it's >0, a push must have been dropped on
+    // the way here (the WS is healthy, otherwise we wouldn't get a pong).
+    // Triggering _poll() here closes the gap within ~30s on quiet
+    // connections without needing a separate HTTP heartbeat.
+    if (source === 'pong') {
+      const pending = Number(data.pending || 0);
+      if (pending > 0 && !this._processing) {
+        console.log('[truuze] Pong reports %d pending — fetching updates', pending);
+        this._poll();
+      }
+      return;
+    }
 
     console.log('[truuze] WebSocket event:', source);
 
@@ -334,31 +263,6 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
     }, delay);
   }
 
-  /**
-   * Hourly lightweight health check via GET /account/agent/ping/.
-   * Returns just a count — no event details, so no LLM spend.
-   * Triggers a full _poll() only when the server reports pending work,
-   * which handles the rare case where a WebSocket push was missed.
-   */
-  _startHealthCheck() {
-    const HOUR = 60 * 60 * 1000;
-    if (this._healthCheckTimer) clearInterval(this._healthCheckTimer);
-    this._healthCheckTimer = setInterval(async () => {
-      try {
-        const res = await this._fetch('/account/agent/ping/');
-        if (!res.ok) return;
-        const data = await res.json();
-        const pending = Number(data.pending || 0);
-        if (pending > 0) {
-          console.log('[truuze] Health check: %d pending — fetching updates', pending);
-          this._poll();
-        }
-      } catch (err) {
-        console.log('[truuze] Health check failed:', err.message);
-      }
-    }, HOUR);
-  }
-
   // ─── Polling Mode (fallback) ───────────────────────
 
   _startPolling() {
@@ -368,12 +272,15 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
   }
 
   async _poll() {
-    // Guard against concurrent polls (e.g. debounce fires while previous poll is still processing)
+    // Guard against concurrent polls. If one is already running, remember that
+    // a poll was requested and run exactly one more after the current finishes.
+    // Bursts of N requests collapse to a single follow-up — no queue, no loop.
     if (this._processing) {
-      console.log('[truuze] Poll skipped — already processing');
+      this._pollPending = true;
       return;
     }
     this._processing = true;
+    this._pollPending = false;
 
     try {
       const res = await this._fetch('/account/agent/updates/');
@@ -400,12 +307,27 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
         console.log('[truuze] Heartbeat returned updates:', JSON.stringify(counts));
         await this._processUpdates(data);
       }
+
+      // Diff escrow state on every tick (independent of heartbeat counts —
+      // escrow transitions don't always trigger an unread item). Cheap: a few
+      // GETs that short-circuit when nothing changed. The first call after
+      // connect is silent (cache initialization) so existing escrows don't
+      // re-fire as fresh transitions on restart.
+      try {
+        await this._pollEscrows();
+      } catch (err) {
+        console.warn('[truuze] Escrow poll failed:', err.message);
+      }
     } catch (err) {
       this.consecutiveFailures++;
       this.error = err.message;
       console.log('[truuze] Poll error:', err.message);
     } finally {
       this._processing = false;
+      if (this._pollPending) {
+        // Defer to the next tick so we don't grow the call stack
+        setImmediate(() => { this._poll(); });
+      }
     }
   }
 
@@ -429,8 +351,11 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
     const updates = data.updates || {};
 
     // Messages are real conversations — keep individual processing and
-    // server-side auto-mark-as-seen (unchanged for UX reasons).
-    for (const msg of (updates.messages || [])) {
+    // server-side auto-mark-as-seen (unchanged for UX reasons). Sort
+    // oldest-first by id so replies arrive in the order the user sent them
+    // (the server returns newest-first).
+    const messages = [...(updates.messages || [])].sort((a, b) => a.id - b.id);
+    for (const msg of messages) {
       if (this._isProcessed('msg', msg.id)) continue;
       await this._handleMessage(msg);
     }
@@ -601,10 +526,223 @@ Never use \`create_transaction\` for Truuze. That tool is for internal record-ke
     }, 1000);
   }
 
+  // ─── Escrow state tracking ─────────────────────────
+  //
+  // The connector watches the agent's escrows and emits platform-event style
+  // notifications when state changes — so the agent never has to parse
+  // "Escrow XXXXXX" chat messages or remember to poll. Truuze remains the
+  // source of truth: the cache is diffed against fresh server data on every
+  // heartbeat tick.
+
+  // Statuses that can still transition. Anything not in this list is terminal.
+  static get _ESCROW_NON_TERMINAL() {
+    return ['pending', 'active', 'delivered', 'disputed', 'negotiating'];
+  }
+
+  /**
+   * Fetch all non-terminal escrows, diff against the cache, and emit synthetic
+   * events for transitions. First call after connect() initializes the cache
+   * silently (no events) so a restart doesn't replay every active escrow as
+   * "just changed".
+   */
+  async _pollEscrows() {
+    const fresh = new Map();
+    for (const status of TruuzeConnector._ESCROW_NON_TERMINAL) {
+      try {
+        const res = await this._fetch(`/kookie/escrow/?status=${encodeURIComponent(status)}`);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const items = Array.isArray(data) ? data : (data.results || []);
+        for (const item of items) {
+          const id = item.id ?? item.escrow_id;
+          if (id) fresh.set(id, item);
+        }
+      } catch (err) {
+        console.warn('[truuze] Escrow status fetch (%s) failed: %s', status, err.message);
+      }
+    }
+
+    // Initialization pass: just populate, do not emit. Anything currently in
+    // a non-terminal state is "already known" — events fire only for future
+    // transitions detected on subsequent polls.
+    if (!this._escrowsInitialized) {
+      this._escrowStates.clear();
+      for (const [id, item] of fresh) {
+        this._escrowStates.set(id, { status: item.status, snapshot: item });
+      }
+      this._escrowsInitialized = true;
+      if (fresh.size > 0) {
+        console.log('[truuze] Escrow cache initialized: %d non-terminal', fresh.size);
+      }
+      return;
+    }
+
+    // Diff: transitions within the non-terminal set.
+    for (const [id, item] of fresh) {
+      const prev = this._escrowStates.get(id);
+      const newStatus = item.status;
+      if (!prev) {
+        // Newly visible escrow — most likely the agent just created one. Cache
+        // it but don't fire an event; the create_service tool already told the
+        // agent what to expect.
+        this._escrowStates.set(id, { status: newStatus, snapshot: item });
+        continue;
+      }
+      if (prev.status !== newStatus) {
+        console.log('[truuze] Escrow %s: %s → %s', id, prev.status, newStatus);
+        this._escrowStates.set(id, { status: newStatus, snapshot: item });
+        await this._emitEscrowEvent(prev.status, newStatus, item);
+      }
+    }
+
+    // Detect transitions to TERMINAL states — escrow disappears from the
+    // non-terminal listing. Fetch detail to learn the final status, fire one
+    // event, then drop from cache.
+    const goneIds = [];
+    for (const [id] of this._escrowStates) {
+      if (!fresh.has(id)) goneIds.push(id);
+    }
+    for (const id of goneIds) {
+      const prev = this._escrowStates.get(id);
+      try {
+        const res = await this._fetch(`/kookie/escrow/${id}/`);
+        if (res.ok) {
+          const item = await res.json();
+          if (item.status && item.status !== prev.status) {
+            console.log('[truuze] Escrow %s went terminal: %s → %s', id, prev.status, item.status);
+            await this._emitEscrowEvent(prev.status, item.status, item);
+          }
+        }
+      } catch (err) {
+        console.warn('[truuze] Could not resolve terminal status for %s: %s', id, err.message);
+      }
+      this._escrowStates.delete(id);
+    }
+  }
+
+  /**
+   * Decide whether a transition is worth notifying the agent about, and what
+   * to call it. Returns null for noise (e.g. self-driven transitions where the
+   * agent already knows because it just made the API call).
+   */
+  _escrowTransitionAction(from, to) {
+    // User actions on the escrow — agent must hear about these:
+    if (to === 'active' && from !== 'active') return 'accepted';        // user paid
+    if (to === 'disputed' && from !== 'disputed') return 'disputed';    // user disputed
+    if (to === 'completed') return 'completed';                          // user released or auto-released
+    if (to === 'refunded') return 'refunded';                            // auto-refunded
+    if (to === 'cancelled' && from !== 'pending') return 'cancelled';    // late cancel surfaced
+    if (to === 'expired') return 'expired';                              // offer expired
+    if (to === 'admin_review') return 'admin_review';                    // dispute escalated
+    if (to === 'resolved' && from === 'admin_review') return 'admin_decided';
+    // Self-driven transitions (delivered, negotiating after our respond)
+    // are intentionally NOT emitted — the agent just made the call.
+    return null;
+  }
+
+  /**
+   * Emit one synthetic event into the engine for an escrow state change.
+   * Uses a non-message event type so it can't be confused with chat content.
+   * Agent's response, if any, is sent into the escrow's chat.
+   */
+  async _emitEscrowEvent(fromStatus, toStatus, escrow) {
+    const action = this._escrowTransitionAction(fromStatus, toStatus);
+    if (!action) return;
+
+    const ref = escrow.reference_code || `#${escrow.id ?? escrow.escrow_id}`;
+    const title = escrow.title || 'service';
+    const chatId = escrow.chat_id;
+    const userUsername = escrow.user?.username || escrow.user_username || null;
+
+    const content = this._formatEscrowNotice(action, escrow, ref, title);
+
+    const event = {
+      platform: 'truuze',
+      // Route into the customer's chat session if we know who it is, so the
+      // agent's reply lands in the right context. Falls back to a synthetic
+      // platform id when the username isn't surfaced by the API.
+      userId: userUsername || 'truuze-platform',
+      userName: userUsername ? `@${userUsername}` : 'Truuze Platform',
+      type: 'platform_event',
+      content,
+      metadata: {
+        mode: 'customer',
+        is_platform_event: true,
+        category: 'escrow',
+        action,
+        escrow_id: escrow.id ?? escrow.escrow_id,
+        reference_code: escrow.reference_code,
+        chat_id: chatId,
+        from_status: fromStatus,
+        to_status: toStatus,
+      },
+    };
+
+    try {
+      const result = await this.engine.processEvent(event);
+      // If the agent produced a chat-worthy response and didn't already post
+      // it via platform_request, send it into the escrow's chat. Without this
+      // the user only sees backend-side state changes and not the agent's
+      // human-facing acknowledgement.
+      const sentMessage = (result?.toolsUsed || []).some(t => {
+        if (typeof t === 'string') return false;
+        if (t.name !== 'platform_request') return false;
+        const args = t.arguments || {};
+        const method = (args.method || '').toUpperCase();
+        const url = (args.url || '');
+        return method === 'POST' && url.includes('/message/create');
+      });
+      if (chatId && result?.response && !sentMessage) {
+        await this._sendMessage(chatId, result.response);
+        console.log('[truuze] Escrow event response posted to chat %s', chatId);
+      }
+    } catch (err) {
+      console.error('[truuze] Escrow event handler error:', err);
+      this.error = `Escrow event handler error: ${err.message}`;
+    }
+  }
+
+  _formatEscrowNotice(action, escrow, ref, title) {
+    const userTotal = escrow.user_total || escrow.amount;
+    const agentNet = escrow.agent_net;
+    switch (action) {
+      case 'accepted':
+        return `[Truuze] The user accepted and paid for your service "${title}" (${ref}). ${userTotal} kookies are now escrowed (you net ${agentNet || userTotal} on release). The service is ACTIVE — you can start work now. When the work is finished, deliver it in chat AND call complete_service to mark it delivered on Truuze. Without that call, the kookies stay frozen.`;
+      case 'disputed':
+        return `[Truuze] The user disputed your delivery of "${title}" (${ref}). Reason: ${escrow.dispute_reason || 'not provided'}. You have 48 hours to act or kookies auto-refund. Use respond_to_dispute with action "defend" to push back, or "agree_refund" if the dispute is fair. Also message the user in chat — settle in negotiation rather than letting it go to admin review.`;
+      case 'completed':
+        return `[Truuze] The user released payment for "${title}" (${ref}). You earned ${agentNet || userTotal} kookies. Service is complete. Send a brief, warm closing message in chat.`;
+      case 'refunded':
+        return `[Truuze] Service "${title}" (${ref}) was refunded to the user. No further action needed.`;
+      case 'cancelled':
+        return `[Truuze] Service "${title}" (${ref}) was cancelled. If you had started work, you won't be paid for it. No further action needed.`;
+      case 'expired':
+        return `[Truuze] Your offer for "${title}" (${ref}) expired before the user accepted. No further action needed.`;
+      case 'admin_review':
+        return `[Truuze] The dispute on "${title}" (${ref}) escalated to admin review — neither side settled in time. You can no longer act on this service. Truuze admin will decide.`;
+      case 'admin_decided':
+        return `[Truuze] Truuze admin closed the dispute on "${title}" (${ref}). Decision: ${escrow.admin_decision_reason || 'see Truuze for details'}.`;
+      default:
+        return `[Truuze] Service ${ref} state changed to ${escrow.status}.`;
+    }
+  }
+
   async _handleMessage(msg) {
     // Skip messages with no text and no media
     if (!msg.text && !msg.media?.length) {
       console.log('[truuze] Skipping message with no content, id:', msg.id);
+      return;
+    }
+
+    // Filter out Truuze's "Escrow XXXXXX" platform-system messages. The
+    // connector now drives all escrow notifications via _pollEscrows() and
+    // synthetic platform_event events. Letting these into the agent's stream
+    // would cause double-handling and require the agent to parse 6-letter
+    // codes the connector already resolved. Ack them so the server stops
+    // redelivering, then drop. Real chat content is unaffected.
+    if (msg.message_type === 'system' && /^Escrow\s+[A-Z0-9]{6}\b/.test((msg.text || '').trim())) {
+      console.log('[truuze] Filtering escrow system message %s (handled by escrow poller)', msg.id);
+      this._ackMessage(msg.id, msg.chat_type);
       return;
     }
 

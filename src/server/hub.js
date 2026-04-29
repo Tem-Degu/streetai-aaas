@@ -706,6 +706,10 @@ const PROVIDER_MODELS = {
     { value: 'o3', label: 'o3' },
     { value: 'o4-mini', label: 'o4 Mini' },
   ],
+  deepseek: [
+    { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+    { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+  ],
 };
 
 const OAUTH_PROVIDERS = {

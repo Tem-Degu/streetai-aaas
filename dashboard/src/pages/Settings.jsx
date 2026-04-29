@@ -10,6 +10,7 @@ const PROVIDERS = [
   { value: 'ollama', label: 'Ollama (Local)', hasOAuth: false },
   { value: 'openrouter', label: 'OpenRouter', hasOAuth: false },
   { value: 'azure', label: 'Azure OpenAI', hasOAuth: true },
+  { value: 'deepseek', label: 'DeepSeek', hasOAuth: false },
 ];
 
 export default function Settings() {

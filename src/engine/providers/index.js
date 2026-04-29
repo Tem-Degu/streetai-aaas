@@ -81,6 +81,7 @@ const PROVIDER_MODULES = {
   ollama: () => import('./ollama.js'),
   openrouter: () => import('./openrouter.js'),
   azure: () => import('./azure.js'),
+  deepseek: () => import('./deepseek.js'),
 };
 
 const DEFAULT_MODELS = {
@@ -90,6 +91,7 @@ const DEFAULT_MODELS = {
   ollama: 'llama3.2',
   openrouter: 'anthropic/claude-sonnet-4-20250514',
   azure: 'gpt-4o',
+  deepseek: 'deepseek-v4-flash',
 };
 
 /**
@@ -128,11 +130,36 @@ export function getDefaultModel(providerName) {
 }
 
 /**
+ * Walk a JSON-Schema-ish object and throw on `type` values that are arrays
+ * (e.g. `type: ['string', 'number']`). Anthropic and OpenAI tolerate this
+ * dialect, but Google's function-calling validator rejects it. Catching it
+ * here keeps the failure mode loud and fast — and tied to the offending
+ * tool's name — so it can't silently break Google deploys.
+ */
+function assertNoArrayTypes(toolName, schema, path = 'parameters') {
+  if (!schema || typeof schema !== 'object') return;
+  if (Array.isArray(schema.type)) {
+    throw new Error(
+      `Tool "${toolName}" has array-typed schema at ${path} (type: ${JSON.stringify(schema.type)}). ` +
+      `Use a single string type and let the description disambiguate — Google's function calling does not accept type unions.`
+    );
+  }
+  if (schema.properties && typeof schema.properties === 'object') {
+    for (const [key, sub] of Object.entries(schema.properties)) {
+      assertNoArrayTypes(toolName, sub, `${path}.properties.${key}`);
+    }
+  }
+  if (schema.items) assertNoArrayTypes(toolName, schema.items, `${path}.items`);
+}
+
+/**
  * Translate generic tool definitions to provider-specific format.
  * Generic format: { name, description, parameters: { type: 'object', properties, required } }
  */
 export function translateToolsForProvider(providerName, tools) {
   if (!tools || tools.length === 0) return undefined;
+
+  for (const t of tools) assertNoArrayTypes(t.name, t.parameters);
 
   switch (providerName) {
     case 'anthropic':

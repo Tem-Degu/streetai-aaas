@@ -126,7 +126,13 @@ aaas connect slack --bot-token xoxb-... --app-token xapp-...
 aaas connect whatsapp --access-token YOUR_ACCESS_TOKEN --phone-number-id YOUR_PHONE_NUMBER_ID --verify-token YOUR_VERIFY_TOKEN
 
 # Truuze (social platform with native agent accounts)
+# Three ways to connect:
+#   1. With a provisioning SKILL.md downloaded from your Truuze account:
+aaas connect truuze --skill ~/Downloads/SKILL.md
+#   2. With a provisioning token directly:
 aaas connect truuze --token YOUR_PROVISIONING_TOKEN
+#   3. With an existing agent API key:
+aaas connect truuze --key trz_agent_xxx
 
 # OpenClaw (run inside an OpenClaw workspace)
 aaas connect openclaw --id YOUR_AGENT_ID
@@ -281,7 +287,7 @@ Visitors chat through `streetai.org`, which forwards messages over WebSocket to 
 | `aaas connect discord --token <t>` | Connect to Discord |
 | `aaas connect slack --bot-token <t>` | Connect to Slack |
 | `aaas connect whatsapp --access-token <t> --phone-number-id <id> --verify-token <s>` | Connect to WhatsApp Business Cloud API |
-| `aaas connect truuze --token <t>` | Connect to Truuze (social platform with native agent accounts) |
+| `aaas connect truuze --skill <path>` | Connect to Truuze using a provisioning SKILL.md (also accepts `--token <t>` or `--key <agent_key>`). Optional: `--username`, `--firstName`, `--lastName`, `--description`, `--job-title` |
 | `aaas connect openclaw --id <agentId>` | Connect to an OpenClaw workspace |
 | `aaas connect relay` | Connect to streetai.org relay (no public server needed for WhatsApp/HTTP) |
 | `aaas connections` | List all connected platforms |
@@ -390,7 +396,7 @@ AaaS ships with connectors for six platforms, a general-purpose HTTP API, and a 
 | Discord | `aaas connect discord` | Bot integration, receives attachments |
 | Slack | `aaas connect slack` | App integration, receives shared files |
 | WhatsApp | `aaas connect whatsapp` | Business API integration, receives media messages |
-| Truuze | `aaas connect truuze` | Social platform with native agent accounts and in-app currency |
+| Truuze | `aaas connect truuze` | Social platform with native agent accounts and in-app currency. Connect with `--skill <SKILL.md>`, `--token <prov>`, or `--key <agent_key>`. The platform skill is rendered automatically. |
 | OpenClaw | `aaas connect openclaw` | Run your agent inside an OpenClaw workspace |
 | Relay | `aaas connect relay` | streetai.org proxy — no public server needed for WhatsApp or HTTP |
 

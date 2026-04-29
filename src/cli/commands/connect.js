@@ -1,8 +1,28 @@
 import readline from 'readline';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import chalk from 'chalk';
-import { requireWorkspace } from '../../utils/workspace.js';
+import { requireWorkspace, readJson } from '../../utils/workspace.js';
 import { saveConnection, loadConnection } from '../../auth/connections.js';
 import { listAvailableConnectors } from '../../connectors/index.js';
+import { parseTruuzeSkill, buildPlatformSkill } from '../../connectors/truuze-skill.js';
+import { AgentEngine } from '../../engine/index.js';
+
+/**
+ * Resolve a user-supplied file path. Accepts absolute paths, `~`-prefixed paths
+ * (expanded to the home directory), and relative paths (resolved from the
+ * shell's current working directory — i.e. wherever the user actually typed
+ * the command, which is the natural "main storage" view).
+ */
+function resolveUserPath(input) {
+  if (!input) return null;
+  let p = input.trim();
+  if (p.startsWith('~')) {
+    p = path.join(os.homedir(), p.slice(1));
+  }
+  return path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+}
 
 export async function connectCommand(platform, opts) {
   const ws = requireWorkspace();
@@ -41,8 +61,45 @@ async function connectTruuze(ws, opts) {
   try {
     console.log(chalk.blue('\n  Connect to Truuze\n'));
 
-    // Base URL
-    const defaultUrl = 'https://origin.truuze.com/api/v1';
+    // --skill cannot be combined with --token or --key — they encode different
+    // signup intents and silently picking one would hide the user's mistake.
+    if (opts.skill && (opts.token || opts.key)) {
+      console.error(chalk.red('\n  --skill cannot be used together with --token or --key. Pick one.\n'));
+      rl.close();
+      return;
+    }
+
+    // If --skill is provided, read and parse the file up front. This pulls the
+    // provisioning token (and base URL) out of the SKILL.md frontmatter, then
+    // falls through to the existing token-signup flow below.
+    let token = opts.token;
+    let skillBaseUrl = null;
+    if (opts.skill && !token) {
+      const skillPath = resolveUserPath(opts.skill);
+      if (!fs.existsSync(skillPath)) {
+        console.error(chalk.red(`\n  Skill file not found: ${skillPath}\n`));
+        rl.close();
+        return;
+      }
+      const skillContent = fs.readFileSync(skillPath, 'utf-8');
+      const parsed = parseTruuzeSkill(skillContent);
+      if (!parsed) {
+        console.error(chalk.red('\n  Could not parse SKILL.md. Make sure it has valid YAML frontmatter with a metadata block.\n'));
+        rl.close();
+        return;
+      }
+      if (!parsed.provisioningToken || parsed.provisioningToken === 'N/A - already onboarded') {
+        console.error(chalk.red('\n  This SKILL.md does not contain a valid provisioning token. It may have already been used. Use --key for an existing agent.\n'));
+        rl.close();
+        return;
+      }
+      token = parsed.provisioningToken;
+      skillBaseUrl = parsed.apiBase;
+      console.log(chalk.green(`  ✓ Parsed ${skillPath}`));
+    }
+
+    // Base URL — prefer flag, then skill frontmatter, then prompt with default.
+    const defaultUrl = skillBaseUrl || 'https://origin.truuze.com/api/v1';
     const baseUrl = (opts.baseUrl || await ask(`  Base URL [${defaultUrl}]: `)).trim() || defaultUrl;
 
     // Platform API key (shared/public)
@@ -51,8 +108,9 @@ async function connectTruuze(ws, opts) {
     let agentKey = opts.key;
     let agentId = null;
     let ownerUsername = null;
+    let signupData = null;
 
-    if (opts.token) {
+    if (token) {
       // Sign up with provisioning token
       console.log(chalk.gray('  Signing up with provisioning token...'));
 
@@ -64,11 +122,13 @@ async function connectTruuze(ws, opts) {
       const signupBody = {
         username: username.trim(),
         first_name: firstName.trim(),
-        provisioning_token: opts.token,
+        provisioning_token: token,
         agent_provider: 'aaas',
         agent_description: description.trim(),
+        email: `${username.trim()}@agent.aaas.local`,
       };
       if (lastName.trim()) signupBody.last_name = lastName.trim();
+      if (opts.jobTitle) signupBody.job_title = opts.jobTitle;
 
       const res = await fetch(`${baseUrl}/account/create/agent/`, {
         method: 'POST',
@@ -87,6 +147,7 @@ async function connectTruuze(ws, opts) {
       }
 
       const data = await res.json();
+      signupData = data;
       agentKey = data.api_key || data.agent_key;
       agentId = data.id;
       ownerUsername = data.owner_username;
@@ -105,7 +166,9 @@ async function connectTruuze(ws, opts) {
       agentKey = agentKey.trim();
 
       if (!agentKey) {
-        console.log(chalk.yellow('\n  No key provided. To create a new agent, use: aaas connect truuze --token <provisioning_token>\n'));
+        console.log(chalk.yellow('\n  No key provided. To create a new agent, use:'));
+        console.log(chalk.gray('    aaas connect truuze --token <provisioning_token>'));
+        console.log(chalk.gray('    aaas connect truuze --skill <path/to/SKILL.md>\n'));
         rl.close();
         return;
       }
@@ -129,13 +192,27 @@ async function connectTruuze(ws, opts) {
     const profile = await verifyRes.json();
     console.log(chalk.green(`  ✓ Connected as ${profile.username || profile.agent?.username || 'agent'}`));
 
-    // Save connection
+    // Save connection — mirror the full field set the dashboard saves so
+    // `aaas status`, `connections`, and other commands see the same data.
+    const src = signupData || {};
+    const agentName = src.name
+      || [src.first_name, src.last_name].filter(Boolean).join(' ').trim()
+      || [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim()
+      || undefined;
+
     const connection = {
       platform: 'truuze',
       baseUrl,
       platformApiKey,
       agentKey,
-      agentId: agentId || profile.id || profile.agent?.id,
+      agentId: agentId || profile.id || profile.agent?.id || profile.agent,
+      agentUsername: src.username || profile.username,
+      agentName,
+      agentProvider: src.agent_provider || profile.agent_provider,
+      agentDescription: src.agent_description || profile.agent_description || profile.bio,
+      agentPhoto: src.photo ?? profile.photo ?? null,
+      avatarBgColor: src.avatar_bg_color || profile.avatar_bg_color,
+      jobTitle: src.job_title || profile.job_title,
       ownerUsername: ownerUsername || profile.owner_username,
       heartbeatInterval: 30,
       connectedAt: new Date().toISOString(),
@@ -143,7 +220,33 @@ async function connectTruuze(ws, opts) {
 
     saveConnection(ws, 'truuze', connection);
     console.log(chalk.green(`\n  Saved to .aaas/connections/truuze.json`));
-    console.log(chalk.gray(`  Run ${chalk.bold('aaas run')} to start the agent.\n`));
+
+    // Render the Truuze platform skill from the connector-shipped template +
+    // the owner's uploaded service SKILL.md. Non-blocking — falls back to
+    // template defaults if no LLM provider is configured yet.
+    try {
+      let eng = null;
+      try {
+        const config = readJson(path.join(ws, '.aaas', 'config.json'));
+        if (config?.provider) {
+          eng = new AgentEngine({ workspace: ws, provider: config.provider, config });
+          await eng.initialize();
+        }
+      } catch { /* no provider yet — extractor falls back */ }
+
+      console.log(chalk.gray('  Rendering Truuze platform skill...'));
+      await buildPlatformSkill({
+        workspace: ws,
+        engine: eng,
+        connection: { baseUrl, ownerUsername: connection.ownerUsername },
+      });
+      console.log(chalk.green('  ✓ Skill written to skills/truuze/SKILL.md'));
+    } catch (err) {
+      console.log(chalk.yellow(`  Skill render failed: ${err.message}`));
+      console.log(chalk.gray('  Fix the underlying issue (e.g., configure an LLM provider) and re-run: aaas connect truuze --force'));
+    }
+
+    console.log(chalk.gray(`\n  Run ${chalk.bold('aaas run')} to start the agent.\n`));
 
     rl.close();
   } catch (err) {

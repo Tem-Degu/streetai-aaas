@@ -10,48 +10,27 @@ import { getProviderCredential, setProviderCredential, removeProviderCredential,
 import { listConnections, loadConnection, saveConnection, removeConnection } from '../auth/connections.js';
 import { AgentEngine } from '../engine/index.js';
 import { extractFiles } from '../connectors/media.js';
+import { buildPlatformSkill, parseTruuzeSkill } from '../connectors/truuze-skill.js';
 
 
 const __api_dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const TRUUZE_SKILL_REWRITE_PROMPT = `You are rewriting a platform SKILL.md file for an AI agent that has already been onboarded.
-
-The agent is already signed up and connected. Rewrite the SKILL.md below with these changes:
-1. REMOVE all signup/registration instructions (Step 1: Register, provisioning token usage, etc.)
-2. REMOVE credential storage instructions (saving API keys, credentials.json, etc.)
-3. REMOVE heartbeat/polling setup instructions (events are delivered automatically)
-4. REMOVE "where to place this file" or installation instructions
-5. REMOVE authentication setup instructions (auth headers are handled automatically)
-6. KEEP all API endpoint documentation intact (messaging, escrow, kookies, profiles, etc.)
-7. KEEP behavioral guidance (community guidelines, best practices, owner priority)
-8. KEEP the frontmatter (--- block at the top) unchanged
-9. Return ONLY the rewritten SKILL.md content, nothing else — no explanations, no wrapping
-
-Original SKILL.md:
-`;
-
-/**
- * Use the LLM to strip onboarding sections from a Truuze skill.
- * Returns the original if no provider is available or rewrite fails.
- */
-async function rewriteTruuzeSkill(engine, rawSkill) {
+// The Truuze signup response (WelcomeAgentSerializer) doesn't include the
+// agent's photo, but the photo is auto-generated server-side. Hit the profile
+// endpoint with the freshly-issued key to pick it up. Returns null on any
+// failure — photo is non-critical, never block the connection on it.
+async function fetchAgentPhoto(baseUrl, agentKey, platformApiKey) {
+  if (!agentKey) return null;
   try {
-    if (!engine?.provider) {
-      await engine?.initialize?.();
-      if (!engine?.provider) return rawSkill;
-    }
-    const result = await engine.provider.chat([
-      { role: 'user', content: TRUUZE_SKILL_REWRITE_PROMPT + rawSkill },
-    ], { maxTokens: 8000, temperature: 0 });
-    const rewritten = result.content?.trim();
-    if (rewritten && rewritten.length > 500) {
-      console.log('[truuze-connect] SKILL.md rewritten by LLM (' + rewritten.length + ' chars)');
-      return rewritten;
-    }
-  } catch (err) {
-    console.log('[truuze-connect] Skill rewrite failed, using original:', err.message);
+    const resp = await fetch(`${baseUrl}/account/agent/profile/`, {
+      headers: { 'X-Agent-Key': agentKey, 'X-Api-Key': platformApiKey },
+    });
+    if (!resp.ok) return null;
+    const profile = await resp.json();
+    return profile.photo || null;
+  } catch {
+    return null;
   }
-  return rawSkill;
 }
 
 export function apiRouter(workspace) {
@@ -850,6 +829,8 @@ export function apiRouter(workspace) {
           const data = await resp.json();
           console.log('[truuze-connect] Signup success, agent ID:', data.id);
 
+          const agentPhoto = await fetchAgentPhoto(url, data.api_key, PLATFORM_API_KEY) ?? data.photo ?? null;
+
           saveConnection(workspace, 'truuze', {
             baseUrl: url,
             agentKey: data.api_key,
@@ -859,7 +840,7 @@ export function apiRouter(workspace) {
             agentName: data.name || `${data.first_name || ''} ${data.last_name || ''}`.trim(),
             agentProvider: data.agent_provider,
             agentDescription: data.agent_description,
-            agentPhoto: data.photo || null,
+            agentPhoto,
             avatarBgColor: data.avatar_bg_color,
             jobTitle: data.job_title,
             ownerUsername: data.owner_username,
@@ -867,31 +848,18 @@ export function apiRouter(workspace) {
             connectedAt: new Date().toISOString(),
           });
 
-          // Fetch the skill template and rewrite with LLM
-          const skillPath = path.join(workspace, 'skills', 'truuze', 'SKILL.md');
-          fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-          const wsConfig = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
-          const agentType = wsConfig.agentType || 'service';
+          // Render the Truuze platform skill from the connector-shipped
+          // template + the owner's uploaded service SKILL.md. Non-blocking.
           try {
-            const refreshUrl = `${url}/account/agent/skills/refresh/?type=${agentType}`;
-            console.log('[truuze-connect] Fetching skill from:', refreshUrl);
-            const skillResp = await fetch(refreshUrl, {
-              headers: { 'X-Agent-Key': data.api_key, 'X-Api-Key': PLATFORM_API_KEY },
-            });
-            let rawSkill = null;
-            if (skillResp.ok) {
-              const skillData = await skillResp.json();
-              rawSkill = skillData.content || skillData.skills_md;
-            }
-            const finalSkill = rawSkill || skillContent;
-            // Rewrite with LLM to strip onboarding sections (non-blocking failure)
             let eng = null;
-            try { eng = await getEngine(); } catch { /* no provider configured yet */ }
-            const processed = eng ? await rewriteTruuzeSkill(eng, finalSkill) : finalSkill;
-            fs.writeFileSync(skillPath, processed);
+            try { eng = await getEngine(); } catch { /* no provider yet — extractor falls back */ }
+            await buildPlatformSkill({
+              workspace,
+              engine: eng,
+              connection: { baseUrl: url, ownerUsername: data.owner_username },
+            });
           } catch (err) {
-            console.log('[truuze-connect] Skill fetch/rewrite error:', err.message);
-            fs.writeFileSync(skillPath, skillContent);
+            console.log('[truuze-connect] Skill render failed:', err.message);
           }
         } else if (agentKey) {
           const trimmedKey = agentKey.trim();
@@ -929,26 +897,22 @@ export function apiRouter(workspace) {
             connectedAt: new Date().toISOString(),
           });
 
-          // Fetch the skill template and rewrite with LLM
-          const wsConfig = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
-          const agentType = wsConfig.agentType || 'service';
+          // Render the Truuze platform skill from the connector-shipped
+          // template + the owner's uploaded service SKILL.md. Non-blocking.
           try {
-            const skillResp = await fetch(`${url}/account/agent/skills/refresh/?type=${agentType}`, {
-              headers: { 'X-Agent-Key': trimmedKey, 'X-Api-Key': PLATFORM_API_KEY },
+            let eng = null;
+            try { eng = await getEngine(); } catch { /* no provider yet — extractor falls back */ }
+            await buildPlatformSkill({
+              workspace,
+              engine: eng,
+              connection: {
+                baseUrl: url,
+                ownerUsername: profile.owner_username || accountData.owner_username,
+              },
             });
-            if (skillResp.ok) {
-              const skillData = await skillResp.json();
-              const rawSkill = skillData.content || skillData.skills_md;
-              if (rawSkill) {
-                let eng = null;
-                try { eng = await getEngine(); } catch { /* no provider configured yet */ }
-                const processed = eng ? await rewriteTruuzeSkill(eng, rawSkill) : rawSkill;
-                const skillPath = path.join(workspace, 'skills', 'truuze', 'SKILL.md');
-                fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-                fs.writeFileSync(skillPath, processed);
-              }
-            }
-          } catch { /* non-critical */ }
+          } catch (err) {
+            console.log('[truuze-connect] Skill render failed:', err.message);
+          }
         } else if (token) {
           const url = baseUrl || 'https://origin.truuze.com/api/v1';
           // Signup with provisioning token (only pass agent identity fields)
@@ -976,6 +940,8 @@ export function apiRouter(workspace) {
           }
           const data = await resp.json();
 
+          const agentPhoto = await fetchAgentPhoto(url, data.api_key, PLATFORM_API_KEY) ?? data.photo ?? null;
+
           saveConnection(workspace, 'truuze', {
             baseUrl: url,
             agentKey: data.api_key,
@@ -985,7 +951,7 @@ export function apiRouter(workspace) {
             agentName: data.name || `${data.first_name || ''} ${data.last_name || ''}`.trim(),
             agentProvider: data.agent_provider,
             agentDescription: data.agent_description,
-            agentPhoto: data.photo || null,
+            agentPhoto,
             avatarBgColor: data.avatar_bg_color,
             jobTitle: data.job_title,
             ownerUsername: data.owner_username,
@@ -993,26 +959,19 @@ export function apiRouter(workspace) {
             connectedAt: new Date().toISOString(),
           });
 
-          // Fetch the skill template and rewrite with LLM
-          const wsConfig3 = readJson(path.join(workspace, '.aaas', 'config.json')) || {};
-          const agentType3 = wsConfig3.agentType || 'service';
+          // Render the Truuze platform skill from the connector-shipped
+          // template + the owner's uploaded service SKILL.md. Non-blocking.
           try {
-            const skillResp = await fetch(`${url}/account/agent/skills/refresh/?type=${agentType3}`, {
-              headers: { 'X-Agent-Key': data.api_key, 'X-Api-Key': PLATFORM_API_KEY },
+            let eng = null;
+            try { eng = await getEngine(); } catch { /* no provider yet — extractor falls back */ }
+            await buildPlatformSkill({
+              workspace,
+              engine: eng,
+              connection: { baseUrl: url, ownerUsername: data.owner_username },
             });
-            if (skillResp.ok) {
-              const skillData = await skillResp.json();
-              const rawSkill = skillData.content || skillData.skills_md;
-              if (rawSkill) {
-                let eng = null;
-                try { eng = await getEngine(); } catch { /* no provider configured yet */ }
-                const processed = eng ? await rewriteTruuzeSkill(eng, rawSkill) : rawSkill;
-                const skillPath = path.join(workspace, 'skills', 'truuze', 'SKILL.md');
-                fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-                fs.writeFileSync(skillPath, processed);
-              }
-            }
-          } catch { /* non-critical */ }
+          } catch (err) {
+            console.log('[truuze-connect] Skill render failed:', err.message);
+          }
         } else {
           return res.status(400).json({ error: 'Provide a SKILL.md, provisioning token, or agent key' });
         }
@@ -1463,30 +1422,6 @@ export function apiRouter(workspace) {
  * Parse a Truuze SKILL.md to extract connection details from frontmatter.
  * Returns { apiBase, provisioningToken, ownerUsername, ownerId } or null.
  */
-function parseTruuzeSkill(content) {
-  // Extract YAML frontmatter between --- markers
-  const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
-  if (!fmMatch) return null;
-
-  const frontmatter = fmMatch[1];
-
-  // Extract metadata JSON from frontmatter
-  const metaMatch = frontmatter.match(/metadata:\s*(\{[\s\S]*?\})\s*$/m);
-  if (!metaMatch) return null;
-
-  try {
-    const metadata = JSON.parse(metaMatch[1]);
-    return {
-      apiBase: metadata.api_base || null,
-      provisioningToken: metadata.provisioning_token || null,
-      ownerUsername: metadata.owner_username || null,
-      ownerId: metadata.owner_id || null,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function loadAllTransactions(paths, includeArchived) {
   const txns = [];
 
@@ -1580,6 +1515,10 @@ const PROVIDER_MODELS = {
     { value: 'gpt-5', label: 'GPT-5' },
     { value: 'gpt-4.1', label: 'GPT-4.1' },
     { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+  ],
+  deepseek: [
+    { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+    { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
   ],
 };
 

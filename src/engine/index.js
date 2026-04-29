@@ -67,6 +67,9 @@ export class AgentEngine {
     this.sessionManager = new SessionManager(this.workspace);
     this.memoryManager = new MemoryManager(this.workspace);
 
+    // Discover tools owned by configured connectors (e.g. truuze escrow tools)
+    await this.toolRegistry.loadConnectorTools();
+
     this.initialized = true;
   }
 

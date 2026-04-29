@@ -11,6 +11,7 @@ export default class OpenAIProvider extends BaseProvider {
   }
 
   get name() { return 'openai'; }
+  get displayName() { return 'OpenAI'; }
 
   listModels() {
     return ['gpt-5.4', 'gpt-5.4-mini', 'o3', 'o3-mini', 'o4-mini', 'gpt-5', 'gpt-4.1', 'gpt-4.1-mini'];
@@ -44,9 +45,9 @@ export default class OpenAIProvider extends BaseProvider {
 
     if (!res.ok) {
       const err = await res.text();
-      if (res.status === 401) throw new Error('Invalid OpenAI API key. Run: aaas config');
-      if (res.status === 429) throw new Error('Rate limited by OpenAI. Wait a moment and try again.');
-      throw new Error(`OpenAI API error ${res.status}: ${err}`);
+      if (res.status === 401) throw new Error(`Invalid ${this.displayName} API key. Run: aaas config`);
+      if (res.status === 429) throw new Error(`Rate limited by ${this.displayName}. Wait a moment and try again.`);
+      throw new Error(`${this.displayName} API error ${res.status}: ${err}`);
     }
 
     const data = await res.json();

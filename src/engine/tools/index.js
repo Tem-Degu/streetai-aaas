@@ -6,21 +6,86 @@ import { readSkill, writeSkill, readSoul, writeSoul, readDataFile, writeDataFile
 import { runQuery, listTables } from './database.js';
 import { platformRequest } from './platform-request.js';
 import { webSearch, webFetch } from './web.js';
+import { listConnections } from '../../auth/connections.js';
+import { loadConnectorToolModule } from '../../connectors/index.js';
 
 /**
  * Tool registry. Returns tool definitions for the LLM and dispatches execution.
+ *
+ * Tools come from two layers:
+ *   1. Base tools — built into the engine and always available (memory,
+ *      transactions, workspace, database, web, generic platform_request).
+ *   2. Connector tools — owned by individual connectors (e.g. truuze-tools.js)
+ *      and only loaded when the workspace has a matching connection
+ *      configured under `.aaas/connections/<platform>.json`. This keeps
+ *      platform-specific tooling colocated with the connector and means
+ *      adding a new connector with its own tools doesn't touch the engine.
+ *
+ * After construction, callers must `await registry.loadConnectorTools()`
+ * before serving requests so connector definitions are merged in.
  */
 export class ToolRegistry {
   constructor(workspace, paths, config = {}) {
     this.workspace = workspace;
     this.paths = paths;
     this.config = config;
+    this.connectorDefinitions = [];
+    this.connectorHandlers = {};
+  }
+
+  /**
+   * Discover and load tools owned by configured connectors.
+   * Idempotent: safe to call multiple times (re-replaces both maps).
+   */
+  async loadConnectorTools() {
+    const definitions = [];
+    const handlers = {};
+
+    const connections = listConnections(this.workspace);
+    const seen = new Set();
+
+    for (const { platform } of connections) {
+      if (seen.has(platform)) continue;
+      seen.add(platform);
+
+      let mod;
+      try {
+        mod = await loadConnectorToolModule(platform);
+      } catch (err) {
+        console.warn(`[tools] Failed to load tool module for ${platform}: ${err.message}`);
+        continue;
+      }
+      if (!mod) continue;
+
+      if (Array.isArray(mod.definitions)) {
+        definitions.push(...mod.definitions);
+      }
+      if (mod.handlers && typeof mod.handlers === 'object') {
+        for (const [name, fn] of Object.entries(mod.handlers)) {
+          if (typeof fn !== 'function') continue;
+          if (handlers[name]) {
+            console.warn(`[tools] Duplicate connector tool "${name}" — ${platform} entry ignored`);
+            continue;
+          }
+          handlers[name] = { fn, platform };
+        }
+      }
+    }
+
+    this.connectorDefinitions = definitions;
+    this.connectorHandlers = handlers;
   }
 
   /**
    * Get tool definitions in generic format for the LLM.
+   * Returns base tools merged with any connector-owned tools loaded via
+   * `loadConnectorTools()`.
    */
   getToolDefinitions() {
+    return [...this._getBaseToolDefinitions(), ...this.connectorDefinitions];
+  }
+
+  _getBaseToolDefinitions() {
     return [
       {
         name: 'search_data',
@@ -347,12 +412,22 @@ export class ToolRegistry {
   /**
    * Execute a tool by name with given arguments.
    * Returns a string result for the LLM.
+   *
+   * Connector-owned tools are dispatched first; the base switch handles the
+   * engine's built-in tools.
    */
   async executeTool(name, args) {
     if (name === 'platform_request') {
       console.log('[executeTool] platform_request args:', JSON.stringify(args, null, 2));
     }
     try {
+      const connectorEntry = this.connectorHandlers[name];
+      if (connectorEntry) {
+        return await this._retryNetworkTool(
+          () => connectorEntry.fn(this.workspace, args),
+          name,
+        );
+      }
       let result;
       switch (name) {
         case 'search_data':

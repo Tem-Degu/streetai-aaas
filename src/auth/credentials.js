@@ -13,6 +13,7 @@ const ENV_VAR_MAP = {
   openrouter: ['OPENROUTER_API_KEY'],
   cohere: ['COHERE_API_KEY'],
   azure: ['AZURE_OPENAI_API_KEY'],
+  deepseek: ['DEEPSEEK_API_KEY'],
   ollama: [], // no key needed
 };
 

@@ -96,10 +96,34 @@ const CONNECTOR_MODULES = {
 };
 
 /**
+ * Connector-owned LLM tools, keyed by platform. Each module's default export
+ * must be `{ definitions, handlers }` — definitions is an array of tool
+ * schemas, handlers is `{ [toolName]: (workspace, args) => Promise<string> }`.
+ *
+ * Adding a new connector with its own tools = add an entry here. ToolRegistry
+ * picks them up automatically for any workspace that has a matching connection
+ * configured under `.aaas/connections/<platform>.json`.
+ */
+const CONNECTOR_TOOL_MODULES = {
+  truuze: () => import('./truuze-tools.js'),
+};
+
+/**
  * Load a connector module by platform name.
  */
 export async function loadConnector(platform) {
   const loader = CONNECTOR_MODULES[platform];
+  if (!loader) return null;
+  const mod = await loader();
+  return mod.default;
+}
+
+/**
+ * Load a connector's tool module by platform name.
+ * Returns `{ definitions, handlers }` or `null` if the platform has no tools.
+ */
+export async function loadConnectorToolModule(platform) {
+  const loader = CONNECTOR_TOOL_MODULES[platform];
   if (!loader) return null;
   const mod = await loader();
   return mod.default;
