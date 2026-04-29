@@ -262,10 +262,13 @@ export class AgentEngine {
         const response = result.content;
 
         // 7. Save response to session
-        this.sessionManager.addMessage(platform, userId, {
+        const finalMsg = {
           role: 'assistant',
           content: response,
-        });
+        };
+        if (result.providerKey) finalMsg.providerKey = result.providerKey;
+        if (result.providerExtras) finalMsg.providerExtras = result.providerExtras;
+        this.sessionManager.addMessage(platform, userId, finalMsg);
 
         // 8. Async: compress session if over budget
         this._maybeCompress(platform, userId);
@@ -282,6 +285,8 @@ export class AgentEngine {
         content: result.content || '',
         toolCalls: result.toolCalls,
       };
+      if (result.providerKey) assistantMsg.providerKey = result.providerKey;
+      if (result.providerExtras) assistantMsg.providerExtras = result.providerExtras;
       currentMessages.push(assistantMsg);
 
       for (const tc of result.toolCalls) {

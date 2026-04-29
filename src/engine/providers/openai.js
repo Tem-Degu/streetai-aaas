@@ -22,7 +22,7 @@ export default class OpenAIProvider extends BaseProvider {
 
     const body = {
       model: this.model,
-      messages: messages.map(msg => formatMessage(msg, isReasoning)),
+      messages: messages.map(msg => this._formatMessage(msg, isReasoning)),
       max_completion_tokens: options.maxTokens || 16384,
     };
 
@@ -51,60 +51,72 @@ export default class OpenAIProvider extends BaseProvider {
     }
 
     const data = await res.json();
-    return parseResponse(data);
-  }
-}
-
-function formatMessage(msg, isReasoning = false) {
-  if (msg.role === 'tool') {
-    return {
-      role: 'tool',
-      tool_call_id: msg.toolCallId,
-      content: msg.content,
-    };
+    return this._parseResponse(data);
   }
 
-  if (msg.role === 'assistant' && msg.toolCalls) {
-    return {
-      role: 'assistant',
-      content: msg.content || null,
-      tool_calls: msg.toolCalls.map(tc => ({
+  _formatMessage(msg, isReasoning = false) {
+    if (msg.role === 'tool') {
+      return {
+        role: 'tool',
+        tool_call_id: msg.toolCallId,
+        content: msg.content,
+      };
+    }
+
+    if (msg.role === 'assistant') {
+      const out = { role: 'assistant' };
+      if (msg.toolCalls) {
+        out.content = msg.content || null;
+        out.tool_calls = msg.toolCalls.map(tc => ({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: JSON.stringify(tc.arguments),
+          },
+        }));
+      } else {
+        out.content = msg.content;
+      }
+      // Only re-attach provider extras when the message was produced by this same provider,
+      // so a session reused across providers doesn't leak DeepSeek's reasoning_content into OpenAI etc.
+      if (msg.providerKey === this.name && msg.providerExtras) {
+        this._applyAssistantExtras(out, msg.providerExtras);
+      }
+      return out;
+    }
+
+    const role = (msg.role === 'system' && isReasoning) ? 'developer' : msg.role;
+    return { role, content: msg.content };
+  }
+
+  _parseResponse(data) {
+    const choice = data.choices?.[0];
+    if (!choice) throw new Error(`No response from ${this.displayName}`);
+
+    const msg = choice.message;
+    let toolCalls = null;
+
+    if (msg.tool_calls?.length > 0) {
+      toolCalls = msg.tool_calls.map(tc => ({
         id: tc.id,
-        type: 'function',
-        function: {
-          name: tc.name,
-          arguments: JSON.stringify(tc.arguments),
-        },
-      })),
+        name: tc.function.name,
+        arguments: JSON.parse(tc.function.arguments || '{}'),
+      }));
+    }
+
+    const providerExtras = this._extractAssistantExtras(msg);
+
+    return {
+      content: msg.content || '',
+      toolCalls,
+      stopReason: choice.finish_reason,
+      usage: {
+        inputTokens: data.usage?.prompt_tokens || 0,
+        outputTokens: data.usage?.completion_tokens || 0,
+      },
+      providerKey: this.name,
+      providerExtras,
     };
   }
-
-  const role = (msg.role === 'system' && isReasoning) ? 'developer' : msg.role;
-  return { role, content: msg.content };
-}
-
-function parseResponse(data) {
-  const choice = data.choices?.[0];
-  if (!choice) throw new Error('No response from OpenAI');
-
-  const msg = choice.message;
-  let toolCalls = null;
-
-  if (msg.tool_calls?.length > 0) {
-    toolCalls = msg.tool_calls.map(tc => ({
-      id: tc.id,
-      name: tc.function.name,
-      arguments: JSON.parse(tc.function.arguments || '{}'),
-    }));
-  }
-
-  return {
-    content: msg.content || '',
-    toolCalls,
-    stopReason: choice.finish_reason,
-    usage: {
-      inputTokens: data.usage?.prompt_tokens || 0,
-      outputTokens: data.usage?.completion_tokens || 0,
-    },
-  };
 }

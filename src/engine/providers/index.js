@@ -42,6 +42,19 @@ export class BaseProvider {
    * List available models for this provider.
    */
   listModels() { return []; }
+
+  /**
+   * Pull provider-specific fields off a raw response message that must be
+   * roundtripped on subsequent turns (e.g. DeepSeek's `reasoning_content`).
+   * Override in subclasses. Return null when there are no extras.
+   */
+  _extractAssistantExtras(rawMsg) { return null; }
+
+  /**
+   * Reattach provider-specific fields onto an outgoing assistant message body.
+   * Mirror of _extractAssistantExtras. Default: no-op.
+   */
+  _applyAssistantExtras(out, extras) { /* no-op */ }
 }
 
 function isRateLimitError(err) {
