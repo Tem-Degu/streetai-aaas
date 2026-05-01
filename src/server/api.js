@@ -33,6 +33,32 @@ async function fetchAgentPhoto(baseUrl, agentKey, platformApiKey) {
   }
 }
 
+// Upload a photo buffer (from multer memory storage) to the agent's Truuze
+// profile via PATCH multipart. Returns the new photo URL on success, null on
+// failure. Photo is non-critical — never block the connection on it.
+async function uploadAgentPhoto(baseUrl, agentKey, platformApiKey, file) {
+  if (!agentKey || !file?.buffer) return null;
+  try {
+    const fd = new FormData();
+    const blob = new Blob([file.buffer], { type: file.mimetype || 'image/jpeg' });
+    fd.append('photo', blob, file.originalname || 'photo.jpg');
+    const resp = await fetch(`${baseUrl}/account/agent/profile/`, {
+      method: 'PATCH',
+      headers: { 'X-Agent-Key': agentKey, 'X-Api-Key': platformApiKey },
+      body: fd,
+    });
+    if (!resp.ok) {
+      console.log('[truuze-connect] Photo upload failed:', resp.status, (await resp.text()).slice(0, 200));
+      return null;
+    }
+    const profile = await resp.json();
+    return profile.photo || null;
+  } catch (err) {
+    console.log('[truuze-connect] Photo upload error:', err.message);
+    return null;
+  }
+}
+
 export function apiRouter(workspace) {
   const router = express.Router();
   const paths = getWorkspacePaths(workspace);
@@ -459,6 +485,21 @@ export function apiRouter(workspace) {
     limits: { fileSize: 20 * 1024 * 1024 },
   });
 
+  // Separate multer for in-flight binaries we forward upstream (e.g. agent photo).
+  // Memory storage so we can pipe straight to the upstream multipart request
+  // without leaving an artifact on disk.
+  const photoUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+  });
+
+  // Apply photoUpload only when the request is multipart — JSON bodies pass
+  // through untouched so the http/openclaw/telegram branches keep working.
+  const conditionalPhotoUpload = (req, res, next) => {
+    if (req.is('multipart/form-data')) return photoUpload.single('photo')(req, res, next);
+    next();
+  };
+
   router.post('/chat/upload', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
     res.json({
@@ -768,7 +809,7 @@ export function apiRouter(workspace) {
     res.json(listConnections(workspace));
   });
 
-  router.post('/connections/:platform', async (req, res) => {
+  router.post('/connections/:platform', conditionalPhotoUpload, async (req, res) => {
     const { platform } = req.params;
     const validPlatforms = ['truuze', 'http', 'openclaw', 'telegram', 'discord', 'slack', 'whatsapp', 'relay'];
     if (!validPlatforms.includes(platform)) {
@@ -800,9 +841,9 @@ export function apiRouter(workspace) {
             provisioning_token: provToken,
             username: agentUsername,
             first_name: first_name || 'AaaS',
-            last_name: last_name || 'Agent',
             email: email || `${agentUsername}@agent.aaas.local`,
           };
+          if (last_name) signupBody.last_name = last_name;
           if (job_title) signupBody.job_title = job_title;
           if (agent_provider) signupBody.agent_provider = agent_provider;
           if (agent_description) signupBody.agent_description = agent_description;
@@ -829,7 +870,15 @@ export function apiRouter(workspace) {
           const data = await resp.json();
           console.log('[truuze-connect] Signup success, agent ID:', data.id);
 
-          const agentPhoto = await fetchAgentPhoto(url, data.api_key, PLATFORM_API_KEY) ?? data.photo ?? null;
+          // Upload owner-supplied photo first (if any), then fall back to whatever
+          // the backend has on file (e.g. the auto-generated DiceBear avatar).
+          const uploadedPhoto = req.file
+            ? await uploadAgentPhoto(url, data.api_key, PLATFORM_API_KEY, req.file)
+            : null;
+          const agentPhoto = uploadedPhoto
+            ?? await fetchAgentPhoto(url, data.api_key, PLATFORM_API_KEY)
+            ?? data.photo
+            ?? null;
 
           saveConnection(workspace, 'truuze', {
             baseUrl: url,
@@ -922,9 +971,9 @@ export function apiRouter(workspace) {
             provisioning_token: token,
             username: agentUsername,
             first_name: first_name || 'AaaS',
-            last_name: last_name || 'Agent',
             email: email || `${agentUsername}@agent.aaas.local`,
           };
+          if (last_name) signupBody.last_name = last_name;
           if (job_title) signupBody.job_title = job_title;
           if (agent_provider) signupBody.agent_provider = agent_provider;
           if (agent_description) signupBody.agent_description = agent_description;
@@ -940,7 +989,13 @@ export function apiRouter(workspace) {
           }
           const data = await resp.json();
 
-          const agentPhoto = await fetchAgentPhoto(url, data.api_key, PLATFORM_API_KEY) ?? data.photo ?? null;
+          const uploadedPhoto = req.file
+            ? await uploadAgentPhoto(url, data.api_key, PLATFORM_API_KEY, req.file)
+            : null;
+          const agentPhoto = uploadedPhoto
+            ?? await fetchAgentPhoto(url, data.api_key, PLATFORM_API_KEY)
+            ?? data.photo
+            ?? null;
 
           saveConnection(workspace, 'truuze', {
             baseUrl: url,
@@ -1101,12 +1156,12 @@ export function apiRouter(workspace) {
     }
   });
 
-  router.patch('/connections/truuze', async (req, res) => {
+  router.patch('/connections/truuze', conditionalPhotoUpload, async (req, res) => {
     try {
       const conn = loadConnection(workspace, 'truuze');
       if (!conn) return res.status(404).json({ error: 'Not connected to Truuze' });
 
-      const { first_name, last_name, job_title, agent_description, agent_provider } = req.body;
+      const { first_name, last_name, job_title, agent_description, agent_provider, remove_photo } = req.body;
       const PLATFORM_API_KEY = '4a3b2c9d1e4f5a6b7c8d9e0f123456789abcdef0123456789abcdef01234567';
 
       const patchFields = {};
@@ -1116,19 +1171,53 @@ export function apiRouter(workspace) {
       if (agent_provider !== undefined) patchFields.agent_provider = agent_provider;
       if (agent_description !== undefined) patchFields.agent_description = agent_description;
 
-      if (Object.keys(patchFields).length > 0) {
+      const wantRemove = remove_photo === 'true' || remove_photo === true;
+      const photoTouched = !!req.file || wantRemove;
+      const hasFields = Object.keys(patchFields).length > 0;
+      let photoUrl = conn.agentPhoto;
+
+      if (hasFields || photoTouched) {
+        // Always multipart — the upstream profile view only registers
+        // MultiPartParser/FormParser, so JSON PATCHes return 415.
+        const fd = new FormData();
+        for (const [k, v] of Object.entries(patchFields)) {
+          if (v !== undefined && v !== null) fd.append(k, String(v));
+        }
+        if (req.file) {
+          const blob = new Blob([req.file.buffer], { type: req.file.mimetype || 'image/jpeg' });
+          fd.append('photo', blob, req.file.originalname || 'photo.jpg');
+        } else if (wantRemove) {
+          // Upstream sentinel: AgentProfileView.update() treats the literal
+          // string "null" as "clear the photo". Empty string crashes inside
+          // FieldFile.save() because it isn't a file-like object.
+          fd.append('photo', 'null');
+        }
         const resp = await fetch(`${conn.baseUrl}/account/agent/profile/`, {
           method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Agent-Key': conn.agentKey,
-            'X-Api-Key': PLATFORM_API_KEY,
-          },
-          body: JSON.stringify(patchFields),
+          headers: { 'X-Agent-Key': conn.agentKey, 'X-Api-Key': PLATFORM_API_KEY },
+          body: fd,
         });
         if (!resp.ok) {
           const err = await resp.text();
           return res.status(400).json({ error: `Failed to update: ${err.slice(0, 200)}` });
+        }
+        const profile = await resp.json().catch(() => ({}));
+
+        if (photoTouched) {
+          if (wantRemove) {
+            photoUrl = null;
+          } else {
+            // PATCH response often omits `photo` (it lives on the User, not
+            // AgentProfile). Fall back to a follow-up GET to be sure, then
+            // cache-bust so the browser doesn't reuse the old image.
+            let newUrl = profile.photo || null;
+            if (!newUrl) {
+              newUrl = await fetchAgentPhoto(conn.baseUrl, conn.agentKey, PLATFORM_API_KEY);
+            }
+            photoUrl = newUrl
+              ? `${newUrl}${newUrl.includes('?') ? '&' : '?'}v=${Date.now()}`
+              : null;
+          }
         }
       }
 
@@ -1142,6 +1231,7 @@ export function apiRouter(workspace) {
       if (job_title !== undefined) updatedConfig.jobTitle = job_title;
       if (agent_provider !== undefined) updatedConfig.agentProvider = agent_provider;
       if (agent_description !== undefined) updatedConfig.agentDescription = agent_description;
+      if (photoTouched) updatedConfig.agentPhoto = photoUrl;
       saveConnection(workspace, 'truuze', updatedConfig);
 
       res.json({ ok: true });

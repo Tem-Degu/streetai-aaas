@@ -47,10 +47,12 @@ export function useApi() {
   const workspace = useContext(WorkspaceContext);
 
   const request = useCallback(async (url, method, body) => {
+    const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
     const res = await fetch(resolveUrl(url, workspace), {
       method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body !== undefined ? JSON.stringify(body) : undefined
+      // Don't set Content-Type for FormData — the browser must inject the multipart boundary itself.
+      headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
+      body: isFormData ? body : (body !== undefined ? JSON.stringify(body) : undefined),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => null);

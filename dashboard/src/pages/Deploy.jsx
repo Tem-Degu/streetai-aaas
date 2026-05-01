@@ -64,8 +64,7 @@ export default function Deploy() {
   const [truuzeKey, setTruuzeKey] = useState('');
   const [truuzeUrl, setTruuzeUrl] = useState('https://origin.truuze.com/api/v1');
   const [truuzeUsername, setTruuzeUsername] = useState('');
-  const [truuzeFirstName, setTruuzeFirstName] = useState('');
-  const [truuzeLastName, setTruuzeLastName] = useState('');
+  const [truuzeAgentName, setTruuzeAgentName] = useState('');
   const [truuzeJobTitle, setTruuzeJobTitle] = useState('');
   const [truuzeDescription, setTruuzeDescription] = useState('');
   const [truuzeProvider, setTruuzeProvider] = useState('custom');
@@ -73,12 +72,21 @@ export default function Deploy() {
   const [detectedProvider, setDetectedProvider] = useState(null);
   const [truuzeSkillContent, setTruuzeSkillContent] = useState('');
   const [truuzeFileName, setTruuzeFileName] = useState('');
+  const [truuzePhoto, setTruuzePhoto] = useState(null);             // File object
+  const [truuzePhotoPreview, setTruuzePhotoPreview] = useState(''); // data URL for <img>
   const fileInputRef = useRef(null);
+  const photoInputRef = useRef(null);
   const formRef = useRef(null);
   // Truuze edit mode
   const [editingTruuze, setEditingTruuze] = useState(false);
   const [editFields, setEditFields] = useState({});
   const [editSaving, setEditSaving] = useState(false);
+  // Photo edit state. editPhotoChanged distinguishes "user touched the photo"
+  // from "user left it alone" — only when changed do we send multipart.
+  const [editPhoto, setEditPhoto] = useState(null);
+  const [editPhotoPreview, setEditPhotoPreview] = useState('');
+  const [editPhotoChanged, setEditPhotoChanged] = useState(false);
+  const editPhotoInputRef = useRef(null);
   // HTTP form
   const [httpPort, setHttpPort] = useState('3300');
   // Telegram form
@@ -137,11 +145,62 @@ export default function Deploy() {
   };
 
   const resetTruuzeForm = () => {
-    setTruuzeKey(''); setTruuzeUsername(''); setTruuzeFirstName('');
-    setTruuzeLastName(''); setTruuzeJobTitle(''); setTruuzeDescription('');
+    setTruuzeKey(''); setTruuzeUsername(''); setTruuzeAgentName('');
+    setTruuzeJobTitle(''); setTruuzeDescription('');
     setTruuzeProvider(detectedProvider || 'custom'); setTruuzeProviderCustom(''); setTruuzeSkillContent(''); setTruuzeFileName('');
+    setTruuzePhoto(null); setTruuzePhotoPreview('');
     setTruuzeUrl('https://origin.truuze.com/api/v1');
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (photoInputRef.current) photoInputRef.current.value = '';
+  };
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setFormMsg('Please choose an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setFormMsg('Photo must be 5MB or smaller');
+      return;
+    }
+    setFormMsg('');
+    setTruuzePhoto(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setTruuzePhotoPreview(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const removePhoto = () => {
+    setTruuzePhoto(null);
+    setTruuzePhotoPreview('');
+    if (photoInputRef.current) photoInputRef.current.value = '';
+  };
+
+  const handleEditPhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please choose an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Photo must be 5MB or smaller');
+      return;
+    }
+    setEditPhoto(file);
+    setEditPhotoChanged(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => setEditPhotoPreview(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const removeEditPhoto = () => {
+    setEditPhoto(null);
+    setEditPhotoPreview('');
+    setEditPhotoChanged(true);
+    if (editPhotoInputRef.current) editPhotoInputRef.current.value = '';
   };
 
   const connect = async (platform) => {
@@ -156,14 +215,26 @@ export default function Deploy() {
             setSaving(false);
             return;
           }
-          body.skillContent = truuzeSkillContent;
-          if (truuzeUsername) body.username = truuzeUsername;
-          if (truuzeFirstName) body.first_name = truuzeFirstName;
-          if (truuzeLastName) body.last_name = truuzeLastName;
-          if (truuzeJobTitle) body.job_title = truuzeJobTitle;
-          if (truuzeDescription) body.agent_description = truuzeDescription;
-          body.agent_provider = truuzeProvider;
-          if (truuzeProvider === 'custom' && truuzeProviderCustom) body.agent_provider_custom = truuzeProviderCustom;
+          // Truuze accepts only first_name for agents — pass the agent name as first_name.
+          const fields = {
+            skillContent: truuzeSkillContent,
+            agent_provider: truuzeProvider,
+          };
+          if (truuzeUsername) fields.username = truuzeUsername;
+          if (truuzeAgentName) fields.first_name = truuzeAgentName;
+          if (truuzeJobTitle) fields.job_title = truuzeJobTitle;
+          if (truuzeDescription) fields.agent_description = truuzeDescription;
+          if (truuzeProvider === 'custom' && truuzeProviderCustom) fields.agent_provider_custom = truuzeProviderCustom;
+
+          // Use FormData only when a photo is attached, so the route stays JSON for everything else.
+          if (truuzePhoto) {
+            const fd = new FormData();
+            for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+            fd.append('photo', truuzePhoto, truuzePhoto.name);
+            body = fd;
+          } else {
+            body = fields;
+          }
         } else {
           if (!truuzeKey.trim()) {
             setFormMsg('Please enter your agent key');
@@ -327,15 +398,40 @@ export default function Deploy() {
                   <div className="card-body">
                     {editingTruuze ? (
                       <>
-                        <div className="form-row">
-                          <div className="form-group">
-                            <label>First Name</label>
-                            <input type="text" value={editFields.first_name || ''} onChange={e => setEditFields(f => ({ ...f, first_name: e.target.value }))} className="form-input" />
+                        <div className="deploy-photo-row">
+                          <div
+                            className={`deploy-photo-upload ${editPhotoPreview ? 'deploy-photo-filled deploy-photo-clickable' : ''}`}
+                            onClick={() => editPhotoInputRef.current?.click()}
+                            title={editPhotoPreview ? 'Click to change photo' : 'Click to upload agent photo'}
+                          >
+                            <input
+                              ref={editPhotoInputRef}
+                              type="file"
+                              accept="image/*"
+                              onChange={handleEditPhotoUpload}
+                              style={{ display: 'none' }}
+                            />
+                            {editPhotoPreview ? (
+                              <img src={editPhotoPreview} alt="Agent" className="deploy-photo-img" />
+                            ) : (
+                              <span className="deploy-photo-placeholder">+</span>
+                            )}
                           </div>
-                          <div className="form-group">
-                            <label>Last Name</label>
-                            <input type="text" value={editFields.last_name || ''} onChange={e => setEditFields(f => ({ ...f, last_name: e.target.value }))} className="form-input" />
+                          <div className="deploy-photo-meta">
+                            <div className="deploy-photo-label">Agent photo</div>
+                            <div className="deploy-photo-hint">PNG or JPG, up to 5MB.</div>
+                            {editPhotoPreview && (
+                              <button
+                                type="button"
+                                className="deploy-photo-remove-link"
+                                onClick={removeEditPhoto}
+                              >Remove photo</button>
+                            )}
                           </div>
+                        </div>
+                        <div className="form-group">
+                          <label>Agent Name</label>
+                          <input type="text" value={editFields.agent_name || ''} onChange={e => setEditFields(f => ({ ...f, agent_name: e.target.value }))} className="form-input" placeholder="e.g. Atlas" />
                         </div>
                         <div className="form-group">
                           <label>Service/Skill</label>
@@ -360,11 +456,31 @@ export default function Deploy() {
                           <button className="btn btn-primary" disabled={editSaving} onClick={async () => {
                             setEditSaving(true);
                             try {
-                              const { _customProvider, ...fields } = editFields;
+                              const { _customProvider, agent_name, ...rest } = editFields;
+                              const fields = {
+                                ...rest,
+                                first_name: (agent_name || '').trim(),
+                                last_name: '',
+                              };
                               if (fields.agent_provider === 'custom' && _customProvider) {
                                 fields.agent_provider = _customProvider;
                               }
-                              await api.patch('/api/connections/truuze', fields);
+                              if (editPhotoChanged) {
+                                // Photo touched — send multipart so the backend
+                                // can forward the binary (or photo=null) upstream.
+                                const fd = new FormData();
+                                Object.entries(fields).forEach(([k, v]) => {
+                                  if (v !== undefined && v !== null) fd.append(k, v);
+                                });
+                                if (editPhoto) {
+                                  fd.append('photo', editPhoto, editPhoto.name);
+                                } else {
+                                  fd.append('remove_photo', 'true');
+                                }
+                                await api.patch('/api/connections/truuze', fd);
+                              } else {
+                                await api.patch('/api/connections/truuze', fields);
+                              }
                               setEditingTruuze(false);
                               load();
                             } catch (err) {
@@ -410,36 +526,39 @@ export default function Deploy() {
                   <div className="card-footer" style={{ display: 'flex', gap: 8 }}>
                     {!editingTruuze && (
                       <button className="btn" onClick={() => {
-                        const nameParts = (config.agentName || '').split(' ');
                         const provider = config.agentProvider || 'custom';
                         const isKnown = PROVIDER_OPTIONS.some(o => o.value === provider);
                         setEditFields({
-                          first_name: nameParts[0] || '',
-                          last_name: nameParts.slice(1).join(' ') || '',
+                          agent_name: config.agentName || '',
                           job_title: config.jobTitle || '',
                           agent_description: config.agentDescription || '',
                           agent_provider: isKnown ? provider : 'custom',
                           _customProvider: isKnown ? '' : provider,
                         });
+                        setEditPhoto(null);
+                        setEditPhotoPreview(config.agentPhoto || '');
+                        setEditPhotoChanged(false);
                         setEditingTruuze(true);
                       }}>Edit</button>
                     )}
-                    {isCli ? (
-                      <span className="form-hint">Managed by CLI</span>
-                    ) : platform === 'openclaw' ? (
-                      <button className="btn btn-primary" onClick={() => connect('openclaw')} disabled={saving}>
-                        {saving ? 'Exporting...' : connectSuccess === 'openclaw' ? 'Exported ✓' : 'Re-export'}
-                      </button>
-                    ) : isRunning ? (
-                      <button className="btn btn-danger" onClick={() => stopPlatform(platform)} disabled={isActing}>
-                        {isActing ? 'Stopping...' : 'Stop'}
-                      </button>
-                    ) : (
-                      <button className="btn btn-primary" onClick={() => startPlatform(platform)} disabled={isActing}>
-                        {isActing ? 'Starting...' : 'Start'}
-                      </button>
+                    {!editingTruuze && (
+                      isCli ? (
+                        <span className="form-hint">Managed by CLI</span>
+                      ) : platform === 'openclaw' ? (
+                        <button className="btn btn-primary" onClick={() => connect('openclaw')} disabled={saving}>
+                          {saving ? 'Exporting...' : connectSuccess === 'openclaw' ? 'Exported ✓' : 'Re-export'}
+                        </button>
+                      ) : isRunning ? (
+                        <button className="btn btn-danger" onClick={() => stopPlatform(platform)} disabled={isActing}>
+                          {isActing ? 'Stopping...' : 'Stop'}
+                        </button>
+                      ) : (
+                        <button className="btn btn-primary" onClick={() => startPlatform(platform)} disabled={isActing}>
+                          {isActing ? 'Starting...' : 'Start'}
+                        </button>
+                      )
                     )}
-                    {!isCli && !isRunning && (
+                    {!editingTruuze && !isCli && !isRunning && (
                       <button className="btn btn-danger" onClick={() => setDisconnectConfirm(platform)} disabled={isActing}>Disconnect</button>
                     )}
                   </div>
@@ -662,21 +781,46 @@ export default function Deploy() {
                 </div>
 
                 <div className="deploy-form-divider" />
-                <p className="form-hint" style={{ marginBottom: 12 }}>Optionally customize your agent's identity:</p>
 
+                <div className="deploy-photo-row">
+                  <div
+                    className={`deploy-photo-upload ${truuzePhotoPreview ? 'deploy-photo-filled deploy-photo-clickable' : ''}`}
+                    onClick={() => photoInputRef.current?.click()}
+                    title={truuzePhotoPreview ? 'Click to change photo' : 'Click to upload agent photo'}
+                  >
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                      style={{ display: 'none' }}
+                    />
+                    {truuzePhotoPreview ? (
+                      <img src={truuzePhotoPreview} alt="Agent" className="deploy-photo-img" />
+                    ) : (
+                      <span className="deploy-photo-placeholder">+</span>
+                    )}
+                  </div>
+                  <div className="deploy-photo-meta">
+                    <div className="deploy-photo-label">Agent photo</div>
+                    <div className="deploy-photo-hint">PNG or JPG, up to 5MB. Optional.</div>
+                    {truuzePhotoPreview && (
+                      <button
+                        type="button"
+                        className="deploy-photo-remove-link"
+                        onClick={removePhoto}
+                      >Remove photo</button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Agent Name</label>
+                  <input type="text" value={truuzeAgentName} onChange={e => setTruuzeAgentName(e.target.value)} className="form-input" placeholder="e.g. Atlas" />
+                </div>
                 <div className="form-group">
                   <label>Username</label>
                   <input type="text" value={truuzeUsername} onChange={e => setTruuzeUsername(e.target.value)} className="form-input" placeholder="my_agent" />
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>First Name</label>
-                    <input type="text" value={truuzeFirstName} onChange={e => setTruuzeFirstName(e.target.value)} className="form-input" />
-                  </div>
-                  <div className="form-group">
-                    <label>Last Name</label>
-                    <input type="text" value={truuzeLastName} onChange={e => setTruuzeLastName(e.target.value)} className="form-input" />
-                  </div>
                 </div>
                 <div className="form-group">
                   <label>Service/Skill</label>

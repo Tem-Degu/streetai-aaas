@@ -582,10 +582,18 @@ export default class TruuzeConnector extends BaseConnector {
       const prev = this._escrowStates.get(id);
       const newStatus = item.status;
       if (!prev) {
-        // Newly visible escrow — most likely the agent just created one. Cache
-        // it but don't fire an event; the create_service tool already told the
-        // agent what to expect.
+        // First time seeing this escrow. Cache it. If it's at pending, the
+        // agent likely just created it — stay silent (create_service already
+        // told the agent what to expect). If it's past pending, a transition
+        // we missed has already happened (fast user acceptance between
+        // create_service and our next poll, or a restart mid-deal).
+        // Synthesize a pending → newStatus event so the agent learns what
+        // changed. _escrowTransitionAction filters self-driven states like
+        // delivered/negotiating, so this only fires for actionable changes.
         this._escrowStates.set(id, { status: newStatus, snapshot: item });
+        if (newStatus !== 'pending') {
+          await this._emitEscrowEvent('pending', newStatus, item);
+        }
         continue;
       }
       if (prev.status !== newStatus) {
