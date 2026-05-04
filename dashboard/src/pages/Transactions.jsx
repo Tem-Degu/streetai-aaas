@@ -48,7 +48,7 @@ export default function Transactions() {
         <div className="stat-grid">
           <div className="stat stat-green">
             <div className="stat-label">Revenue</div>
-            <div className="stat-value green">{cur}{stats.revenue}</div>
+            <div className="stat-value green">{cur} {stats.revenue}</div>
           </div>
           <div className="stat stat-green">
             <div className="stat-label">Completed</div>

@@ -287,7 +287,7 @@ Visitors chat through `streetai.org`, which forwards messages over WebSocket to 
 | `aaas connect discord --token <t>` | Connect to Discord |
 | `aaas connect slack --bot-token <t>` | Connect to Slack |
 | `aaas connect whatsapp --access-token <t> --phone-number-id <id> --verify-token <s>` | Connect to WhatsApp Business Cloud API |
-| `aaas connect truuze --skill <path>` | Connect to Truuze using a provisioning SKILL.md (also accepts `--token <t>` or `--key <agent_key>`). Optional: `--username`, `--firstName`, `--lastName`, `--description`, `--job-title` |
+| `aaas connect truuze --skill <path>` | Connect to Truuze using a provisioning SKILL.md (also accepts `--token <t>` or `--key <agent_key>`). Optional: `--username`, `--name`, `--description`, `--job-title` |
 | `aaas connect openclaw --id <agentId>` | Connect to an OpenClaw workspace |
 | `aaas connect relay` | Connect to streetai.org relay (no public server needed for WhatsApp/HTTP) |
 | `aaas connections` | List all connected platforms |
@@ -418,6 +418,20 @@ aaas run
 ```
 
 The relay gives you public URLs for your chat widget and WhatsApp webhook. Embed the widget on any website, paste the webhook URL into Meta's dashboard, and you're live. The chat widget supports file attachments — files are uploaded to the relay and forwarded to your agent.
+
+## Earn on Truuze
+
+Truuze is a social platform built for AI agents to deliver paid services. When you connect there, your agent gets a public profile, a chat inbox, and an escrow-protected way to take payment.
+
+The flow is short:
+
+1. **Build with AaaS.** Run `aaas dashboard` to set up the service in chat, drop reference data into the workspace, and add any extensions the agent needs (other agents or external API calls).
+2. **Generate a skill on Truuze.** Open [app.truuze.com](https://app.truuze.com), create an account, go to the AI Agents tab, and click **Add New** to download a `SKILL.md`.
+3. **Connect and start.** From the Deploy tab in your dashboard, connect using that `SKILL.md` (or paste an existing agent API key), then click **Start**.
+
+Customers fund escrow when they accept an offer, and funds release once the delivery is approved. If a dispute is raised, the agent has 48 hours to resolve it directly with the customer; after that window, a Truuze admin steps in. Truuze handles the service and payment lifecycle so you can focus on building a great agent.
+
+Full walkthrough: [streetai.org/docs/truuze.html](https://streetai.org/docs/truuze.html)
 
 ## Contributing
 

@@ -23,7 +23,7 @@ export default function Overview() {
       <div className="txn-summary">
         <div className="txn-summary-item">
           <div className="txn-summary-label">Revenue</div>
-          <div className="txn-summary-value" style={{ color: 'var(--green)' }}>{cur}{tx.revenue}</div>
+          <div className="txn-summary-value" style={{ color: 'var(--green)' }}>{cur} {tx.revenue}</div>
         </div>
         <div className="txn-summary-item">
           <div className="txn-summary-label">Transactions</div>

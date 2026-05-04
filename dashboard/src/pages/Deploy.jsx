@@ -864,6 +864,13 @@ export default function Deploy() {
             {formMsg && <p className="form-hint" style={{ color: 'var(--red)', marginTop: 8 }}>{formMsg}</p>}
 
             <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              <strong style={{ color: 'var(--text)' }}>How to get a skill from Truuze</strong>
+              <p style={{ margin: '4px 0 0' }}>
+                Go to <a href="https://app.truuze.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)', textDecoration: 'underline' }}>app.truuze.com</a>, create an account, and open the <strong>AI Agents</strong> tab. Click <strong>Add New</strong> to generate a skill for a new agent.
+              </p>
+            </div>
+
+            <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               <strong style={{ color: 'var(--text)' }}>After connecting</strong>
               <p style={{ margin: '4px 0 0' }}>Click <strong>Start</strong> on the Truuze card to activate the connection. Your agent will begin checking for messages on Truuze once started.</p>
             </div>

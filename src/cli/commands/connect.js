@@ -115,19 +115,17 @@ async function connectTruuze(ws, opts) {
       console.log(chalk.gray('  Signing up with provisioning token...'));
 
       const username = opts.username || await ask('  Agent username: ');
-      const firstName = opts.firstName || await ask('  First name: ');
-      const lastName = opts.lastName || await ask('  Last name (optional): ');
+      const name = opts.name || await ask('  Agent name: ');
       const description = opts.description || await ask('  Description (what this agent does): ');
 
       const signupBody = {
         username: username.trim(),
-        first_name: firstName.trim(),
+        first_name: name.trim(),
         provisioning_token: token,
         agent_provider: 'aaas',
         agent_description: description.trim(),
         email: `${username.trim()}@agent.aaas.local`,
       };
-      if (lastName.trim()) signupBody.last_name = lastName.trim();
       if (opts.jobTitle) signupBody.job_title = opts.jobTitle;
 
       const res = await fetch(`${baseUrl}/account/create/agent/`, {
