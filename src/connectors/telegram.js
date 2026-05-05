@@ -3,6 +3,8 @@ import path from 'path';
 import { BaseConnector } from './index.js';
 import { readFileBuffer } from './media.js';
 import { writePlatformSkill } from '../utils/workspace.js';
+import { findAlertByChannelMessage, getRecentOpenAlerts } from '../notifications/alerts.js';
+import { loadConnection, saveConnection } from '../auth/connections.js';
 
 const TELEGRAM_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024; // Bot API hard limit
 
@@ -132,6 +134,27 @@ export default class TelegramConnector extends BaseConnector {
           const userName = [msg.from.first_name, msg.from.last_name].filter(Boolean).join(' ') || msg.from.username || 'User';
           const userId = String(msg.from.id);
 
+          // Record username → chat ID mapping. Telegram's sendMessage only
+          // accepts @username for public channels/groups, not private user
+          // chats — so we capture the numeric chat ID at the moment a user
+          // messages the bot, and the notifications sender uses this map
+          // to resolve usernames typed in the dashboard.
+          if (msg.from.username) {
+            try {
+              const uname = String(msg.from.username).toLowerCase();
+              if (!this._userMapCache) {
+                const conn0 = loadConnection(this.engine.workspace, 'telegram') || {};
+                this._userMapCache = { ...(conn0.userMap || {}) };
+              }
+              if (this._userMapCache[uname] !== userId) {
+                this._userMapCache[uname] = userId;
+                const conn = loadConnection(this.engine.workspace, 'telegram') || {};
+                conn.userMap = this._userMapCache;
+                saveConnection(this.engine.workspace, 'telegram', conn);
+              }
+            } catch { /* best-effort */ }
+          }
+
           let content = msg.text || msg.caption || '';
           if (mediaItems.length > 0) {
             const safeUser = (msg.from.username || userName).replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -145,6 +168,65 @@ export default class TelegramConnector extends BaseConnector {
           }
 
           try {
+            // ── Owner-reply routing ────────────────────────────────
+            // If this message is from the verified owner AND it's tied to
+            // an outstanding alert (either via Telegram's reply feature or
+            // a casual follow-up within the recent window), we route it as
+            // admin guidance into the *customer* session that triggered
+            // the alert — not as a normal message in the owner's own
+            // session. Slash commands always pass through to the engine
+            // so /admin and /customer keep working.
+            const looksLikeCommand = (content || '').trim().startsWith('/');
+            // Use fresh-from-disk check: /admin and notify_owner can update
+            // ownerId after the connector started, leaving this.config stale.
+            if (this.isOwnerFresh(userId) && !looksLikeCommand) {
+              const replyTo = msg.reply_to_message?.message_id;
+              const paths = this.engine.paths;
+              let alert = null;
+              let threaded = false;
+
+              if (replyTo) {
+                alert = findAlertByChannelMessage(paths, 'telegram', replyTo);
+                threaded = !!alert;
+              }
+
+              if (!alert) {
+                const recents = getRecentOpenAlerts(paths, {
+                  channel: 'telegram',
+                  recipient: String(msg.chat.id),
+                  windowMinutes: 30,
+                });
+                if (recents.length === 1) {
+                  alert = recents[0];
+                } else if (recents.length > 1) {
+                  // Disambiguation: ask the owner which alert they mean.
+                  const lines = recents.slice(0, 5).map((a, i) =>
+                    `${i + 1}. ${a.title} (${a.alert_id.slice(0, 12)}…)`
+                  ).join('\n');
+                  await this._sendOwnerText(msg.chat.id,
+                    `You have ${recents.length} open alerts. Tap the one you want to reply to and use Telegram's reply feature, or include the alert ID in your message.\n\n${lines}`
+                  );
+                  continue;
+                }
+              }
+
+              if (alert) {
+                const result = await this.engine.processOwnerReply({
+                  alert,
+                  replyText: content,
+                  replyChannel: 'telegram',
+                  threaded,
+                });
+                // Echo the agent's response (if any) back to the owner so
+                // they get immediate confirmation of what was done.
+                if (result?.response) {
+                  await this._sendOwnerText(msg.chat.id, result.response);
+                }
+                continue;
+              }
+            }
+
+            // ── Default path: normal message handling ──────────────
             await this.handleEvent({
               platform: 'telegram',
               userId,
@@ -260,6 +342,31 @@ export default class TelegramConnector extends BaseConnector {
       botUsername: this.botInfo?.username || null,
       botName: this.botInfo?.first_name || null,
     };
+  }
+
+  /**
+   * Send a plain-text message directly to a chat ID, bypassing the
+   * full event/file machinery. Used to confirm owner-reply outcomes
+   * back to the owner.
+   */
+  async _sendOwnerText(chatId, text) {
+    if (!text) return;
+    const chunks = this._splitMessage(text, 4096);
+    for (const chunk of chunks) {
+      try {
+        await fetch(`${this.apiBase}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: chunk,
+            parse_mode: 'Markdown',
+          }),
+        });
+      } catch (err) {
+        console.warn(`[telegram] Failed to confirm owner reply: ${err.message}`);
+      }
+    }
   }
 
   _splitMessage(text, maxLen) {

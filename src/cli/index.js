@@ -165,8 +165,9 @@ ext
 
 ext
   .command('test <name>')
-  .description('Test an extension connection')
-  .action((name) => extensionsCommand('test', name));
+  .description('Test an extension connection. Calls the first GET operation if registered, else falls back to HEAD on the endpoint.')
+  .option('--operation <op>', 'Specific operation name to test')
+  .action((name, opts) => extensionsCommand('test', name, opts));
 
 ext
   .command('add')

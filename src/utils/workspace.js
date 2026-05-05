@@ -93,7 +93,9 @@ export function getWorkspacePaths(ws) {
     sessions: path.join(ws, '.aaas', 'sessions'),
     uploads: path.join(ws, '.aaas', 'uploads'),
     pidFile: path.join(ws, '.aaas', 'agent.pid'),
-    transactionView: path.join(ws, '.aaas', 'transaction_view.json')
+    transactionView: path.join(ws, '.aaas', 'transaction_view.json'),
+    notifications: path.join(ws, '.aaas', 'notifications.json'),
+    activity: path.join(ws, 'memory', 'activity.jsonl'),
   };
 }
 

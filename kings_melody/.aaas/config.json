@@ -1,0 +1,5 @@
+{
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "agentType": "service"
+}

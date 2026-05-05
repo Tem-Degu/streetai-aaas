@@ -177,10 +177,20 @@ export class AgentEngine {
     }
 
     // 5. Refresh workspace state (data files / extensions may have changed)
-    // Use session-stored mode if available (set by /admin or /customer commands)
+    // Use session-stored mode if available (set by /admin or /customer commands).
+    // metadata.force_admin_mode wins regardless — used by processOwnerReply
+    // so an owner-reply turn runs in admin mode without polluting the
+    // customer's stored session mode.
     const sessionMode = this.sessionManager.getSessionMeta(platform, userId, 'mode');
-    const mode = sessionMode || metadata?.mode || 'admin';
+    const mode = metadata?.force_admin_mode
+      ? 'admin'
+      : sessionMode || metadata?.mode || 'admin';
     this.basePrompt = buildBasePrompt(this.paths, { mode });
+
+    // Expose the current event to tools so notify_owner can capture context.
+    if (this.toolRegistry?.setEventContext) {
+      this.toolRegistry.setEventContext({ platform, userId, userName });
+    }
 
     // 5b. Load platform-specific skill if available (e.g. skills/truuze/SKILL.md)
     let platformSkill = '';
@@ -316,6 +326,89 @@ export class AgentEngine {
 
     // Shouldn't reach here, but return last content if we do
     return { response: 'I was unable to complete the request. Please try again.', toolsUsed, tokensUsed: totalTokens };
+  }
+
+  /**
+   * Owner reply to an alert. Resumes the customer session that triggered
+   * the alert, injects the owner's text as admin guidance, runs one turn,
+   * and records the reply on the alert ledger.
+   *
+   * @param {Object} params
+   * @param {Object} params.alert - The matched alert from the ledger
+   * @param {string} params.replyText - What the owner said
+   * @param {string} params.replyChannel - 'telegram' | 'whatsapp' | 'email'
+   * @param {boolean} params.threaded - True if the owner explicitly replied
+   *   to the alert message (Telegram reply / WhatsApp context). False if
+   *   we matched on recent-window heuristic.
+   */
+  async processOwnerReply({ alert, replyText, replyChannel, threaded = false }) {
+    if (!alert?.context?.session_platform || !alert?.context?.session_user_id) {
+      // No customer-session context — just run a normal admin chat in the
+      // owner's own thread on this channel. Falls back to today's behavior.
+      return null;
+    }
+    const { session_platform, session_user_id, session_user_name } = alert.context;
+
+    // Build a synthetic admin-mode message that injects clearly into the
+    // customer session history. Header is unambiguous so the agent reads
+    // it as authoritative guidance, not a customer turn — and is action-
+    // oriented so the agent actually executes (calls tools / sends a
+    // message) rather than narrating what it "would" do.
+    const channelLabel = replyChannel.charAt(0).toUpperCase() + replyChannel.slice(1);
+    const matchKind = threaded ? 'replying directly' : 'sending a follow-up';
+    const content = [
+      `[ADMIN GUIDANCE — your owner is ${matchKind} on ${channelLabel} regarding the alert you sent earlier:`,
+      `  Title: "${alert.title}"`,
+      alert.context.transaction_id ? `  Transaction: ${alert.context.transaction_id}` : null,
+      ``,
+      `Treat the message below as authoritative instructions from your owner about the customer conversation shown above. NOT a customer message. Take whatever action follows from it — message the customer, update the transaction, call an extension, or whatever the situation calls for. Don't just describe what you would do; do it. Then briefly confirm to the owner what you did.]`,
+      ``,
+      `> ${replyText}`,
+    ].filter(Boolean).join('\n');
+
+    const result = await this.processEvent({
+      platform: session_platform,
+      userId: session_user_id,
+      userName: session_user_name || 'Customer',
+      type: 'owner_reply',
+      content,
+      metadata: {
+        force_admin_mode: true,
+        is_owner_reply: true,
+        reply_to_alert: alert.alert_id,
+        reply_channel: replyChannel,
+      },
+    });
+
+    // Record the reply on the alert so subsequent replies still match.
+    try {
+      const { recordResponse } = await import('../notifications/alerts.js');
+      recordResponse(this.paths, alert.alert_id, {
+        channel: replyChannel,
+        text: replyText,
+        threaded,
+        agent_response: (result?.response || '').slice(0, 500),
+      });
+    } catch (err) {
+      console.warn('[engine] Failed to record alert response:', err.message);
+    }
+
+    // Activity log: ties off the alert lifecycle in the agent's diary.
+    try {
+      this.memoryManager?.appendActivity({
+        type: 'alert_response',
+        summary: `Owner replied via ${replyChannel} on alert "${alert.title}": ${replyText.slice(0, 120)}`,
+        context: {
+          alert_id: alert.alert_id,
+          channel: replyChannel,
+          threaded,
+          transaction_id: alert.context?.transaction_id || null,
+        },
+        session_id: `${session_platform}:${session_user_id}`,
+      });
+    } catch { /* best-effort */ }
+
+    return result;
   }
 
   /**

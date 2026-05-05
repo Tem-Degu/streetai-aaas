@@ -1,0 +1,27 @@
+[
+  {
+    "key": "setup_complete",
+    "value": "Kings Melody AI Music Generator fully configured. AimlAPI key set. Service is FREE ($0). Always return audio URL to user. Extension aimlapi_music configured with auth and async polling. Database songs table created.",
+    "createdAt": "2026-05-04T18:51:34.273Z",
+    "accessCount": 8,
+    "updatedAt": "2026-05-04T18:53:14.158Z"
+  },
+  {
+    "key": "music_genre_preference",
+    "value": "Hip-hop (Modern trap style)",
+    "createdAt": "2026-05-04T19:00:27.785Z",
+    "accessCount": 1
+  },
+  {
+    "key": "lyrics_mode",
+    "value": "Auto-lyrics (AI generated)",
+    "createdAt": "2026-05-04T19:00:27.788Z",
+    "accessCount": 1
+  },
+  {
+    "key": "configured_as_free_music_generator",
+    "value": "Kings Melody configured as FREE AI Music Generator. API key set. Two extensions: aimlapi_music (generation) and aimlapi_cdn (local download). Flow: generate → get URL → extract path from URL → call aimlapi_cdn to download binary → save locally → embed directly for user. Never share URLs. Always deliver playable audio files directly.",
+    "createdAt": "2026-05-04T19:03:30.109Z",
+    "accessCount": 0
+  }
+]

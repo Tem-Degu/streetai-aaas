@@ -9,7 +9,7 @@ export function extensionsCommand(action, arg, opts) {
 
   switch (action) {
     case 'list': return extList(paths);
-    case 'test': return extTest(paths, arg);
+    case 'test': return extTest(paths, arg, opts);
     case 'add': return extAdd(paths, opts);
     case 'remove': return extRemove(paths, arg);
     case 'edit': return extEdit(paths);
@@ -63,7 +63,7 @@ function extList(paths) {
   }
 }
 
-async function extTest(paths, name) {
+async function extTest(paths, name, opts = {}) {
   const registry = readJson(paths.extensions);
   const extensions = registry?.extensions || [];
   const ext = extensions.find(e =>
@@ -84,21 +84,65 @@ async function extTest(paths, name) {
   console.log(`\n  Testing ${chalk.bold(ext.name)} (${ext.type})...\n`);
 
   if (ext.type === 'api' && ext.endpoint) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const response = await fetch(ext.endpoint, { signal: controller.signal, method: 'HEAD' });
-      clearTimeout(timeout);
-      if (response.ok || response.status < 500) {
-        console.log(chalk.green(`  ✓ Reachable — HTTP ${response.status}`));
-      } else {
-        console.log(chalk.yellow(`  ⚠ Responded with HTTP ${response.status}`));
+    // Pick the operation to test:
+    //   1. --operation NAME (if provided)
+    //   2. First GET operation (safest — read-only)
+    //   3. First operation of any kind
+    //   4. Fall back to HEAD against the base endpoint
+    let opToTest = null;
+    if (opts.operation) {
+      opToTest = (ext.operations || []).find(o => o.name?.toLowerCase() === String(opts.operation).toLowerCase());
+      if (!opToTest) {
+        console.log(chalk.red(`  ✗ Operation "${opts.operation}" not found on extension.`));
+        if (ext.operations?.length) {
+          console.log(chalk.gray(`    Available: ${ext.operations.map(o => o.name).join(', ')}`));
+        }
+        console.log('');
+        return;
       }
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        console.log(chalk.red('  ✗ Timeout (5s)'));
-      } else {
+    } else if (Array.isArray(ext.operations) && ext.operations.length) {
+      opToTest = ext.operations.find(o => (o.method || 'GET').toUpperCase() === 'GET') || ext.operations[0];
+    }
+
+    if (opToTest) {
+      console.log(chalk.gray(`  Calling operation: ${opToTest.name} (${(opToTest.method || 'GET').toUpperCase()} ${opToTest.path || ''})`));
+      try {
+        const { callExtension } = await import('../../engine/tools/extensions.js');
+        const result = await callExtension(paths, {
+          name: ext.name,
+          operation: opToTest.name,
+          data: opToTest.body || {},
+        });
+        const parsed = JSON.parse(result);
+        if (parsed.error) {
+          console.log(chalk.red(`  ✗ ${parsed.error}`));
+        } else if (parsed.ok) {
+          console.log(chalk.green(`  ✓ HTTP ${parsed.status} — ${typeof parsed.data === 'string' ? parsed.data.slice(0, 80) : JSON.stringify(parsed.data).slice(0, 120)}`));
+        } else {
+          console.log(chalk.yellow(`  ⚠ HTTP ${parsed.status} — ${JSON.stringify(parsed.data).slice(0, 120)}`));
+        }
+      } catch (err) {
         console.log(chalk.red(`  ✗ ${err.message}`));
+      }
+    } else {
+      // No operations — fall back to HEAD on the endpoint
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(ext.endpoint, { signal: controller.signal, method: 'HEAD' });
+        clearTimeout(timeout);
+        if (response.ok || response.status < 500) {
+          console.log(chalk.green(`  ✓ Reachable — HTTP ${response.status} (HEAD)`));
+        } else {
+          console.log(chalk.yellow(`  ⚠ Responded with HTTP ${response.status} (HEAD)`));
+        }
+        console.log(chalk.gray(`  Tip: register operations on this extension for richer testing (aaas ext edit).`));
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          console.log(chalk.red('  ✗ Timeout (5s)'));
+        } else {
+          console.log(chalk.red(`  ✗ ${err.message}`));
+        }
       }
     }
   } else if (ext.type === 'agent') {

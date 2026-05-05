@@ -416,6 +416,62 @@ export function apiRouter(workspace) {
     res.json({ ok: true });
   });
 
+  router.get('/notifications', async (req, res) => {
+    try {
+      const { loadNotificationsConfig, maskNotificationsConfig } = await import('../notifications/index.js');
+      const cfg = loadNotificationsConfig(paths);
+      res.json(maskNotificationsConfig(cfg));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.put('/notifications', async (req, res) => {
+    try {
+      const { loadNotificationsConfig, saveNotificationsConfig } = await import('../notifications/index.js');
+      const incoming = req.body || {};
+      // If the UI sent the masked sentinel "••••••••" for SMTP pass, keep
+      // the existing one so the user doesn't have to retype it on every save.
+      const existing = loadNotificationsConfig(paths);
+      if (incoming.email?.smtp && incoming.email.smtp.pass === '••••••••') {
+        incoming.email.smtp.pass = existing.email?.smtp?.pass || '';
+      }
+      saveNotificationsConfig(paths, incoming);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/notifications/test', async (req, res) => {
+    const { channel } = req.body || {};
+    if (!['telegram', 'whatsapp', 'email'].includes(channel)) {
+      return res.status(400).json({ error: 'channel must be one of: telegram, whatsapp, email' });
+    }
+    try {
+      const { testChannel } = await import('../notifications/index.js');
+      const result = await testChannel(workspace, paths, channel);
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
+  router.post('/extensions/test', async (req, res) => {
+    const { extension, operation, method, path: callPath, data } = req.body || {};
+    if (!extension || typeof extension !== 'object' || !extension.name) {
+      return res.status(400).json({ error: 'Missing or invalid extension config.' });
+    }
+    try {
+      const { callWithExtension } = await import('../engine/tools/extensions.js');
+      const result = await callWithExtension(paths, extension, { operation, method, path: callPath, data });
+      const parsed = JSON.parse(result);
+      res.json(parsed);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ─── Memory ──────────────────────────────────────
 
   router.get('/memory', (req, res) => {

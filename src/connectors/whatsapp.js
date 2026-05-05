@@ -155,6 +155,63 @@ export default class WhatsAppConnector extends BaseConnector {
                   }
                 }
 
+                // ── Owner-reply routing ────────────────────────────────
+                // If this message is from the verified owner AND it's tied
+                // to an outstanding alert (via WhatsApp's reply context or
+                // a casual follow-up within the recent window), route it
+                // as admin guidance into the customer session that
+                // triggered the alert. Slash commands always pass through.
+                const looksLikeCommand = (content || '').trim().startsWith('/');
+                // Use fresh-from-disk check: /admin and notify_owner can
+                // update ownerId after the connector started, leaving
+                // this.config stale.
+                if (this.isOwnerFresh(message.from) && !looksLikeCommand) {
+                  const { findAlertByChannelMessage, getRecentOpenAlerts } =
+                    await import('../notifications/alerts.js');
+                  const paths = this.engine.paths;
+                  const replyContextId = message.context?.id;
+                  let alert = null;
+                  let threaded = false;
+
+                  if (replyContextId) {
+                    alert = findAlertByChannelMessage(paths, 'whatsapp', replyContextId);
+                    threaded = !!alert;
+                  }
+
+                  if (!alert) {
+                    const recents = getRecentOpenAlerts(paths, {
+                      channel: 'whatsapp',
+                      recipient: message.from,
+                      windowMinutes: 30,
+                    });
+                    if (recents.length === 1) {
+                      alert = recents[0];
+                    } else if (recents.length > 1) {
+                      const lines = recents.slice(0, 5).map((a, i) =>
+                        `${i + 1}. ${a.title} (${a.alert_id.slice(0, 12)}…)`
+                      ).join('\n');
+                      await this._sendOwnerText(message.from,
+                        `You have ${recents.length} open alerts. Reply to a specific one using WhatsApp's reply feature, or include the alert ID in your message.\n\n${lines}`
+                      );
+                      return;
+                    }
+                  }
+
+                  if (alert) {
+                    const result = await this.engine.processOwnerReply({
+                      alert,
+                      replyText: content,
+                      replyChannel: 'whatsapp',
+                      threaded,
+                    });
+                    if (result?.response) {
+                      await this._sendOwnerText(message.from, result.response);
+                    }
+                    return;
+                  }
+                }
+
+                // ── Default path ──────────────────────────────────────
                 await this.handleEvent({
                   platform: 'whatsapp',
                   userId: message.from,
@@ -328,6 +385,35 @@ export default class WhatsAppConnector extends BaseConnector {
    * Pull all downloadable media off a WhatsApp incoming message into a uniform list.
    * Each item: { type: 'image'|'audio'|'video'|'file', mediaId, originalName, mimeType }
    */
+  /**
+   * Send a plain-text WhatsApp message directly to a phone number,
+   * bypassing the full event/file pipeline. Used to confirm owner-reply
+   * outcomes back to the owner.
+   */
+  async _sendOwnerText(phoneNumber, text) {
+    if (!text) return;
+    const chunks = this._splitMessage(text, 4000);
+    for (const chunk of chunks) {
+      try {
+        await fetch(`${this.apiBase}/${this.phoneNumberId}/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.accessToken}`,
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: phoneNumber,
+            type: 'text',
+            text: { body: chunk },
+          }),
+        });
+      } catch (err) {
+        console.warn(`[whatsapp] Failed to confirm owner reply: ${err.message}`);
+      }
+    }
+  }
+
   _extractMediaItems(msg) {
     const items = [];
 

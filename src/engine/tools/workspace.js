@@ -173,20 +173,47 @@ export function readExtensions(paths) {
 }
 
 /**
- * Add an extension to the registry.
+ * Add or update an extension in the registry. Accepts the full extension
+ * schema, including operations, headers, output_type, and notes. All fields
+ * other than `name` are optional. Strings may use `{{ENV_VAR}}` substitution.
  */
-export function addExtension(paths, { name, type = 'api', endpoint, capabilities = [], description, auth }) {
+export function addExtension(paths, args) {
+  const {
+    name,
+    type = 'api',
+    endpoint,
+    address,
+    capabilities = [],
+    description,
+    auth,
+    headers,
+    operations,
+    output_type,
+    notes,
+    cost_model,
+    cost,
+  } = args || {};
+
   if (!name) return JSON.stringify({ error: 'Extension name is required.' });
 
   fs.mkdirSync(path.dirname(paths.extensions), { recursive: true });
   let registry = readJson(paths.extensions) || { extensions: [] };
   if (!registry.extensions) registry.extensions = [];
 
-  // Check for duplicate
-  const existing = registry.extensions.findIndex(e => e.name.toLowerCase() === name.toLowerCase());
-  const ext = { name, type, endpoint: endpoint || null, capabilities, description: description || '' };
-  if (auth) ext.auth = auth;
+  const ext = { name, type };
+  if (description) ext.description = description;
+  if (endpoint) ext.endpoint = endpoint;
+  if (address) ext.address = address;
+  if (Array.isArray(capabilities) && capabilities.length) ext.capabilities = capabilities;
+  if (auth && typeof auth === 'object') ext.auth = auth;
+  if (headers && typeof headers === 'object' && Object.keys(headers).length) ext.headers = headers;
+  if (Array.isArray(operations) && operations.length) ext.operations = operations;
+  if (output_type) ext.output_type = output_type;
+  if (notes) ext.notes = notes;
+  if (cost_model) ext.cost_model = cost_model;
+  if (cost) ext.cost = cost;
 
+  const existing = registry.extensions.findIndex(e => (e.name || '').toLowerCase() === name.toLowerCase());
   if (existing >= 0) {
     registry.extensions[existing] = ext;
   } else {
@@ -194,7 +221,12 @@ export function addExtension(paths, { name, type = 'api', endpoint, capabilities
   }
 
   writeJson(paths.extensions, registry);
-  return JSON.stringify({ ok: true, message: `Extension "${name}" ${existing >= 0 ? 'updated' : 'added'}.`, total: registry.extensions.length });
+  return JSON.stringify({
+    ok: true,
+    message: `Extension "${name}" ${existing >= 0 ? 'updated' : 'added'}.`,
+    total: registry.extensions.length,
+    extension: ext,
+  });
 }
 
 /**

@@ -8,6 +8,8 @@ import { platformRequest } from './platform-request.js';
 import { webSearch, webFetch } from './web.js';
 import { listConnections } from '../../auth/connections.js';
 import { loadConnectorToolModule } from '../../connectors/index.js';
+import { notifyOwner } from '../../notifications/index.js';
+import { MemoryManager } from '../memory/index.js';
 
 /**
  * Tool registry. Returns tool definitions for the LLM and dispatches execution.
@@ -31,6 +33,79 @@ export class ToolRegistry {
     this.config = config;
     this.connectorDefinitions = [];
     this.connectorHandlers = {};
+    /** Per-event context, set by the engine at the start of each turn. */
+    this.eventContext = null;
+    /** Activity log + facts. Lightweight to construct. */
+    this.memory = new MemoryManager(workspace);
+  }
+
+  /**
+   * Append an activity entry. Best-effort — never throws or fails the
+   * caller. Used both by the explicit log_activity tool and by automatic
+   * hooks on key tools (transactions, alerts).
+   */
+  _logActivity(type, summary, context) {
+    try {
+      this.memory.appendActivity({
+        type,
+        summary,
+        context,
+        session_id: this.eventContext
+          ? `${this.eventContext.platform || 'local'}:${this.eventContext.userId || 'unknown'}`
+          : null,
+      });
+    } catch { /* swallow — logging never breaks a turn */ }
+  }
+
+  /**
+   * Auto-log helper: parses the tool's JSON result and writes a one-line
+   * summary to the activity log. Skips failures so we don't spam the log
+   * with error noise.
+   */
+  _autoLogToolResult(toolName, args, resultStr) {
+    let parsed;
+    try { parsed = JSON.parse(resultStr); } catch { return; }
+    if (!parsed || parsed.error) return;
+    const ctx = this.eventContext || {};
+    const customer = ctx.userName || ctx.userId || 'customer';
+
+    if (toolName === 'create_transaction') {
+      const cost = args.cost != null ? `${args.currency || '$'}${args.cost}` : '';
+      this._logActivity('transaction_created',
+        `Created transaction ${args.id} for ${customer}${args.service ? ` — ${args.service}` : ''}${cost ? ` (${cost})` : ''}`,
+        { transaction_id: args.id, customer: ctx.userId, service: args.service, cost: args.cost, currency: args.currency }
+      );
+    } else if (toolName === 'update_transaction') {
+      const status = args.updates?.status ? ` → ${args.updates.status}` : '';
+      this._logActivity('transaction_updated',
+        `Updated transaction ${args.id}${status}`,
+        { transaction_id: args.id, updates: args.updates }
+      );
+    } else if (toolName === 'complete_transaction') {
+      const rating = args.rating ? `, rating ${args.rating}` : '';
+      this._logActivity('transaction_completed',
+        `Completed transaction ${args.id}${rating}`,
+        { transaction_id: args.id, rating: args.rating }
+      );
+    } else if (toolName === 'notify_owner') {
+      const sent = parsed.sent || [];
+      if (sent.length > 0) {
+        const channels = sent.map(s => s.channel).join(', ');
+        this._logActivity('alert_sent',
+          `Alerted owner via ${channels}: ${args.title}`,
+          { alert_id: parsed.alert_id, severity: args.severity, channels }
+        );
+      }
+    }
+  }
+
+  /**
+   * Engine sets this at the start of every processEvent so tools that need
+   * to know "which conversation am I in" (e.g. notify_owner recording the
+   * customer session that triggered the alert) can read it.
+   */
+  setEventContext(ctx) {
+    this.eventContext = ctx || null;
   }
 
   /**
@@ -126,15 +201,42 @@ export class ToolRegistry {
         },
       },
       {
+        name: 'log_activity',
+        description: 'Record a one-line summary of something noteworthy you just did or observed, into your activity log. Examples: "Declined a service request outside my catalog", "Customer asked about pricing for bulk orders", "An external API was rate-limiting me — degraded gracefully". This log is your daily diary; you reference it with `get_activity` when the owner asks "what have you been doing?". DO NOT log routine things — successful transactions, alerts, and extension calls are auto-logged for you. Use this only for things that need explicit context.',
+        parameters: {
+          type: 'object',
+          properties: {
+            summary: { type: 'string', description: 'One short line describing what happened. Keep under 200 characters.' },
+            type: { type: 'string', enum: ['note', 'transaction_created', 'transaction_updated', 'transaction_completed', 'transaction_disputed', 'alert_sent', 'alert_response', 'extension_called'], description: 'Category. Use "note" for free-form observations.' },
+            context: { type: 'object', description: 'Optional structured fields (transaction_id, customer, etc.).' },
+          },
+          required: ['summary'],
+        },
+      },
+      {
+        name: 'get_activity',
+        description: 'Read recent entries from your activity log. Use this when the owner asks for a summary of what has been happening, e.g. "what have you been doing today?", "any issues this week?", "show me the disputes from the last 48 hours". Returns newest-first with optional filters.',
+        parameters: {
+          type: 'object',
+          properties: {
+            since_hours: { type: 'number', description: 'Look back this many hours (default 24).' },
+            type: { type: 'string', description: 'Filter by entry type (e.g. "transaction_completed", "alert_sent").' },
+            contains: { type: 'string', description: 'Substring match against the summary line.' },
+            limit: { type: 'number', description: 'Max entries to return (default 100, max 500).' },
+          },
+        },
+      },
+      {
         name: 'call_extension',
-        description: 'Call an external API extension or send a message to another AaaS agent. For API extensions: specify method, path, and data. For agent extensions: just provide a message and the other agent responds in natural language.',
+        description: 'Call an external API extension or send a message to another AaaS agent. Two ways to call an API extension: (1) Operation-based (preferred) — pass `operation` matching one of the extension\'s registered operations; the runtime resolves path/method/async/output_type for you, you only supply `data`. (2) Free-form — pass `method`, `path`, and `data` directly. Async operations are polled automatically until ready or max_wait_s is reached. Binary results (audio, images, video) are saved into data/extensions/<name>/ and the tool returns { file_path, mime, size }. For agent extensions: just provide data.message.',
         parameters: {
           type: 'object',
           properties: {
             name: { type: 'string', description: 'Extension name from extensions/registry.json.' },
-            method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE'], description: 'HTTP method (API extensions only).' },
-            path: { type: 'string', description: 'API path appended to extension base URL (API extensions only).' },
-            data: { type: 'object', description: 'Request body for POST/PUT (API extensions), or { message: "..." } for agent extensions.' },
+            operation: { type: 'string', description: 'Name of a registered operation on this extension. Preferred over free-form path/method.' },
+            method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], description: 'HTTP method (free-form mode only; ignored when `operation` is given).' },
+            path: { type: 'string', description: 'API path appended to the base URL (free-form mode only; ignored when `operation` is given).' },
+            data: { type: 'object', description: 'Request body. For operations with path placeholders like `{user_id}`, the runtime fills them from this object before sending. For agent extensions, pass `{ message: "..." }`.' },
           },
           required: ['name'],
         },
@@ -307,15 +409,59 @@ export class ToolRegistry {
       },
       {
         name: 'add_extension',
-        description: 'Add or update an extension in the registry.',
+        description: 'Add or update an extension in the registry. For API extensions, register operations so future calls can use `call_extension({operation: "..."})` instead of guessing paths. Strings may include `{{ENV_VAR}}` substitution; the value is read from process.env at call time.',
         parameters: {
           type: 'object',
           properties: {
             name: { type: 'string', description: 'Extension name.' },
             type: { type: 'string', enum: ['api', 'agent', 'human', 'tool'], description: 'Extension type.' },
-            endpoint: { type: 'string', description: 'Base URL for API extensions.' },
-            capabilities: { type: 'array', items: { type: 'string' }, description: 'List of capabilities.' },
-            description: { type: 'string', description: 'What this extension does.' },
+            endpoint: { type: 'string', description: 'Base URL for API extensions, e.g. "https://api.example.com".' },
+            address: { type: 'string', description: 'Endpoint URL for agent or human extensions.' },
+            description: { type: 'string', description: 'One-line summary of what this extension does.' },
+            capabilities: { type: 'array', items: { type: 'string' }, description: 'Free-form keywords like ["music", "audio"] for documentation.' },
+            auth: {
+              type: 'object',
+              description: 'Auth config. type: bearer | header | query | basic. Use `apiKey: "{{MY_KEY}}"` to pull from env.',
+              properties: {
+                type: { type: 'string', enum: ['bearer', 'header', 'query', 'basic'] },
+                apiKey: { type: 'string' },
+                header: { type: 'string', description: 'Header or query-param name (for type=header or query).' },
+              },
+            },
+            headers: { type: 'object', description: 'Static custom headers to send on every request.' },
+            output_type: { type: 'string', enum: ['json', 'text', 'binary'], description: 'Default output type for free-form calls.' },
+            operations: {
+              type: 'array',
+              description: 'Named operations the agent can call by name. Each operation hides path/method/async details from the agent.',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', description: 'How the agent refers to this operation.' },
+                  description: { type: 'string', description: 'One-line summary, shown to the agent in its system prompt.' },
+                  method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+                  path: { type: 'string', description: 'Relative path appended to endpoint. Supports {placeholder} substitution from the call body.' },
+                  body: { type: 'object', description: 'Example/skeleton body shown to the agent.' },
+                  returns: { type: 'string', description: 'Free-form description of the response shape.' },
+                  output_type: { type: 'string', enum: ['json', 'text', 'binary'] },
+                  timeout_s: { type: 'number', description: 'Per-request timeout in seconds (default 30).' },
+                  async: {
+                    type: 'object',
+                    description: 'Set this when the operation kicks off a job that you have to poll. Runtime polls automatically.',
+                    properties: {
+                      poll_path: { type: 'string', description: 'Path to poll. {placeholder}s are filled from the initial response body.' },
+                      ready_field: { type: 'string', description: 'Dotted JSON path to the status field (default "status").' },
+                      ready_values: { type: 'array', items: { type: 'string' }, description: 'Values that mean "done" (default [completed, success, succeeded, done]).' },
+                      failure_values: { type: 'array', items: { type: 'string' }, description: 'Values that mean "failed" (default [failed, error, cancelled]).' },
+                      result_field: { type: 'string', description: 'Optional dotted path to the useful result inside the final poll response.' },
+                      interval_s: { type: 'number', description: 'Seconds between polls (default 3).' },
+                      max_wait_s: { type: 'number', description: 'Stop waiting after this many seconds (default 120, max 300).' },
+                    },
+                  },
+                },
+                required: ['name', 'path'],
+              },
+            },
+            notes: { type: 'string', description: 'Free-form notes shown to the agent in its system prompt (rate limits, gotchas, etc.).' },
           },
           required: ['name'],
         },
@@ -362,6 +508,22 @@ export class ToolRegistry {
         name: 'list_tables',
         description: 'List all tables in the workspace SQLite database with their schemas.',
         parameters: { type: 'object', properties: {} },
+      },
+
+      // ── Operator notifications ──
+
+      {
+        name: 'notify_owner',
+        description: 'Send a short message to your owner on their preferred channels (Telegram / WhatsApp / Email). Use this when you need the operator\'s attention: a customer disputes a delivery, you receive an unusual or out-of-scope request, an external API is repeatedly failing, a transaction is unusually large, or you genuinely don\'t know how to handle a situation. Keep messages short and specific. Include the transaction ID, customer name, and what you need from the owner. Do NOT use for routine activity, marketing updates, or questions you can answer yourself.',
+        parameters: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'One-line headline (e.g., "Dispute on transaction #abc123").' },
+            message: { type: 'string', description: 'Plain-text body. Include the relevant transaction ID, customer name or username, and a clear ask.' },
+            severity: { type: 'string', enum: ['info', 'warning', 'urgent'], description: 'Urgency hint shown as a tag in the alert. Default: info.' },
+          },
+          required: ['title', 'message'],
+        },
       },
 
       // ── Platform interaction ──
@@ -438,12 +600,21 @@ export class ToolRegistry {
           return saveMemory(this.paths, args);
         case 'call_extension':
           return await this._retryNetworkTool(() => callExtension(this.paths, args), 'call_extension');
-        case 'create_transaction':
-          return createTransaction(this.paths, args);
-        case 'update_transaction':
-          return updateTransaction(this.paths, args);
-        case 'complete_transaction':
-          return completeTransaction(this.paths, args);
+        case 'create_transaction': {
+          const r = createTransaction(this.paths, args);
+          this._autoLogToolResult('create_transaction', args, r);
+          return r;
+        }
+        case 'update_transaction': {
+          const r = updateTransaction(this.paths, args);
+          this._autoLogToolResult('update_transaction', args, r);
+          return r;
+        }
+        case 'complete_transaction': {
+          const r = completeTransaction(this.paths, args);
+          this._autoLogToolResult('complete_transaction', args, r);
+          return r;
+        }
         case 'list_transactions':
           return listTransactions(this.paths, args);
         case 'attach_file_to_transaction':
@@ -486,6 +657,37 @@ export class ToolRegistry {
           return await this._retryNetworkTool(() => webSearch(this.config, args), 'web_search');
         case 'web_fetch':
           return await this._retryNetworkTool(() => webFetch(args), 'web_fetch');
+        case 'notify_owner': {
+          // Capture the conversation that triggered this alert so an owner
+          // reply on Telegram/WhatsApp can be routed back here.
+          const ctx = this.eventContext ? {
+            session_platform: this.eventContext.platform,
+            session_user_id: this.eventContext.userId,
+            session_user_name: this.eventContext.userName,
+            transaction_id: args?.transaction_id || null,
+          } : null;
+          const r = await notifyOwner(this.workspace, this.paths, args, ctx);
+          const resultStr = JSON.stringify(r);
+          this._autoLogToolResult('notify_owner', args, resultStr);
+          return resultStr;
+        }
+        case 'log_activity': {
+          const entry = this.memory.appendActivity({
+            type: args?.type || 'note',
+            summary: args?.summary,
+            context: args?.context,
+            session_id: this.eventContext
+              ? `${this.eventContext.platform || 'local'}:${this.eventContext.userId || 'unknown'}`
+              : null,
+          });
+          if (!entry) return JSON.stringify({ error: 'summary is required.' });
+          return JSON.stringify({ ok: true, entry });
+        }
+        case 'get_activity': {
+          const entries = this.memory.getActivity(args || {});
+          const stats = this.memory.getActivityStats({ since_hours: args?.since_hours });
+          return JSON.stringify({ ok: true, count: entries.length, stats, entries });
+        }
         default:
           return JSON.stringify({ error: `Unknown tool: ${name}` });
       }

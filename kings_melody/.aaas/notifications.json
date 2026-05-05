@@ -1,0 +1,22 @@
+{
+  "telegram": {
+    "enabled": false,
+    "chat_id": ""
+  },
+  "whatsapp": {
+    "enabled": false,
+    "phone": ""
+  },
+  "email": {
+    "enabled": false,
+    "to": "",
+    "from": "",
+    "smtp": {
+      "host": "",
+      "port": 587,
+      "secure": false,
+      "user": "",
+      "pass": ""
+    }
+  }
+}

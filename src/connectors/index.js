@@ -1,4 +1,4 @@
-import { listConnections } from '../auth/connections.js';
+import { listConnections, loadConnection } from '../auth/connections.js';
 import { extractFiles } from './media.js';
 
 /**
@@ -24,9 +24,29 @@ export class BaseConnector {
 
   /**
    * Check if a userId matches the configured owner for this platform.
+   * Uses the in-memory snapshot — fast but can be stale right after
+   * /admin verification or after notifications auto-verify.
    */
   isOwner(userId) {
     return !!(this.config.ownerId && this.config.ownerId === userId);
+  }
+
+  /**
+   * Same as isOwner but reloads the connection from disk first. Use
+   * this when the answer matters for routing decisions (e.g. owner-
+   * reply detection) — `/admin` and `notify_owner` write `ownerId` to
+   * disk without going through the connector, so the in-memory copy
+   * can lag. Side effect: refreshes `this.config` so subsequent calls
+   * stay current.
+   */
+  isOwnerFresh(userId) {
+    const ws = this.engine?.workspace;
+    if (!ws) return this.isOwner(userId);
+    try {
+      const fresh = loadConnection(ws, this.platformName);
+      if (fresh) this.config = { ...this.config, ...fresh };
+    } catch { /* fall through to in-memory */ }
+    return this.isOwner(userId);
   }
 
   /**

@@ -1,0 +1,50 @@
+{
+  "table_columns": [
+    "service",
+    "status",
+    "cost",
+    "style",
+    "lyrics_mode"
+  ],
+  "detail_sections": [
+    {
+      "title": "Transaction Info",
+      "fields": [
+        "id",
+        "user_id",
+        "user_name",
+        "service",
+        "cost",
+        "currency",
+        "status"
+      ]
+    },
+    {
+      "title": "Song Details",
+      "fields": [
+        "style",
+        "lyrics_mode",
+        "is_instrumental",
+        "lyrics_optimizer"
+      ]
+    }
+  ],
+  "labels": {
+    "id": "Transaction ID",
+    "user_id": "User ID",
+    "user_name": "User Name",
+    "service": "Service",
+    "status": "Status",
+    "cost": "Cost",
+    "currency": "Currency",
+    "style": "Music Style",
+    "lyrics_mode": "Lyrics Mode",
+    "is_instrumental": "Instrumental Only",
+    "lyrics_optimizer": "Lyrics Optimizer"
+  },
+  "formats": {
+    "cost": "currency",
+    "is_instrumental": "boolean",
+    "lyrics_optimizer": "boolean"
+  }
+}

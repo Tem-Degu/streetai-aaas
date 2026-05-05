@@ -12,6 +12,7 @@ import Memory from './pages/Memory.jsx';
 import Chat from './pages/Chat.jsx';
 import Settings from './pages/Settings.jsx';
 import Deploy from './pages/Deploy.jsx';
+import Notifications from './pages/Notifications.jsx';
 import Hub from './pages/Hub.jsx';
 import GetStarted from './pages/GetStarted.jsx';
 import Guide from './pages/Guide.jsx';
@@ -64,6 +65,7 @@ function workspaceNav(prefix) {
       section: 'Runtime',
       items: [
         { path: `${prefix}/deploy`, label: 'Deploy', icon: <IconRocket /> },
+        { path: `${prefix}/notifications`, label: 'Notifications', icon: <IconBell /> },
         { path: `${prefix}/settings`, label: 'Settings', icon: <IconGear /> },
       ]
     },
@@ -170,6 +172,7 @@ function WorkspaceLayout({ navItems, wsName, prefix }) {
           <Route path="/chat" element={<Chat />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/deploy" element={<Deploy />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="/setup" element={<SetupGuide />} />
         </Routes>
       </main>
@@ -243,6 +246,7 @@ function StandaloneLayout() {
           <Route path="/chat" element={<Chat />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/deploy" element={<Deploy />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="/setup" element={<SetupGuide />} />
         </Routes>
       </main>
@@ -386,6 +390,15 @@ function IconBook() {
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M2 3h5a2 2 0 012 2v10a1.5 1.5 0 00-1.5-1.5H2V3z" />
       <path d="M16 3h-5a2 2 0 00-2 2v10a1.5 1.5 0 011.5-1.5H16V3z" />
+    </svg>
+  );
+}
+
+function IconBell() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 13H4l1.5-2V8a3.5 3.5 0 117 0v3l1.5 2z" />
+      <path d="M7.5 15.5a1.5 1.5 0 003 0" />
     </svg>
   );
 }

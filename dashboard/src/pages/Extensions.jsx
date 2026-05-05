@@ -20,7 +20,121 @@ const EMPTY_EXT = {
   capabilities: '', cost_model: 'free', cost: '', notes: '',
   authType: 'none', authKey: '', authHeader: '',
   headers: '',
+  operations: [],
 };
+
+const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+const OUTPUT_TYPES = [
+  { value: 'json', label: 'JSON response' },
+  { value: 'text', label: 'Plain text' },
+  { value: 'binary', label: 'File download (audio, image, video, etc.)' },
+];
+
+function emptyOp() {
+  return {
+    name: '', description: '', method: 'GET', path: '',
+    body: '', returns: '', output_type: 'json', timeout_s: '',
+    asyncEnabled: false,
+    poll_path: '', ready_field: 'status',
+    ready_values: 'completed, succeeded, success, done',
+    failure_values: 'failed, error, cancelled',
+    result_field: '', interval_s: '', max_wait_s: '',
+    expanded: true,
+    testing: false, testResult: null,
+  };
+}
+
+const OP_TEMPLATES = {
+  get: {
+    label: 'Simple GET',
+    desc: 'Read something from the API.',
+    fill: () => ({ ...emptyOp(), name: 'fetch_thing', description: 'Read something from the API.', method: 'GET', path: '/path/to/resource' }),
+  },
+  post: {
+    label: 'Simple POST',
+    desc: 'Send data to the API.',
+    fill: () => ({ ...emptyOp(), name: 'create_thing', description: 'Create or send something to the API.', method: 'POST', path: '/path/to/resource', body: '{\n  "key": "value"\n}' }),
+  },
+  async: {
+    label: 'Async job',
+    desc: 'Start a job, then wait for it to finish (e.g. music or image generation).',
+    fill: () => ({
+      ...emptyOp(),
+      name: 'generate_thing', description: 'Start a job and wait for it to finish.',
+      method: 'POST', path: '/jobs',
+      body: '{\n  "prompt": "your input here"\n}',
+      asyncEnabled: true,
+      poll_path: '/jobs/{id}', ready_field: 'status',
+      ready_values: 'completed, succeeded, success, done',
+      failure_values: 'failed, error, cancelled',
+      max_wait_s: '180',
+    }),
+  },
+  download: {
+    label: 'Download file',
+    desc: 'Fetch a binary file (audio, image, video, PDF) and save it for the agent.',
+    fill: () => ({ ...emptyOp(), name: 'download_file', description: 'Download a binary file.', method: 'GET', path: '/files/{id}', output_type: 'binary' }),
+  },
+};
+
+function opFromConfig(op) {
+  const a = op.async || {};
+  return {
+    name: op.name || '',
+    description: op.description || '',
+    method: (op.method || 'GET').toUpperCase(),
+    path: op.path || '',
+    body: op.body ? JSON.stringify(op.body, null, 2) : '',
+    returns: op.returns || '',
+    output_type: op.output_type || 'json',
+    timeout_s: op.timeout_s != null ? String(op.timeout_s) : '',
+    asyncEnabled: !!op.async,
+    poll_path: a.poll_path || '',
+    ready_field: a.ready_field || 'status',
+    ready_values: Array.isArray(a.ready_values) ? a.ready_values.join(', ') : 'completed, succeeded, success, done',
+    failure_values: Array.isArray(a.failure_values) ? a.failure_values.join(', ') : 'failed, error, cancelled',
+    result_field: a.result_field || '',
+    interval_s: a.interval_s != null ? String(a.interval_s) : '',
+    max_wait_s: a.max_wait_s != null ? String(a.max_wait_s) : '',
+    expanded: false,
+    testing: false, testResult: null,
+  };
+}
+
+function configFromOp(formOp) {
+  if (!formOp.name?.trim() || !formOp.path?.trim()) return null;
+  const op = {
+    name: formOp.name.trim(),
+    method: (formOp.method || 'GET').toUpperCase(),
+    path: formOp.path.trim(),
+  };
+  if (formOp.description?.trim()) op.description = formOp.description.trim();
+  if (formOp.body?.trim()) {
+    try {
+      op.body = JSON.parse(formOp.body);
+    } catch {
+      // Allow saving with a malformed body — surface error at save time, not silently
+      throw new Error(`Operation "${op.name}": body is not valid JSON.`);
+    }
+  }
+  if (formOp.returns?.trim()) op.returns = formOp.returns.trim();
+  if (formOp.output_type && formOp.output_type !== 'json') op.output_type = formOp.output_type;
+  if (formOp.timeout_s) op.timeout_s = Number(formOp.timeout_s) || undefined;
+  if (formOp.asyncEnabled) {
+    const cfg = {};
+    if (formOp.poll_path?.trim()) cfg.poll_path = formOp.poll_path.trim();
+    if (formOp.ready_field?.trim() && formOp.ready_field.trim() !== 'status') cfg.ready_field = formOp.ready_field.trim();
+    const rv = formOp.ready_values?.split(',').map(s => s.trim()).filter(Boolean);
+    if (rv?.length) cfg.ready_values = rv;
+    const fv = formOp.failure_values?.split(',').map(s => s.trim()).filter(Boolean);
+    if (fv?.length) cfg.failure_values = fv;
+    if (formOp.result_field?.trim()) cfg.result_field = formOp.result_field.trim();
+    if (formOp.interval_s) cfg.interval_s = Number(formOp.interval_s) || undefined;
+    if (formOp.max_wait_s) cfg.max_wait_s = Number(formOp.max_wait_s) || undefined;
+    op.async = cfg;
+  }
+  return op;
+}
 
 function formFromExt(ext) {
   return {
@@ -37,6 +151,7 @@ function formFromExt(ext) {
     authKey: ext.auth?.apiKey || '',
     authHeader: ext.auth?.header || '',
     headers: ext.headers ? Object.entries(ext.headers).map(([k, v]) => `${k}: ${v}`).join('\n') : '',
+    operations: Array.isArray(ext.operations) ? ext.operations.map(opFromConfig) : [],
   };
 }
 
@@ -94,6 +209,12 @@ function extFromForm(form) {
       }
     }
     if (Object.keys(headers).length > 0) ext.headers = headers;
+  }
+
+  // Operations (API only). configFromOp throws on invalid JSON body — propagate.
+  if (form.type === 'api' && Array.isArray(form.operations) && form.operations.length) {
+    const ops = form.operations.map(configFromOp).filter(Boolean);
+    if (ops.length) ext.operations = ops;
   }
 
   return ext;
@@ -165,14 +286,91 @@ export default function Extensions() {
     setForm(f => ({ ...f, [key]: val }));
   }
 
+  function updateOp(index, key, val) {
+    setForm(f => ({
+      ...f,
+      operations: f.operations.map((op, i) => i === index ? { ...op, [key]: val } : op),
+    }));
+  }
+
+  function addOp(template) {
+    const op = template ? OP_TEMPLATES[template].fill() : emptyOp();
+    setForm(f => ({ ...f, operations: [...(f.operations || []), op] }));
+  }
+
+  function removeOp(index) {
+    setForm(f => ({ ...f, operations: f.operations.filter((_, i) => i !== index) }));
+  }
+
+  async function testOp(index) {
+    let opConfig;
+    try {
+      opConfig = configFromOp(form.operations[index]);
+    } catch (err) {
+      updateOp(index, 'testResult', { ok: false, msg: err.message });
+      return;
+    }
+    if (!opConfig) {
+      updateOp(index, 'testResult', { ok: false, msg: 'Operation needs a name and a path before it can be tested.' });
+      return;
+    }
+    // Build a draft extension from the current form state — so testing works
+    // even before the user clicks Save.
+    const draftExt = extFromFormSafe(form);
+    if (!draftExt) {
+      updateOp(index, 'testResult', { ok: false, msg: 'Fix the form errors above before testing.' });
+      return;
+    }
+    if (!Array.isArray(draftExt.operations) || !draftExt.operations.length) {
+      draftExt.operations = [opConfig];
+    }
+    updateOp(index, 'testing', true);
+    updateOp(index, 'testResult', null);
+    try {
+      const res = await fetch('/api/extensions/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          extension: draftExt,
+          operation: opConfig.name,
+          data: opConfig.body || {},
+        }),
+      });
+      const result = await res.json();
+      const ok = result.ok === true || (result.status >= 200 && result.status < 300);
+      let msg;
+      if (result.error) msg = result.error;
+      else if (result.file_path) msg = `Saved file: ${result.file_path} (${result.size || '?'} bytes, ${result.mime || 'unknown type'})`;
+      else if (typeof result.data === 'string') msg = `HTTP ${result.status} — ${result.data.slice(0, 120)}`;
+      else msg = `HTTP ${result.status} — ${JSON.stringify(result.data || {}).slice(0, 200)}`;
+      updateOp(index, 'testResult', { ok, msg });
+    } catch (err) {
+      updateOp(index, 'testResult', { ok: false, msg: err.message });
+    }
+    updateOp(index, 'testing', false);
+  }
+
+  // Wraps extFromForm so a malformed body in an operation surfaces as a
+  // form-level alert instead of crashing the save.
+  function extFromFormSafe(formState) {
+    try { return extFromForm(formState); }
+    catch { return null; }
+  }
+
   async function handleSave() {
     if (!form.name.trim()) return alert('Name is required');
     if (form.type === 'api' && !form.endpoint.trim()) return alert('Endpoint URL is required for API extensions');
     if (form.type === 'agent' && !form.address.trim()) return alert('Agent chat URL is required');
     if (form.type === 'human' && !form.address.trim()) return alert('Contact info is required');
 
+    let ext;
+    try {
+      ext = extFromForm(form);
+    } catch (err) {
+      return alert(err.message);
+    }
+
     setSaving(true);
-    const ext = extFromForm(form);
     const current = data || [];
     let updated;
     if (editIndex !== null) {
@@ -412,6 +610,62 @@ export default function Extensions() {
                   </div>
                 )}
               </div>
+
+              {/* ─── Operations ─── */}
+              <div style={{ marginTop: 16, padding: '14px 16px', background: 'var(--bg-secondary)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <label className="form-label" style={{ marginBottom: 4, display: 'block' }}>
+                      Operations
+                      <span style={{ marginLeft: 8, fontWeight: 'normal', fontSize: 11, color: 'var(--text-secondary)' }}>
+                        ({form.operations?.length || 0})
+                      </span>
+                    </label>
+                    <span className="form-hint" style={{ marginTop: 0 }}>
+                      The specific things this API can do. Adding them lets the agent call them by name without guessing URLs or request formats.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Add buttons */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                  <button type="button" className="btn-inline" onClick={() => addOp()}>+ Blank</button>
+                  {Object.entries(OP_TEMPLATES).map(([key, tpl]) => (
+                    <button
+                      type="button"
+                      key={key}
+                      className="btn-inline"
+                      title={tpl.desc}
+                      onClick={() => addOp(key)}
+                    >
+                      + {tpl.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Existing operations */}
+                {(form.operations || []).map((op, i) => (
+                  <OperationCard
+                    key={i}
+                    index={i}
+                    op={op}
+                    onChange={(key, val) => updateOp(i, key, val)}
+                    onRemove={() => removeOp(i)}
+                    onTest={() => testOp(i)}
+                    onToggle={() => updateOp(i, 'expanded', !op.expanded)}
+                  />
+                ))}
+
+                {(!form.operations || form.operations.length === 0) && (
+                  <div style={{ marginTop: 10, padding: '14px 12px', background: 'var(--bg-card)', borderRadius: 6, fontSize: 13, color: 'var(--text-secondary)', textAlign: 'center' }}>
+                    No operations yet. Click a template above to add one.
+                  </div>
+                )}
+
+                <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-secondary)' }}>
+                  💡 Use <code style={{ background: 'var(--bg-card)', padding: '1px 5px', borderRadius: 3 }}>{'{{ENV_VAR}}'}</code> in any field to pull values from environment variables (great for keeping secrets out of the registry).
+                </div>
+              </div>
             </>
           )}
 
@@ -537,6 +791,26 @@ export default function Extensions() {
                           </div>
                         )}
 
+                        {Array.isArray(ext.operations) && ext.operations.length > 0 && (
+                          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {ext.operations.map((op, j) => (
+                              <span key={j} title={op.description || ''} style={{
+                                fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                                background: 'var(--bg-secondary)', color: 'var(--text)',
+                                border: '1px solid var(--border)',
+                                fontFamily: 'monospace', display: 'inline-flex', alignItems: 'center', gap: 5,
+                              }}>
+                                <span style={{ color: 'var(--accent)', fontWeight: 600, fontSize: 9, letterSpacing: 0.4 }}>
+                                  {(op.method || 'GET').toUpperCase()}
+                                </span>
+                                {op.name}
+                                {op.async && <span style={{ color: '#a855f7', fontSize: 9 }}>async</span>}
+                                {op.output_type === 'binary' && <span style={{ color: '#eab308', fontSize: 9 }}>file</span>}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
                         {testResult && testResult.index === ext._index && (
                           <div style={{ marginTop: 8, fontSize: 12, color: testResult.ok ? 'var(--green)' : 'var(--red)' }}>
                             {testResult.ok ? '✓' : '✗'} {testResult.msg}
@@ -564,6 +838,208 @@ export default function Extensions() {
             );
           })}
         </>
+      )}
+    </div>
+  );
+}
+
+function OperationCard({ index, op, onChange, onRemove, onTest, onToggle }) {
+  const cardStyle = {
+    marginTop: 10,
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    overflow: 'hidden',
+  };
+  const headerStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '10px 14px',
+    cursor: 'pointer',
+    background: op.expanded ? 'var(--bg-secondary)' : 'transparent',
+  };
+  const labelStyle = { fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' };
+  const tagStyle = {
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: 0.5,
+    padding: '2px 6px',
+    borderRadius: 3,
+    textTransform: 'uppercase',
+  };
+
+  const methodColors = {
+    GET: { bg: 'rgba(34,197,94,0.12)', fg: '#22c55e' },
+    POST: { bg: 'rgba(59,130,246,0.12)', fg: '#3b82f6' },
+    PUT: { bg: 'rgba(234,179,8,0.12)', fg: '#eab308' },
+    PATCH: { bg: 'rgba(168,85,247,0.12)', fg: '#a855f7' },
+    DELETE: { bg: 'rgba(239,68,68,0.12)', fg: '#ef4444' },
+  };
+  const m = methodColors[op.method] || methodColors.GET;
+
+  return (
+    <div style={cardStyle}>
+      <div style={headerStyle} onClick={onToggle}>
+        <span style={{ fontSize: 11, color: 'var(--text-secondary)', minWidth: 14 }}>{op.expanded ? '▾' : '▸'}</span>
+        <span style={{ ...tagStyle, background: m.bg, color: m.fg }}>{op.method || 'GET'}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+          {op.name || <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontWeight: 'normal' }}>(unnamed operation)</span>}
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'monospace', marginLeft: 4 }}>{op.path || ''}</span>
+        {op.asyncEnabled && <span style={{ ...tagStyle, background: 'rgba(168,85,247,0.12)', color: '#a855f7' }}>async</span>}
+        {op.output_type === 'binary' && <span style={{ ...tagStyle, background: 'rgba(234,179,8,0.12)', color: '#eab308' }}>file</span>}
+        <div style={{ flex: 1 }} />
+        <button type="button" className="btn-inline danger" onClick={(e) => { e.stopPropagation(); onRemove(); }}>Remove</button>
+      </div>
+
+      {op.expanded && (
+        <div style={{ padding: '12px 14px 14px', borderTop: '1px solid var(--border)' }}>
+          {/* Name + Description */}
+          <div className="form-grid">
+            <div className="form-field">
+              <label className="form-label" style={labelStyle}>Operation name *</label>
+              <input className="input" value={op.name} onChange={e => onChange('name', e.target.value)} placeholder="e.g. generate_music" />
+              <span className="form-hint">Short identifier the agent uses to call this. Snake_case or camelCase.</span>
+            </div>
+            <div className="form-field">
+              <label className="form-label" style={labelStyle}>What does this do?</label>
+              <input className="input" value={op.description} onChange={e => onChange('description', e.target.value)} placeholder="One-line summary the agent reads when picking the right operation." />
+            </div>
+          </div>
+
+          {/* Method + Path */}
+          <div className="form-grid" style={{ marginTop: 10 }}>
+            <div className="form-field" style={{ maxWidth: 140 }}>
+              <label className="form-label" style={labelStyle}>HTTP method</label>
+              <select className="input" value={op.method} onChange={e => onChange('method', e.target.value)}>
+                {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="form-field">
+              <label className="form-label" style={labelStyle}>Path *</label>
+              <input className="input" value={op.path} onChange={e => onChange('path', e.target.value)} placeholder="/v1/something/{id}" style={{ fontFamily: 'monospace' }} />
+              <span className="form-hint">
+                Relative to the base URL. Use <code style={{ background: 'var(--bg-secondary)', padding: '0 4px', borderRadius: 3 }}>{'{name}'}</code> for placeholders filled from the call body.
+              </span>
+            </div>
+          </div>
+
+          {/* Output type */}
+          <div className="form-grid" style={{ marginTop: 10 }}>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <label className="form-label" style={labelStyle}>Response type</label>
+              <select className="input" value={op.output_type} onChange={e => onChange('output_type', e.target.value)}>
+                {OUTPUT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              {op.output_type === 'binary' && (
+                <span className="form-hint">Files are saved automatically into <code style={{ background: 'var(--bg-secondary)', padding: '0 4px', borderRadius: 3 }}>data/extensions/{'<ext>'}/</code> and the agent gets the file path back.</span>
+              )}
+            </div>
+          </div>
+
+          {/* Body example (only for POST/PUT/PATCH) */}
+          {(op.method === 'POST' || op.method === 'PUT' || op.method === 'PATCH') && (
+            <div className="form-grid" style={{ marginTop: 10 }}>
+              <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <label className="form-label" style={labelStyle}>Example request body (JSON)</label>
+                <textarea
+                  className="input"
+                  value={op.body}
+                  onChange={e => onChange('body', e.target.value)}
+                  placeholder={'{\n  "key": "value"\n}'}
+                  rows={5}
+                  style={{ fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
+                />
+                <span className="form-hint">Shown to the agent as a template for what to send. Used as the default body when testing.</span>
+              </div>
+            </div>
+          )}
+
+          {/* Returns */}
+          <div className="form-grid" style={{ marginTop: 10 }}>
+            <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <label className="form-label" style={labelStyle}>What it returns (optional)</label>
+              <input className="input" value={op.returns} onChange={e => onChange('returns', e.target.value)} placeholder='e.g. { id, status, audio_file: { url } }' />
+              <span className="form-hint">Free-form description of the response shape. Helps the agent know what to do with the result.</span>
+            </div>
+          </div>
+
+          {/* Async toggle */}
+          <div style={{ marginTop: 14, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={op.asyncEnabled} onChange={e => onChange('asyncEnabled', e.target.checked)} />
+              <span style={{ fontSize: 13, fontWeight: 500 }}>This operation is asynchronous</span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>(starts a job, then we wait for it to finish)</span>
+            </label>
+
+            {op.asyncEnabled && (
+              <div style={{ marginTop: 10 }}>
+                <div className="form-grid">
+                  <div className="form-field">
+                    <label className="form-label" style={labelStyle}>Polling URL path *</label>
+                    <input className="input" value={op.poll_path} onChange={e => onChange('poll_path', e.target.value)} placeholder="/jobs/{id}" style={{ fontFamily: 'monospace' }} />
+                    <span className="form-hint">Where to check for job status. Use <code style={{ background: 'var(--bg-card)', padding: '0 4px', borderRadius: 3 }}>{'{id}'}</code> placeholders filled from the initial response.</span>
+                  </div>
+                  <div className="form-field">
+                    <label className="form-label" style={labelStyle}>Status field</label>
+                    <input className="input" value={op.ready_field} onChange={e => onChange('ready_field', e.target.value)} placeholder="status" />
+                    <span className="form-hint">Field in the polling response that holds the status (default: status).</span>
+                  </div>
+                </div>
+                <div className="form-grid" style={{ marginTop: 10 }}>
+                  <div className="form-field">
+                    <label className="form-label" style={labelStyle}>"Done" values</label>
+                    <input className="input" value={op.ready_values} onChange={e => onChange('ready_values', e.target.value)} placeholder="completed, succeeded, success" />
+                    <span className="form-hint">Comma-separated. Polling stops when status equals one of these.</span>
+                  </div>
+                  <div className="form-field">
+                    <label className="form-label" style={labelStyle}>"Failed" values</label>
+                    <input className="input" value={op.failure_values} onChange={e => onChange('failure_values', e.target.value)} placeholder="failed, error, cancelled" />
+                  </div>
+                </div>
+                <div className="form-grid" style={{ marginTop: 10 }}>
+                  <div className="form-field">
+                    <label className="form-label" style={labelStyle}>Useful field in the result (optional)</label>
+                    <input className="input" value={op.result_field} onChange={e => onChange('result_field', e.target.value)} placeholder="audio_file.url" />
+                    <span className="form-hint">If the response has the result nested somewhere, name it here. Dotted path supported.</span>
+                  </div>
+                  <div className="form-field" style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <label className="form-label" style={labelStyle}>Check every (seconds)</label>
+                      <input className="input" value={op.interval_s} onChange={e => onChange('interval_s', e.target.value)} placeholder="3" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label className="form-label" style={labelStyle}>Give up after (seconds)</label>
+                      <input className="input" value={op.max_wait_s} onChange={e => onChange('max_wait_s', e.target.value)} placeholder="120" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Test button + result */}
+          <div style={{ marginTop: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button type="button" className="btn" onClick={onTest} disabled={op.testing}>
+              {op.testing ? 'Testing…' : 'Test this operation'}
+            </button>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+              Calls the API live using the form above. Async operations may take up to 5 minutes.
+            </span>
+          </div>
+          {op.testResult && (
+            <div style={{
+              marginTop: 10, padding: '10px 12px', borderRadius: 6,
+              background: op.testResult.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+              border: `1px solid ${op.testResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+              fontSize: 12, color: op.testResult.ok ? 'var(--green)' : 'var(--red)',
+              wordBreak: 'break-all',
+            }}>
+              {op.testResult.ok ? '✓ ' : '✗ '}{op.testResult.msg}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

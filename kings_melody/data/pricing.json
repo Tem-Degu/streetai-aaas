@@ -1,0 +1,14 @@
+{
+  "services": {
+    "song_generation": {
+      "name": "Song Generation",
+      "description": "Full song with vocals and instrumentation from user lyrics",
+      "price": 0,
+      "currency": "USD",
+      "unit": "per song",
+      "bulk_discount": false,
+      "notes": "Completely free — no charge"
+    }
+  },
+  "currency": "USD"
+}
