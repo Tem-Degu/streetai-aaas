@@ -5,6 +5,7 @@ import { getTableColumns, getLabel, formatCellWithConfig } from '../utils/transa
 
 export default function Overview() {
   const { data, loading, error } = useFetch('/api/overview');
+  const navigate = useNavigate();
 
   if (loading) return <div className="loading">Loading overview</div>;
   if (error) return <div className="empty">Error: {error}</div>;
@@ -12,6 +13,7 @@ export default function Overview() {
 
   const { name, data: db, transactions: tx, extensions, memory, sessions, messages } = data;
   const cur = tx.currency || '';
+  const clickStat = { cursor: 'pointer' };
 
   return (
     <div>
@@ -40,19 +42,19 @@ export default function Overview() {
       </div>
 
       <div className="stat-grid">
-        <div className="stat">
+        <div className="stat" style={clickStat} onClick={() => navigate('data')} title="Open Data tab">
           <div className="stat-label">Data Files</div>
           <div className="stat-value">{db.files}</div>
         </div>
-        <div className="stat">
+        <div className="stat" style={clickStat} onClick={() => navigate('data')} title="Open Data tab">
           <div className="stat-label">Records</div>
           <div className="stat-value">{db.records}</div>
         </div>
-        <div className="stat">
+        <div className="stat" style={clickStat} onClick={() => navigate('extensions')} title="Open Extensions tab">
           <div className="stat-label">Extensions</div>
           <div className="stat-value">{extensions}</div>
         </div>
-        <div className="stat">
+        <div className="stat" style={clickStat} onClick={() => navigate('memory')} title="Open Memory tab">
           <div className="stat-label">Memory Facts</div>
           <div className="stat-value">{memory}</div>
         </div>

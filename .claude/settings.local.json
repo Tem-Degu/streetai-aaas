@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(npm run *)",
-      "Bash(node *)",
-      "Bash(awk '/id: .notifications.,/,/id: .earn-truuze.,/' C:/T-Works/Truuze/truuze/aaas/dashboard/src/pages/Guide.jsx)"
-    ]
-  }
-}
