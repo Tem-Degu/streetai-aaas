@@ -32,8 +32,14 @@ export default function Chat() {
     if (hasProvider) inputRef.current?.focus();
   }, [hasProvider]);
 
-  // Load chat history from session on mount
+  // Load chat history from session on mount.
+  // Each mode has its own session — when switching, replace messages with
+  // whatever history exists for the new mode (including empty). The previous
+  // version only replaced when length > 0, so switching from a populated
+  // admin session into a fresh customer session left the admin transcript
+  // visible.
   useEffect(() => {
+    setMessages([]); // clear immediately so we never show stale cross-mode history
     fetch(resolve(`/api/chat/history?mode=${mode}`))
       .then(r => r.ok ? r.json() : { messages: [] })
       .then(data => {
@@ -43,9 +49,10 @@ export default function Chat() {
           files: m.files,
           time: m.at ? new Date(m.at) : new Date(),
         }));
-        if (history.length > 0) setMessages(history);
+        setMessages(history);
       })
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
   async function handleFileSelect(e) {

@@ -586,7 +586,7 @@ export class ToolRegistry {
       const connectorEntry = this.connectorHandlers[name];
       if (connectorEntry) {
         return await this._retryNetworkTool(
-          () => connectorEntry.fn(this.workspace, args),
+          () => connectorEntry.fn(this.workspace, args, this.eventContext),
           name,
         );
       }

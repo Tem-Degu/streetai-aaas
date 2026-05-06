@@ -13,6 +13,7 @@ import Chat from './pages/Chat.jsx';
 import Settings from './pages/Settings.jsx';
 import Deploy from './pages/Deploy.jsx';
 import Notifications from './pages/Notifications.jsx';
+import Payments from './pages/Payments.jsx';
 import Hub from './pages/Hub.jsx';
 import GetStarted from './pages/GetStarted.jsx';
 import Guide from './pages/Guide.jsx';
@@ -66,6 +67,7 @@ function workspaceNav(prefix) {
       items: [
         { path: `${prefix}/deploy`, label: 'Deploy', icon: <IconRocket /> },
         { path: `${prefix}/notifications`, label: 'Notifications', icon: <IconBell /> },
+        { path: `${prefix}/payments`, label: 'Payments', icon: <IconCard /> },
         { path: `${prefix}/settings`, label: 'Settings', icon: <IconGear /> },
       ]
     },
@@ -173,6 +175,7 @@ function WorkspaceLayout({ navItems, wsName, prefix }) {
           <Route path="/settings" element={<Settings />} />
           <Route path="/deploy" element={<Deploy />} />
           <Route path="/notifications" element={<Notifications />} />
+          <Route path="/payments" element={<Payments />} />
           <Route path="/setup" element={<SetupGuide />} />
         </Routes>
       </main>
@@ -247,6 +250,7 @@ function StandaloneLayout() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/deploy" element={<Deploy />} />
           <Route path="/notifications" element={<Notifications />} />
+          <Route path="/payments" element={<Payments />} />
           <Route path="/setup" element={<SetupGuide />} />
         </Routes>
       </main>
@@ -399,6 +403,16 @@ function IconBell() {
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 13H4l1.5-2V8a3.5 3.5 0 117 0v3l1.5 2z" />
       <path d="M7.5 15.5a1.5 1.5 0 003 0" />
+    </svg>
+  );
+}
+
+function IconCard() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="14" height="10" rx="1.5" />
+      <path d="M2 7.5h14" />
+      <path d="M5 11h2" />
     </svg>
   );
 }

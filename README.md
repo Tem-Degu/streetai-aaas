@@ -54,6 +54,31 @@ The agent is now live. When James messages asking for help finding a date, the a
 
 Every interaction makes the service better: more profiles in the database means better matches, which means more satisfied users, which means more word of mouth.
 
+## Built-in Capabilities
+
+Two capabilities ship with every agent and turn on as soon as you configure them.
+
+### Owner notifications
+
+When something needs human judgment (a dispute, an unusual request, an extension that keeps failing) the agent reaches you on the channels you configure: Telegram, WhatsApp, or Email. Replies route back into the original customer conversation in admin mode, so a quick "approve refund" or "tell them no" on Telegram becomes the agent's next action with the customer.
+
+```bash
+# Configure channels in the dashboard's Notifications tab,
+# or edit .aaas/notifications.json directly.
+```
+
+The agent decides when to reach out. Routine successes never trigger an alert.
+
+### Payments (Stripe)
+
+Connect your own Stripe account in the dashboard's Payments tab and the agent gets six tools for taking and verifying payments: `create_payment_request`, `get_payment_status`, `list_pending_payments`, `cancel_payment_request`, `refund_payment`, `list_payments`. Three hard rules ship with the prompt so the agent cannot drift:
+
+1. Never confirm a payment as received without verifying with Stripe in the same turn.
+2. Only IDs returned by `create_payment_request` are real.
+3. Refunds and discounts are owner-gated. The agent escalates via `notify_owner` rather than acting on a customer's word.
+
+Money flows directly to your Stripe account. AaaS never holds funds. Test mode is the default until you switch to a `sk_live_` key.
+
 ## Quick Start
 
 ### Install

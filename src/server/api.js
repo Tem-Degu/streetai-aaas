@@ -457,6 +457,105 @@ export function apiRouter(workspace) {
     }
   });
 
+  // ─── Payments (Stripe) ───────────────────────────
+
+  router.get('/payments', async (req, res) => {
+    try {
+      const { listPayments } = await import('../payments/ledger.js');
+      const all = listPayments(paths);
+      const status = req.query.status;
+      const filtered = status ? all.filter(p => p.status === status) : all;
+      res.json({ count: filtered.length, payments: filtered });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/payments/connection', async (req, res) => {
+    try {
+      const cfg = loadConnection(workspace, 'stripe') || {};
+      // Mask the secret key for safety — UI shows "sk_..." prefix only.
+      const masked = {
+        ...cfg,
+        secret_key: cfg.secret_key
+          ? `${cfg.secret_key.slice(0, 7)}…${cfg.secret_key.slice(-4)}`
+          : '',
+        secretKeySet: !!cfg.secret_key,
+        mode: cfg.mode === 'live' ? 'live' : 'test',
+      };
+      res.json(masked);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.put('/payments/connection', async (req, res) => {
+    try {
+      const incoming = req.body || {};
+      const existing = loadConnection(workspace, 'stripe') || {};
+      // Allow leaving secret_key blank or as the masked sentinel to keep the
+      // existing one — same pattern as notifications SMTP pass.
+      let secret_key = (incoming.secret_key || '').trim();
+      if (!secret_key || secret_key.includes('…') || secret_key.includes('•')) {
+        secret_key = existing.secret_key || '';
+      }
+      if (!secret_key) return res.status(400).json({ error: 'secret_key is required' });
+      if (!secret_key.startsWith('sk_')) return res.status(400).json({ error: 'secret_key must start with "sk_test_" or "sk_live_"' });
+
+      const detectedMode = secret_key.startsWith('sk_live_') ? 'live' : 'test';
+      const cfg = {
+        secret_key,
+        mode: detectedMode,
+        currency: (incoming.currency || existing.currency || 'usd').toLowerCase().slice(0, 3),
+        min_amount: Number(incoming.min_amount) || 0,
+        max_amount: Number(incoming.max_amount) || 0,
+        success_url: (incoming.success_url || existing.success_url || '').trim(),
+        cancel_url: (incoming.cancel_url || existing.cancel_url || '').trim(),
+        expires_in_minutes: Number(incoming.expires_in_minutes) || 1440,
+        connectedAt: existing.connectedAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      saveConnection(workspace, 'stripe', cfg);
+      res.json({ ok: true, mode: detectedMode });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.delete('/payments/connection', (req, res) => {
+    try {
+      removeConnection(workspace, 'stripe');
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/payments/:paymentId/refresh', async (req, res) => {
+    try {
+      const { getPayment, savePayment } = await import('../payments/ledger.js');
+      const { loadStripeConfig, retrieveSession, deriveStatus } = await import('../payments/stripe.js');
+      const entry = getPayment(paths, req.params.paymentId);
+      if (!entry) return res.status(404).json({ error: 'Unknown payment_id' });
+      if (!entry.stripe_session_id) return res.status(400).json({ error: 'No Stripe session on this entry' });
+      const cfg = loadStripeConfig(workspace);
+      const session = await retrieveSession(cfg, entry.stripe_session_id);
+      const newStatus = deriveStatus(session);
+      entry.stripe_status = session.status;
+      entry.stripe_payment_status = session.payment_status;
+      entry.stripe_payment_intent = session.payment_intent || entry.stripe_payment_intent || null;
+      entry.last_synced_at = new Date().toISOString();
+      if (entry.status !== newStatus) {
+        entry.status = newStatus;
+        if (newStatus === 'paid' && !entry.paid_at) entry.paid_at = new Date().toISOString();
+      }
+      savePayment(paths, entry);
+      res.json({ ok: true, payment: entry });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   router.post('/extensions/test', async (req, res) => {
     const { extension, operation, method, path: callPath, data } = req.body || {};
     if (!extension || typeof extension !== 'object' || !extension.name) {

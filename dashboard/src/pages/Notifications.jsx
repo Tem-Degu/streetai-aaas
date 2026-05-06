@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom';
 import { useApi, useResolveUrl, WorkspaceContext } from '../hooks/useApi.js';
 
 const EMPTY = {
-  telegram: { enabled: false, chat_id: '' },
-  whatsapp: { enabled: false, phone: '' },
+  telegram: { enabled: true, chat_id: '' },
+  whatsapp: { enabled: true, phone: '' },
   email: {
-    enabled: false,
+    enabled: true,
     to: '', from: '',
     smtp: { host: '', port: 587, secure: false, user: '', pass: '', passSet: false },
   },
@@ -78,6 +78,9 @@ export default function Notifications() {
   const [testing, setTesting] = useState(null);
   const [testResult, setTestResult] = useState(null);
   const [connections, setConnections] = useState([]);
+  // Manual expand/collapse, fully decoupled from the enabled toggle.
+  // Defaults: configured channels start collapsed, unconfigured start expanded.
+  const [expanded, setExpanded] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +93,15 @@ export default function Notifications() {
       setForm(merged);
       setSaved(merged);
       setConnections(Array.isArray(conns) ? conns : []);
+      // First-load expansion: anything already saved+complete starts collapsed,
+      // anything not yet set up starts open so the user has somewhere to type.
+      // Email is verbose enough to always start collapsed — owner can open it
+      // when they want to deal with SMTP.
+      setExpanded({
+        telegram: !isChannelComplete('telegram', merged.telegram),
+        whatsapp: !isChannelComplete('whatsapp', merged.whatsapp),
+        email: false,
+      });
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -97,6 +109,10 @@ export default function Notifications() {
 
   const isConnected = (platform) =>
     connections.some(c => (c.platform || c.name) === platform);
+
+  function toggleExpanded(channel) {
+    setExpanded(e => ({ ...e, [channel]: !e[channel] }));
+  }
 
   function setChannel(channel, key, val) {
     setForm(f => ({ ...f, [channel]: { ...f[channel], [key]: val } }));
@@ -106,6 +122,38 @@ export default function Notifications() {
       ...f,
       email: { ...f.email, smtp: { ...f.email.smtp, [key]: val } },
     }));
+  }
+
+  // Toggling On/Off is a single-boolean change with no validation needed —
+  // persist it right away so the owner doesn't have to chase a separate Save.
+  // Field edits still require an explicit Save (incomplete config could
+  // otherwise be saved with empty fields).
+  async function handleToggleEnabled(channel, val) {
+    // Persist ONLY the enabled flag — base on the last-saved snapshot so any
+    // dirty field edits stay dirty and the user still chooses when to commit
+    // them with Save.
+    //
+    // Update form AND saved optimistically together: if we only updated form,
+    // there'd be a render window where form !== saved, briefly flashing the
+    // dirty UI (Save button + "Unsaved changes" pill) until the PUT returns.
+    const previousSaved = saved;
+    const previousForm = form;
+    const baseChannel = saved[channel] || {};
+    const nextSaved = {
+      ...saved,
+      [channel]: { ...baseChannel, enabled: val },
+    };
+    setForm(f => ({ ...f, [channel]: { ...f[channel], enabled: val } }));
+    setSaved(nextSaved);
+    try {
+      await put('/api/notifications', nextSaved);
+      setSavedAt(prev => ({ ...prev, [channel]: new Date() }));
+    } catch (err) {
+      // Roll back both so UI matches reality.
+      setForm(previousForm);
+      setSaved(previousSaved);
+      alert('Could not update channel: ' + err.message);
+    }
   }
 
   async function handleSaveChannel(channel) {
@@ -146,20 +194,27 @@ export default function Notifications() {
 
   if (loading) return <div className="loading">Loading notifications</div>;
 
-  const channels = ['telegram', 'whatsapp', 'email'];
-  const cardCommon = (channel) => ({
-    enabled: form[channel].enabled,
-    onToggle: (v) => setChannel(channel, 'enabled', v),
-    dirty: isChannelDirty(channel, form, saved),
-    complete: isChannelComplete(channel, form[channel]),
-    configured: isChannelComplete(channel, saved[channel]),
-    saving: savingChannel === channel,
-    savedAt: savedAt[channel],
-    testing: testing === channel,
-    testResult: testResult?.channel === channel ? testResult : null,
-    onSave: () => handleSaveChannel(channel),
-    onTest: () => handleTest(channel),
-  });
+  const cardCommon = (channel) => {
+    const dirty = isChannelDirty(channel, form, saved);
+    // Unsaved edits force the card open — never hide them behind a collapse.
+    const isOpen = dirty || !!expanded[channel];
+    return {
+      enabled: form[channel].enabled,
+      onToggle: (v) => handleToggleEnabled(channel, v),
+      dirty,
+      complete: isChannelComplete(channel, form[channel]),
+      configured: isChannelComplete(channel, saved[channel]),
+      saving: savingChannel === channel,
+      savedAt: savedAt[channel],
+      testing: testing === channel,
+      testResult: testResult?.channel === channel ? testResult : null,
+      onSave: () => handleSaveChannel(channel),
+      onTest: () => handleTest(channel),
+      open: isOpen,
+      // When dirty, lock the chevron — the card shouldn't collapse and hide unsaved edits.
+      onToggleOpen: dirty ? null : () => toggleExpanded(channel),
+    };
+  };
 
   return (
     <div>
@@ -187,7 +242,6 @@ export default function Notifications() {
             value={form.telegram.chat_id}
             onChange={(v) => setChannel('telegram', 'chat_id', v)}
             placeholder="@yourname or 123456789"
-            disabled={!form.telegram.enabled}
           />
         </ChannelCard>
 
@@ -206,7 +260,6 @@ export default function Notifications() {
             value={form.whatsapp.phone}
             onChange={(v) => setChannel('whatsapp', 'phone', v)}
             placeholder="+15551234567"
-            disabled={!form.whatsapp.enabled}
           />
         </ChannelCard>
 
@@ -223,7 +276,6 @@ export default function Notifications() {
               value={form.email.to}
               onChange={(v) => setChannel('email', 'to', v)}
               placeholder="you@example.com"
-              disabled={!form.email.enabled}
             />
             <Field
               label="Send from"
@@ -231,7 +283,6 @@ export default function Notifications() {
               value={form.email.from}
               onChange={(v) => setChannel('email', 'from', v)}
               placeholder="agent@example.com"
-              disabled={!form.email.enabled}
             />
           </div>
 
@@ -244,7 +295,6 @@ export default function Notifications() {
                 value={form.email.smtp.host}
                 onChange={(v) => setSmtp('host', v)}
                 placeholder="smtp.example.com"
-                disabled={!form.email.enabled}
               />
               <Field
                 label="Port"
@@ -252,7 +302,6 @@ export default function Notifications() {
                 value={String(form.email.smtp.port)}
                 onChange={(v) => setSmtp('port', v)}
                 placeholder="587"
-                disabled={!form.email.enabled}
               />
             </div>
             <div className="form-grid" style={{ marginTop: 8 }}>
@@ -261,7 +310,6 @@ export default function Notifications() {
                 value={form.email.smtp.user}
                 onChange={(v) => setSmtp('user', v)}
                 placeholder="usually your full email"
-                disabled={!form.email.enabled}
               />
               <Field
                 label="Password *"
@@ -270,7 +318,6 @@ export default function Notifications() {
                 onChange={(v) => setSmtp('pass', v)}
                 placeholder={form.email.smtp.passSet ? '(unchanged)' : 'app password'}
                 type="password"
-                disabled={!form.email.enabled}
               />
             </div>
             <label style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -278,7 +325,6 @@ export default function Notifications() {
                 type="checkbox"
                 checked={!!form.email.smtp.secure}
                 onChange={(e) => setSmtp('secure', e.target.checked)}
-                disabled={!form.email.enabled}
               />
               Use SSL (port 465). Most providers want STARTTLS on 587, so leave this off.
             </label>
@@ -293,85 +339,186 @@ export default function Notifications() {
   );
 }
 
+function StatusPill({ ready, configured, enabled, dirty }) {
+  // One pill, picked by precedence: unsaved > setup needed > configured-on > configured-off > not configured.
+  // This keeps the header scannable instead of stacking three pills.
+  let label, bg, fg;
+  if (!ready) { label = 'Setup needed'; bg = 'rgba(234,179,8,0.12)'; fg = '#b45309'; }
+  else if (dirty) { label = '⚠ Unsaved changes'; bg = 'rgba(234,179,8,0.15)'; fg = '#b45309'; }
+  else if (configured && enabled) { label = '✓ Active'; bg = 'rgba(34,197,94,0.12)'; fg = 'var(--green, #16a34a)'; }
+  else if (configured && !enabled) { label = '✓ Configured · Off'; bg = 'rgba(120,120,120,0.14)'; fg = 'var(--text-secondary)'; }
+  else { label = 'Not configured'; bg = 'rgba(120,120,120,0.10)'; fg = 'var(--text-secondary)'; }
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
+      padding: '3px 10px', borderRadius: 100,
+      background: bg, color: fg, textTransform: 'uppercase',
+      whiteSpace: 'nowrap',
+    }}>{label}</span>
+  );
+}
+
+function ToggleSwitch({ checked, onChange, disabled, label }) {
+  // Compact pill switch — clearer than a checkbox for "is this channel on".
+  // Sits in the header, far enough from the chevron that clicks don't collide.
+  // Yellow/amber when on so the active-channel state is obvious at a glance,
+  // even when scrolling past three cards.
+  const onColor = '#eab308';   // amber-500
+  const onBorder = '#ca8a04';  // amber-600
+  return (
+    <label
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <span style={{
+        fontSize: 11, fontWeight: 700, letterSpacing: 0.5,
+        color: checked ? onBorder : 'var(--text-secondary)',
+        textTransform: 'uppercase',
+      }}>{label}</span>
+      <span
+        onClick={() => !disabled && onChange(!checked)}
+        style={{
+          position: 'relative',
+          width: 36, height: 20, borderRadius: 100,
+          background: checked ? onColor : 'var(--bg-secondary)',
+          border: `1px solid ${checked ? onBorder : 'var(--border)'}`,
+          transition: 'background 0.15s ease, border-color 0.15s ease',
+          flexShrink: 0,
+          boxShadow: checked ? '0 0 0 3px rgba(234,179,8,0.15)' : 'none',
+        }}
+      >
+        <span style={{
+          position: 'absolute',
+          top: 1, left: checked ? 17 : 1,
+          width: 16, height: 16, borderRadius: 100,
+          background: '#fff',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+          transition: 'left 0.15s ease',
+        }} />
+      </span>
+    </label>
+  );
+}
+
 function ChannelCard({
   title, subtitle, ready, notReadyMsg, notReadyLink,
   enabled, onToggle, dirty, complete, configured,
   saving, savedAt, testing, testResult,
   onSave, onTest, children,
+  open, onToggleOpen,
 }) {
-  const canSave = ready && enabled && dirty && complete && !saving;
-  const canTest = ready && enabled && complete && !testing;
+  const canSave = ready && dirty && complete && !saving;
+  const canTest = ready && enabled && configured && !dirty && !testing;
+  const headerClickable = !!onToggleOpen;
 
   return (
-    <div className="card" style={{ padding: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: ready ? 'pointer' : 'not-allowed', flex: 1, minWidth: 240 }}>
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => onToggle(e.target.checked)}
-            disabled={!ready}
-          />
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{title}</span>
-              {configured && (
-                <span style={{
-                  fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
-                  padding: '2px 8px', borderRadius: 100,
-                  background: 'rgba(34,197,94,0.12)', color: 'var(--green, #22c55e)',
-                  textTransform: 'uppercase',
-                }}>
-                  ✓ Saved
-                </span>
-              )}
-              {dirty && configured && (
-                <span style={{
-                  fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
-                  padding: '2px 8px', borderRadius: 100,
-                  background: 'rgba(234,179,8,0.12)', color: '#eab308',
-                  textTransform: 'uppercase',
-                }}>
-                  Unsaved changes
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{subtitle}</div>
-          </div>
-        </label>
+    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      {/* ── Header ── */}
+      <div
+        onClick={headerClickable ? onToggleOpen : undefined}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 14,
+          padding: '14px 18px',
+          cursor: headerClickable ? 'pointer' : 'default',
+          userSelect: 'none',
+        }}
+      >
+        {/* Chevron */}
+        <span
+          aria-hidden
+          style={{
+            display: 'inline-block',
+            width: 14, textAlign: 'center',
+            color: 'var(--text-secondary)',
+            transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.15s ease',
+            opacity: headerClickable ? 1 : 0.3,
+            fontSize: 12,
+          }}
+        >
+          ▶
+        </span>
 
-        {ready && enabled && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        {/* Title + subtitle + pill */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{title}</span>
+            <StatusPill ready={ready} configured={configured} enabled={enabled} dirty={dirty} />
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{subtitle}</div>
+        </div>
+
+        {/* Enable/disable switch (only when channel is set up — toggling something that's not configured does nothing useful) */}
+        {ready && (
+          <ToggleSwitch
+            checked={enabled}
+            onChange={onToggle}
+            label={enabled ? 'On' : 'Off'}
+          />
+        )}
+      </div>
+
+      {/* ── Setup-needed warning (always visible when applicable) ── */}
+      {!ready && (
+        <div style={{
+          margin: '0 18px 14px',
+          padding: '10px 12px',
+          background: 'rgba(234,179,8,0.08)',
+          border: '1px solid rgba(234,179,8,0.3)',
+          borderRadius: 6,
+          fontSize: 12,
+          color: 'var(--text-secondary)',
+        }}>
+          ⚠ {notReadyMsg}
+          {notReadyLink && <> <Link to={notReadyLink} style={{ color: 'var(--accent)' }}>Go to Deploy →</Link></>}
+        </div>
+      )}
+
+      {/* ── Body (form + actions) — only visible when expanded and channel is ready ── */}
+      {ready && open && (
+        <div style={{
+          padding: '0 18px 18px',
+          borderTop: '1px solid var(--border)',
+          paddingTop: 14,
+        }}>
+          {children}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
             <button
               onClick={onSave}
               disabled={!canSave}
               title={!complete ? 'Fill required fields first' : (!dirty ? 'Nothing to save' : 'Save this channel')}
               style={{
-                padding: '6px 14px',
-                borderRadius: 6,
+                padding: '6px 14px', borderRadius: 6,
                 border: '1px solid var(--border)',
                 background: canSave ? 'var(--accent)' : 'var(--bg-secondary)',
                 color: canSave ? '#fff' : 'var(--text-secondary)',
-                fontWeight: 600,
-                fontSize: 13,
+                fontWeight: 600, fontSize: 13,
                 cursor: canSave ? 'pointer' : 'not-allowed',
                 transition: 'all 0.15s ease',
               }}
             >
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? 'Saving…' : (dirty ? 'Save changes' : 'Save')}
             </button>
             <button
               onClick={onTest}
               disabled={!canTest}
-              title={!complete ? 'Fill required fields first' : 'Send a test alert on this channel'}
+              title={
+                !configured ? 'Save the channel before testing' :
+                dirty ? 'Save your changes before testing' :
+                !enabled ? 'Turn the channel on to send a test' :
+                'Send a test alert on this channel'
+              }
               style={{
-                padding: '6px 14px',
-                borderRadius: 6,
+                padding: '6px 14px', borderRadius: 6,
                 border: `1px solid ${canTest ? 'var(--accent)' : 'var(--border)'}`,
                 background: canTest ? 'rgba(33,96,100,0.10)' : 'transparent',
                 color: canTest ? 'var(--accent)' : 'var(--text-secondary)',
-                fontWeight: 600,
-                fontSize: 13,
+                fontWeight: 600, fontSize: 13,
                 cursor: canTest ? 'pointer' : 'not-allowed',
                 transition: 'all 0.15s ease',
                 display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -380,36 +527,30 @@ function ChannelCard({
               <span style={{ fontSize: 14, lineHeight: 1 }}>✈</span>
               {testing ? 'Sending…' : 'Send test'}
             </button>
+
+            {dirty && (
+              <span style={{ fontSize: 12, color: '#b45309', marginLeft: 'auto' }}>
+                You have unsaved changes.
+              </span>
+            )}
+            {!dirty && savedAt && !testResult && (
+              <span style={{ fontSize: 12, color: 'var(--green, #16a34a)', marginLeft: 'auto' }}>
+                ✓ Saved at {savedAt.toLocaleTimeString()}
+              </span>
+            )}
           </div>
-        )}
-      </div>
 
-      {!ready && (
-        <div style={{ marginTop: 10, padding: '10px 12px', background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
-          ⚠ {notReadyMsg}
-          {notReadyLink && <> <Link to={notReadyLink} style={{ color: 'var(--accent)' }}>Go to Deploy →</Link></>}
-        </div>
-      )}
-
-      {ready && enabled && (
-        <div style={{ marginTop: 14 }}>{children}</div>
-      )}
-
-      {savedAt && !testResult && (
-        <div style={{ marginTop: 10, fontSize: 11, color: 'var(--green, #22c55e)' }}>
-          ✓ Saved at {savedAt.toLocaleTimeString()}
-        </div>
-      )}
-
-      {testResult && (
-        <div style={{
-          marginTop: 12, padding: '8px 12px', borderRadius: 6,
-          background: testResult.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
-          border: `1px solid ${testResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
-          fontSize: 12, color: testResult.ok ? 'var(--green)' : 'var(--red)',
-          wordBreak: 'break-word',
-        }}>
-          {testResult.ok ? '✓ ' : '✗ '}{testResult.msg}
+          {testResult && (
+            <div style={{
+              marginTop: 12, padding: '8px 12px', borderRadius: 6,
+              background: testResult.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+              border: `1px solid ${testResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+              fontSize: 12, color: testResult.ok ? 'var(--green)' : 'var(--red)',
+              wordBreak: 'break-word',
+            }}>
+              {testResult.ok ? '✓ ' : '✗ '}{testResult.msg}
+            </div>
+          )}
         </div>
       )}
     </div>

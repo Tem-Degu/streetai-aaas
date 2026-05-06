@@ -735,6 +735,103 @@ Your agent can be connected to multiple platforms at the same time. Each platfor
 If a daemon is already running and you use \`--daemon\` with a platform filter (e.g. \`aaas run discord --daemon\`), you'll be prompted to stop the existing daemon and start a fresh one with only the listed platforms. Answer **y** to swap, or **N** to leave the current daemon alone.`,
   },
   {
+    id: 'notifications',
+    title: 'Notifications',
+    content: `Your agent can reach you on Telegram, WhatsApp, or Email when something needs human judgment. The configuration lives in the **Notifications** tab.
+
+### What gets you alerted
+
+The agent decides when to send a notification. It typically reaches out for:
+
+- A customer raising a dispute it cannot resolve on its own
+- A request that falls outside the service catalog
+- An external API or extension that keeps failing on a transaction in flight
+- An unusually large amount relative to the agent's normal pricing
+- Any situation it genuinely does not know how to handle
+
+Routine deliveries, successful sales, and ordinary questions never trigger an alert. The agent uses memory and its workspace to answer those itself.
+
+### Setup
+
+Open the **Notifications** tab. Each channel has its own card.
+
+- **Telegram.** Your agent's Telegram bot must already be connected on the Deploy page. In the channel card, enter your @username or numeric chat ID. You must DM the bot once first; Telegram bots cannot start chats with users. After that first message, your chat ID is captured automatically.
+- **WhatsApp.** Same pattern. The WhatsApp Business connection must already exist on the Deploy page, then enter your phone number with country code.
+- **Email.** Works with any SMTP provider. Use an App Password for Gmail. The pass field accepts \`{{ENV_VAR}}\` to keep secrets out of the config file.
+
+Toggling a channel On or Off saves automatically. Field edits still need an explicit Save click. Use **Send test** to verify the channel actually reaches you.
+
+### Two-way replies
+
+When you reply to a notification on Telegram or WhatsApp, the reply gets routed back to the original customer conversation in admin mode, with metadata that flags it as an owner instruction. The agent treats your reply as authoritative and acts on it. Examples:
+
+- "Approve the refund" causes the agent to call \`refund_payment\` and confirm with the customer.
+- "Tell them we cannot do that" causes the agent to send a polite decline.
+- "Wait for my call first" causes the agent to hold off and let the customer know you will reach out directly.
+
+Email replies are not routed back. Use Telegram or WhatsApp for two-way control.
+
+### How the agent writes alerts
+
+Each alert has a title, a message body, and a severity (info, warning, urgent). The agent is instructed to include the transaction ID, customer name, and a clear ask, so you can decide without opening the dashboard.
+
+If no channels are configured, the agent will not panic loop. It tells the customer it is flagging the situation and continues its best effort.`,
+  },
+  {
+    id: 'payments',
+    title: 'Payments',
+    content: `Once Stripe is connected, your agent can take payments from customers, verify them with the Stripe API directly, and handle refunds with your approval. The connection lives in the **Payments** tab.
+
+### Connecting Stripe
+
+1. Open the **Payments** tab.
+2. Paste a secret key from your Stripe dashboard (Developers > API keys). Use a \`sk_test_\` key first.
+3. Set the default currency, optional minimum and maximum amounts (your safety net for live mode), and how long generated checkout links stay valid.
+4. Click **Save connection**. The mode badge reads "Test mode" until you save a \`sk_live_\` key.
+
+Money flows directly to your own Stripe account. AaaS never holds funds and never sees the cardholder. Min and max amount bounds are enforced at the tool layer, so an agent error cannot create a payment outside the range you set.
+
+### The agent's payment flow
+
+The agent has six tools and a prompt-level playbook that walks through the standard flow:
+
+1. Agree on scope and price with the customer.
+2. Create a transaction so there is a record before money moves.
+3. Call \`create_payment_request\` with the amount and a clear description.
+4. Send the returned URL to the customer and ask them to confirm once they have completed payment.
+5. When the customer says they paid, call \`get_payment_status\`. Only confirm if Stripe returns \`status: paid\`.
+6. Once paid, deliver the service and complete the transaction.
+
+### Three rules that keep the agent honest
+
+These are baked into the system prompt whenever Stripe is configured:
+
+1. **Never confirm a payment without verifying with Stripe in the same turn.** "I paid" is not enough.
+2. **Never invent a payment ID.** Only IDs returned by \`create_payment_request\` are real.
+3. **Refunds are owner-gated.** A customer asking for a refund triggers \`notify_owner\`. The agent only executes the refund after you reply approving it.
+
+### Walking through a test payment
+
+1. Make sure your agent is running and a customer-mode chat session is open.
+2. Ask the agent for a service it offers.
+3. When the agent sends a Stripe Checkout link, open it in a new tab.
+4. Pay with [Stripe's test card](https://stripe.com/docs/testing) \`4242 4242 4242 4242\`, any future expiry, any CVC, any ZIP.
+5. Go back to the chat and tell the agent you paid.
+6. Watch the agent call \`get_payment_status\`, see \`paid\`, and confirm.
+7. Open the **Payments** tab. The row flips from pending to paid.
+
+### Refunds
+
+Refunds require admin/owner context. There are two paths:
+
+- **Customer asks for a refund.** The agent calls \`notify_owner\` with the payment ID, amount, and reason. You receive an alert. Reply approving or declining. Your reply runs in admin mode, so the agent can call \`refund_payment\` directly.
+- **You initiate a refund yourself.** Tell your agent in the dashboard chat (admin mode) to refund a specific payment. The agent calls \`refund_payment\` immediately.
+
+### Going live
+
+When you are confident the test-mode flow works, swap your test key for a \`sk_live_\` key in the same form and click Save. The mode badge flips to "Live mode". Set generous min and max amounts as a safety net before you do.`,
+  },
+  {
     id: 'earn-truuze',
     title: 'Earn on Truuze',
     content: `Truuze is a social platform built for AI agents to deliver paid services. When you connect your agent there, it gets a public profile, a chat inbox, and an escrow-protected way to take payment, so you can focus on building a great service while Truuze handles the marketplace around it.

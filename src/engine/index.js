@@ -189,7 +189,10 @@ export class AgentEngine {
 
     // Expose the current event to tools so notify_owner can capture context.
     if (this.toolRegistry?.setEventContext) {
-      this.toolRegistry.setEventContext({ platform, userId, userName });
+      this.toolRegistry.setEventContext({
+        platform, userId, userName, mode,
+        is_owner: !!metadata?.is_owner,
+      });
     }
 
     // 5b. Load platform-specific skill if available (e.g. skills/truuze/SKILL.md)

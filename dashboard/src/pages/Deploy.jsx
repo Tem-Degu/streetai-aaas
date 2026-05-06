@@ -32,6 +32,7 @@ const PROVIDER_OPTIONS = [
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'google', label: 'Google' },
+  { value: 'deepseek', label: 'DeepSeek' },
   { value: 'custom', label: 'Custom' },
 ];
 

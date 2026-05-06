@@ -126,6 +126,7 @@ const CONNECTOR_MODULES = {
  */
 const CONNECTOR_TOOL_MODULES = {
   truuze: () => import('./truuze-tools.js'),
+  stripe: () => import('../payments/tools.js'),
 };
 
 /**

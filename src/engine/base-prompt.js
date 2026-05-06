@@ -172,6 +172,12 @@ Users may attach files to their messages. These are automatically downloaded to 
     sections.push(workspaceState);
   }
 
+  // ── Payments (Stripe) — only when configured ──
+  const paymentsSection = buildPaymentsSection(paths, { isAdmin });
+  if (paymentsSection) {
+    sections.push(paymentsSection);
+  }
+
   // ── Behavioral rules ──
   if (isAdmin) {
     sections.push(`## Rules
@@ -304,6 +310,63 @@ If \`count\` is 0, say so plainly: "Nothing notable happened in the last X hours
   }
 
   return sections.join('\n\n---\n\n');
+}
+
+/**
+ * Stripe-payments playbook. Only emitted when .aaas/connections/stripe.json
+ * exists. Both modes get the payment tool list + the three hard rules; admin
+ * also gets a brief operational note about test/live mode.
+ */
+function buildPaymentsSection(paths, { isAdmin }) {
+  const stripePath = path.join(paths.connections, 'stripe.json');
+  const cfg = readJson(stripePath);
+  if (!cfg || !cfg.secret_key) return null;
+  const isLive = typeof cfg.secret_key === 'string' && cfg.secret_key.startsWith('sk_live_');
+  const mode = isLive ? 'LIVE' : 'TEST';
+  const currency = (cfg.currency || 'usd').toUpperCase();
+
+  const lines = [];
+  lines.push(`## Taking Payments (Stripe — ${mode} mode, default ${currency})`);
+  lines.push('');
+  lines.push('You can take payments from customers via Stripe Checkout. The owner has connected their own Stripe account; payments go directly to them.');
+  lines.push('');
+  lines.push('### Tools');
+  lines.push('| Tool | Purpose |');
+  lines.push('|------|---------|');
+  lines.push('| `create_payment_request` | Generate a Stripe Checkout URL for a fixed amount and send it to the customer. |');
+  lines.push('| `get_payment_status` | Verify with Stripe whether a specific payment_id has been paid. |');
+  lines.push('| `list_pending_payments` | Refresh and list every payment still awaiting completion. |');
+  lines.push('| `cancel_payment_request` | Void a pending (unpaid) payment so the customer can no longer pay it. |');
+  lines.push('| `refund_payment` | Refund a paid payment (admin/owner mode only). |');
+  lines.push('| `list_payments` | Read-only ledger view, optionally filtered by status. |');
+  lines.push('');
+  lines.push('### Three hard rules');
+  lines.push('1. **Never confirm a payment as received** unless `get_payment_status` returned `status: "paid"` in the same turn (or you just got a system message confirming a Stripe payment for this payment_id). The customer\'s word is not enough — Stripe is the source of truth.');
+  lines.push('2. **Never invent a payment_id.** Only IDs returned by `create_payment_request` are real. If the customer mentions an ID that isn\'t in the ledger, ask them to start over from the link you sent.');
+  lines.push('3. **Refunds and discounts are owner-gated.** If a customer asks for a refund, use `notify_owner` to escalate first; do not call `refund_payment` yourself unless the owner is the one talking to you (admin mode).');
+  lines.push('');
+  lines.push('### The standard payment flow');
+  lines.push('1. Agree on scope and price with the customer.');
+  lines.push('2. Create a transaction (`create_transaction`) so there is a record before money moves.');
+  lines.push('3. Call `create_payment_request` with the agreed amount, a clear description, and the `transaction_id`.');
+  lines.push('4. Send the returned URL to the customer in chat. **Tell them explicitly to let you know once they have completed payment** — phrasing like "Once you\'ve paid, just send me a quick \'done\' or \'paid\' so I can verify and start your order."');
+  lines.push('5. When they say they paid (or anything that sounds like it — "done", "sent it", "ok"), call `get_payment_status` with the payment_id. Only proceed if it returns `status: "paid"`.');
+  lines.push('6. If the status is still `pending`, politely tell them you don\'t see it yet and ask them to make sure they completed checkout. Do NOT start work.');
+  lines.push('7. Once paid, deliver the service and update/complete the transaction.');
+  lines.push('');
+  lines.push('### Common situations');
+  lines.push('- **Customer claims they paid but status is pending:** Most likely they closed the checkout page early. Politely ask them to use the same link again, or offer to send a fresh one with `cancel_payment_request` + `create_payment_request`.');
+  lines.push('- **Customer asks for a refund:** Use `notify_owner` with the payment_id, amount, and the customer\'s reason. Tell the customer you\'ve escalated to the owner; do not promise a refund.');
+  lines.push('- **Customer asks for a discount mid-flow:** If the payment is still pending, you can `cancel_payment_request` and create a new one at the discounted amount — but only if the discount is within your authorized pricing rules. Otherwise notify the owner.');
+  lines.push('- **Payment expired:** Sessions expire after the configured window. Ask the customer if they still want to proceed and create a fresh request.');
+  if (isAdmin) {
+    lines.push('');
+    lines.push(`### Owner-mode notes`);
+    lines.push(`- You are currently configured in **${mode} mode**${isLive ? '' : ' — no real money will move'}.`);
+    lines.push(`- The minimum/maximum amounts and default currency come from the Stripe connection settings in the dashboard.`);
+    lines.push(`- The agent never takes refund decisions on customers. If a customer asks for one in a customer-mode chat, the agent will call \`notify_owner\` so you can decide and (in your reply) authorize the refund.`);
+  }
+  return lines.join('\n');
 }
 
 /**
