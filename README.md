@@ -130,7 +130,7 @@ aaas config --provider anthropic --model claude-sonnet-4-6 --key sk-ant-...
 aaas skill edit
 ```
 
-Supported providers: Anthropic, OpenAI, Google, Ollama, OpenRouter, Azure.
+Supported providers: Anthropic, OpenAI, Google, Ollama, OpenRouter, DeepSeek, Azure.
 
 ### Connect to a platform
 
@@ -405,7 +405,6 @@ aaas/
 │   ├── skill-reference.md    # How to write a skill
 │   ├── transactions.md       # Transaction lifecycle
 │   └── ...
-├── streetai/                 # streetai.org marketing website
 ├── bin/                      # Helper scripts (scaffold.sh)
 └── examples/                 # Example agent workspaces
 ```
