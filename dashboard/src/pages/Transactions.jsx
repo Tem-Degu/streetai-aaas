@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useFetch, useResolveUrl } from '../hooks/useApi.js';
+import { useFetch, useResolveUrl, useApi } from '../hooks/useApi.js';
 import { getTableColumns, getLabel, formatCellWithConfig, prettyKey } from '../utils/transactionView.js';
+import TransactionViewEditor from '../components/TransactionViewEditor.jsx';
 
 /** Extract unique statuses from actual transaction data */
 function getStatuses(txns) {
@@ -23,18 +24,93 @@ export default function Transactions() {
     else setSearchParams({});
   };
 
+  const [editorOpen, setEditorOpen] = useState(false);
   const url = `/api/transactions?all=${showAll}`;
-  const { data: allTxns, loading, error } = useFetch(url);
-  const { data: stats } = useFetch('/api/transactions-stats');
-  const { data: viewConfig } = useFetch('/api/transaction-view');
+  const { data: allTxns, loading, error, refetch: refetchTxns } = useFetch(url);
+  const { data: stats, refetch: refetchStats } = useFetch('/api/transactions-stats');
+  const { data: viewConfig, refetch: refetchView } = useFetch('/api/transaction-view');
+  const api = useApi();
+
+  // Optimistic archive state. While `pendingArchive` is set, the row is
+  // hidden client-side; an undo banner lets the user revert before the
+  // server change settles into the next refetch.
+  const [pendingArchive, setPendingArchive] = useState(null); // { id, wasArchived }
+  const undoTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(undoTimerRef.current), []);
 
   const cur = stats?.currency || '';
   const statuses = getStatuses(allTxns);
-  const txns = filter === 'all' ? allTxns : allTxns?.filter(t => t.status === filter);
+  const visibleTxns = pendingArchive
+    ? allTxns?.filter(t => (t.id || t._file) !== pendingArchive.id)
+    : allTxns;
+  const txns = filter === 'all' ? visibleTxns : visibleTxns?.filter(t => t.status === filter);
   const extraCols = getTableColumns(viewConfig, allTxns);
 
+  // ── Pagination ──
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil((txns?.length || 0) / PAGE_SIZE));
+  // Reset to page 1 whenever the filter / archive toggle changes the row set
+  useEffect(() => { setPage(1); }, [filter, showAll]);
+  // Clamp when the underlying list shrinks (e.g. after archiving the last row on a page)
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const pagedTxns = txns?.slice(pageStart, pageStart + PAGE_SIZE);
+
+  const archiveTxn = async (txn, e) => {
+    if (e) e.stopPropagation();
+    const id = txn.id || txn._file;
+    const wasArchived = txn.archived === true;
+    setPendingArchive({ id, wasArchived });
+    try {
+      await api.post(`/api/transactions/${encodeURIComponent(id)}/${wasArchived ? 'unarchive' : 'archive'}`);
+    } catch {
+      setPendingArchive(null);
+      refetchTxns();
+      return;
+    }
+    clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => {
+      setPendingArchive(null);
+      refetchTxns();
+      refetchStats();
+    }, 5000);
+  };
+
+  const completeTxn = async (txn, e) => {
+    if (e) e.stopPropagation();
+    if (txn.status === 'completed') return;
+    const id = txn.id || txn._file;
+    try {
+      await api.post(`/api/transactions/${encodeURIComponent(id)}/complete`);
+    } catch { /* refetch will reveal the truth */ }
+    refetchTxns();
+    refetchStats();
+  };
+
+  const undoArchive = async () => {
+    if (!pendingArchive) return;
+    const { id, wasArchived } = pendingArchive;
+    clearTimeout(undoTimerRef.current);
+    setPendingArchive(null);
+    try {
+      await api.post(`/api/transactions/${encodeURIComponent(id)}/${wasArchived ? 'archive' : 'unarchive'}`);
+    } catch { /* row will reappear on refetch regardless */ }
+    refetchTxns();
+    refetchStats();
+  };
+
   if (selected) {
-    return <TransactionDetail id={selected} onBack={() => setSelected(null)} currency={cur} viewConfig={viewConfig} />;
+    return (
+      <TransactionDetail
+        id={selected}
+        onBack={() => setSelected(null)}
+        currency={cur}
+        viewConfig={viewConfig}
+        onArchived={(txn) => { setSelected(null); archiveTxn(txn); }}
+        onCompleted={(txn) => completeTxn(txn)}
+      />
+    );
   }
 
   return (
@@ -48,7 +124,7 @@ export default function Transactions() {
         <div className="stat-grid">
           <div className="stat stat-green">
             <div className="stat-label">Revenue</div>
-            <div className="stat-value green">{cur} {stats.revenue}</div>
+            <div className="stat-value green">{cur ? `${cur} ${stats.revenue}` : stats.revenue}</div>
           </div>
           <div className="stat stat-green">
             <div className="stat-label">Completed</div>
@@ -64,6 +140,25 @@ export default function Transactions() {
           </div>
         </div>
       )}
+
+      <div className="card" style={{ padding: 0, marginBottom: 14 }}>
+        <button
+          onClick={() => setEditorOpen(v => !v)}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 14px', background: 'transparent', border: 'none', cursor: 'pointer',
+            color: 'var(--text)', fontSize: 14, fontWeight: 500,
+          }}
+        >
+          <span>Customize columns</span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{editorOpen ? '▾' : '▸'}</span>
+        </button>
+        {editorOpen && (
+          <div style={{ borderTop: '1px solid var(--border)' }}>
+            <TransactionViewEditor viewConfig={viewConfig} onSaved={refetchView} />
+          </div>
+        )}
+      </div>
 
       <div className="btn-group" style={{ flexWrap: 'wrap' }}>
         {statuses.length > 0 && (
@@ -88,6 +183,23 @@ export default function Transactions() {
         </button>
       </div>
 
+      {pendingArchive && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 14px', marginBottom: 12,
+          background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8,
+          fontSize: 13,
+        }}>
+          <span>Transaction {pendingArchive.wasArchived ? 'unarchived' : 'archived'}.</span>
+          <button
+            onClick={undoArchive}
+            style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+          >
+            Undo
+          </button>
+        </div>
+      )}
+
       {loading && <div className="loading">Loading</div>}
       {error && <div className="empty">Error: {error}</div>}
 
@@ -108,10 +220,13 @@ export default function Transactions() {
                 ))}
                 <th>Cost</th>
                 <th>Date</th>
+                <th style={{ width: 76 }}></th>
               </tr>
             </thead>
             <tbody>
-              {txns.map((t, i) => (
+              {pagedTxns.map((t, i) => {
+                const isArchived = t.archived === true;
+                return (
                 <tr key={t.id || i} onClick={() => setSelected(t.id || t._file)} style={{ cursor: 'pointer' }}>
                   <td>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -129,14 +244,67 @@ export default function Transactions() {
                   {extraCols.map(k => (
                     <td key={k} style={{ fontSize: 13 }}>{formatCellWithConfig(t[k], k, viewConfig, cur)}</td>
                   ))}
-                  <td>{t.cost ? `${cur}${t.cost}` : 'Free'}</td>
+                  <td>{t.cost ? `${cur} ${t.cost}` : 'Free'}</td>
                   <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                     {t.created_at ? new Date(t.created_at).toLocaleDateString() : ''}
                   </td>
+                  <td onClick={e => e.stopPropagation()} style={{ textAlign: 'right', paddingRight: 10, whiteSpace: 'nowrap' }}>
+                    {(() => {
+                      const done = t.status === 'completed';
+                      return (
+                        <button
+                          onClick={e => { if (!done) completeTxn(t, e); else e.stopPropagation(); }}
+                          disabled={done}
+                          title={done ? 'Already completed' : 'Mark as completed'}
+                          style={{
+                            background: 'none', border: 'none', padding: 4, marginRight: 4,
+                            cursor: done ? 'default' : 'pointer',
+                            color: done ? 'var(--green)' : 'var(--text-muted)',
+                            display: 'inline-flex', alignItems: 'center',
+                            opacity: done ? 0.55 : 0.85,
+                          }}
+                          onMouseEnter={e => { if (!done) e.currentTarget.style.opacity = 1; }}
+                          onMouseLeave={e => { if (!done) e.currentTarget.style.opacity = 0.85; }}
+                        >
+                          {/* check-circle */}
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        </button>
+                      );
+                    })()}
+                    <button
+                      onClick={e => archiveTxn(t, e)}
+                      title={isArchived ? 'Unarchive — bring this transaction back to the active list' : 'Archive — hide this transaction from the active list'}
+                      style={{
+                        background: 'none', border: 'none', padding: 4, cursor: 'pointer',
+                        color: isArchived ? 'var(--green)' : 'var(--red)',
+                        display: 'inline-flex', alignItems: 'center', opacity: 0.85,
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                      onMouseLeave={e => e.currentTarget.style.opacity = 0.85}
+                    >
+                      {isArchived ? (
+                        // unarchive — up arrow out of tray (green)
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><polyline points="9 7 12 4 15 7"/><line x1="12" y1="4" x2="12" y2="12"/></svg>
+                      ) : (
+                        // archive — down arrow into tray (red)
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><polyline points="15 9 12 12 9 9"/><line x1="12" y1="4" x2="12" y2="12"/></svg>
+                      )}
+                    </button>
+                  </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              total={txns.length}
+              pageStart={pageStart}
+              pageEnd={Math.min(pageStart + PAGE_SIZE, txns.length)}
+              onChange={setPage}
+            />
+          )}
         </div>
       )}
 
@@ -153,7 +321,7 @@ export default function Transactions() {
               {Object.entries(stats.byService).map(([svc, rev]) => (
                 <tr key={svc}>
                   <td>{svc}</td>
-                  <td style={{ color: 'var(--green)', fontWeight: 600 }}>{cur}{rev}</td>
+                  <td style={{ color: 'var(--green)', fontWeight: 600 }}>{cur ? `${cur} ${rev}` : rev}</td>
                 </tr>
               ))}
             </tbody>
@@ -162,6 +330,81 @@ export default function Transactions() {
       )}
     </div>
   );
+}
+
+// ─── Pagination ───────────────────────────────────
+
+/**
+ * Page number control with Prev / page buttons / Next, plus a "Showing X–Y
+ * of N" label. Compacts the page list with ellipses when there are many
+ * pages so the bar doesn't grow unbounded.
+ */
+function Pagination({ page, totalPages, total, pageStart, pageEnd, onChange }) {
+  const items = buildPageItems(page, totalPages);
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: 12, padding: '12px 14px', borderTop: '1px solid var(--border)', flexWrap: 'wrap',
+    }}>
+      <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+        Showing {pageStart + 1}–{pageEnd} of {total}
+      </span>
+      <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+        <button
+          className="btn btn-sm"
+          onClick={() => onChange(page - 1)}
+          disabled={page <= 1}
+          style={{ padding: '4px 10px' }}
+        >
+          ← Prev
+        </button>
+        {items.map((item, i) =>
+          item === '…' ? (
+            <span key={`gap-${i}`} style={{ padding: '0 6px', color: 'var(--text-muted)', fontSize: 13 }}>…</span>
+          ) : (
+            <button
+              key={item}
+              className={`btn btn-sm ${item === page ? 'btn-primary' : ''}`}
+              onClick={() => onChange(item)}
+              style={{ padding: '4px 10px', minWidth: 32 }}
+            >
+              {item}
+            </button>
+          )
+        )}
+        <button
+          className="btn btn-sm"
+          onClick={() => onChange(page + 1)}
+          disabled={page >= totalPages}
+          style={{ padding: '4px 10px' }}
+        >
+          Next →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Build the visible page-button sequence with ellipses for compactness.
+ * Always shows first and last; shows up to 2 neighbors on each side of the
+ * current page. Examples:
+ *   page=1,  total=7  → [1, 2, 3, 4, 5, '…', 7]
+ *   page=4,  total=10 → [1, '…', 3, 4, 5, '…', 10]
+ *   page=10, total=10 → [1, '…', 6, 7, 8, 9, 10]
+ */
+function buildPageItems(page, totalPages) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  const items = [];
+  const add = (v) => { if (items[items.length - 1] !== v) items.push(v); };
+  add(1);
+  if (page > 3) add('…');
+  for (let p = Math.max(2, page - 1); p <= Math.min(totalPages - 1, page + 1); p++) add(p);
+  if (page < totalPages - 2) add('…');
+  add(totalPages);
+  return items;
 }
 
 // ─── Shared helpers ───────────────────────────────
@@ -255,7 +498,7 @@ function FieldGroup({ title, data: obj, viewConfig, currency, accent }) {
 
 // ─── Detail view ──────────────────────────────────
 
-function TransactionDetail({ id, onBack, currency: fallbackCurrency, viewConfig }) {
+function TransactionDetail({ id, onBack, currency: fallbackCurrency, viewConfig, onArchived, onCompleted }) {
   const { data, loading, error } = useFetch(`/api/transactions/${id}`);
   const resolveUrl = useResolveUrl();
 
@@ -265,6 +508,8 @@ function TransactionDetail({ id, onBack, currency: fallbackCurrency, viewConfig 
 
   const currency = data.currency || fallbackCurrency;
   const hasConfig = viewConfig?.detail_sections?.length > 0;
+  const isArchived = data.archived === true;
+  const isCompleted = data.status === 'completed';
 
   // Build timeline
   const timeline = [];
@@ -283,6 +528,28 @@ function TransactionDetail({ id, onBack, currency: fallbackCurrency, viewConfig 
           {data.service || 'Transaction'}
         </h1>
         <span className={`badge ${data.status}`}>{data.status?.replace(/_/g, ' ')}</span>
+        <div style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+          {onCompleted && (
+            <button
+              className="btn btn-sm"
+              onClick={() => { if (!isCompleted) onCompleted(data); }}
+              disabled={isCompleted}
+              title={isCompleted ? 'Already completed' : 'Mark this transaction as completed'}
+              style={isCompleted ? { color: 'var(--green)', opacity: 0.7 } : undefined}
+            >
+              {isCompleted ? '✓ Completed' : 'Mark completed'}
+            </button>
+          )}
+          {onArchived && (
+            <button
+              className="btn btn-sm"
+              onClick={() => onArchived(data)}
+              title={isArchived ? 'Unarchive this transaction' : 'Archive this transaction'}
+            >
+              {isArchived ? 'Unarchive' : 'Archive'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary row */}

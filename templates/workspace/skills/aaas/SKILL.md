@@ -47,6 +47,26 @@ List every service you can perform. For each one, define what it is, what you ne
 
 ---
 
+## Transaction Fields
+
+[Declare the fields you capture for every transaction and how the dashboard
+should render them. The agent reads this block on every skill save and
+reconciles `.aaas/transaction_view.json` from it. Each line is one field:
+
+- `field_key (type, column) — Display Label`
+- `type` (optional): currency, percentage, rating, date, datetime, boolean, list, text, number
+- `column` (optional flag): mark the field as a main-table column
+- `Display Label` (optional): override the prettified key in the dashboard
+
+Replace the examples below with the fields your service actually captures.]
+
+- service (column) — Service
+- status (column) — Status
+- cost (currency, column) — Cost
+- created_at (datetime) — Created
+
+---
+
 ## Domain Knowledge
 
 [This is the most important section. Write everything you need to know about your domain to provide the service well. Think of it as training material.

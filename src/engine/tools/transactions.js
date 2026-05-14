@@ -42,25 +42,23 @@ export function updateTransaction(paths, { id, updates }) {
 }
 
 export function completeTransaction(paths, { id, rating }) {
-  const activePath = path.join(paths.activeTransactions, `${id}.json`);
+  const fp = path.join(paths.activeTransactions, `${id}.json`);
 
-  if (!fs.existsSync(activePath)) {
-    return JSON.stringify({ error: `Transaction "${id}" not found in active transactions.` });
+  if (!fs.existsSync(fp)) {
+    return JSON.stringify({ error: `Transaction "${id}" not found.` });
   }
 
-  const txn = readJson(activePath);
+  const txn = readJson(fp);
   txn.status = 'completed';
   txn.completed_at = new Date().toISOString();
   txn.updated_at = new Date().toISOString();
   if (rating) txn.rating = rating;
 
-  // Move to archive
-  fs.mkdirSync(paths.archivedTransactions, { recursive: true });
-  const archivePath = path.join(paths.archivedTransactions, `${id}.json`);
-  writeJson(archivePath, txn);
-  fs.unlinkSync(activePath);
+  // No file move — completed transactions stay visible in the dashboard
+  // until the owner archives them explicitly.
+  writeJson(fp, txn);
 
-  return JSON.stringify({ ok: true, message: `Transaction "${id}" completed and archived.`, transaction: txn });
+  return JSON.stringify({ ok: true, message: `Transaction "${id}" marked completed.`, transaction: txn });
 }
 
 export function attachFileToTransaction(paths, { id, file_path }) {
@@ -68,13 +66,9 @@ export function attachFileToTransaction(paths, { id, file_path }) {
     return JSON.stringify({ error: 'id and file_path are required.' });
   }
 
-  // Locate the transaction (active or archived)
-  let txnPath = path.join(paths.activeTransactions, `${id}.json`);
+  const txnPath = path.join(paths.activeTransactions, `${id}.json`);
   if (!fs.existsSync(txnPath)) {
-    txnPath = path.join(paths.archivedTransactions, `${id}.json`);
-    if (!fs.existsSync(txnPath)) {
-      return JSON.stringify({ error: `Transaction "${id}" not found.` });
-    }
+    return JSON.stringify({ error: `Transaction "${id}" not found.` });
   }
 
   // Normalize path — must be workspace-relative and live under data/
@@ -135,17 +129,30 @@ export function listTransactions(paths, { status, include_archived } = {}) {
     if (data) txns.push(data);
   }
 
-  if (include_archived) {
-    for (const f of listFiles(paths.archivedTransactions, '.json')) {
-      const data = readJson(path.join(paths.archivedTransactions, f));
-      if (data) txns.push(data);
-    }
-  }
-
   let filtered = txns;
-  if (status) filtered = txns.filter(t => t.status === status);
+  if (!include_archived) filtered = filtered.filter(t => t.archived !== true);
+  if (status) filtered = filtered.filter(t => t.status === status);
 
   filtered.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
   return JSON.stringify({ count: filtered.length, transactions: filtered.slice(0, 50) });
+}
+
+/**
+ * Set or unset the `archived` flag on a transaction. The file stays in the
+ * same folder — only the flag changes. Used by the dashboard archive button
+ * and (optionally) by the agent if it ever needs to clean up the view.
+ */
+export function setTransactionArchived(paths, { id, archived }) {
+  const fp = path.join(paths.activeTransactions, `${id}.json`);
+  if (!fs.existsSync(fp)) {
+    return JSON.stringify({ error: `Transaction "${id}" not found.` });
+  }
+  const txn = readJson(fp);
+  txn.archived = !!archived;
+  txn.updated_at = new Date().toISOString();
+  if (archived) txn.archived_at = new Date().toISOString();
+  else delete txn.archived_at;
+  writeJson(fp, txn);
+  return JSON.stringify({ ok: true, transaction: txn });
 }

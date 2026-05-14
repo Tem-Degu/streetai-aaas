@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import { findWorkspace } from '../../utils/workspace.js';
 import { getValidWorkspaces } from '../../utils/registry.js';
 import { startServer } from '../../server/index.js';
+import { ensureDashboardShortcut } from '../shortcut.js';
 
 export async function dashboardCommand(agentName, opts) {
   const port = parseInt(opts.port) || 3400;
@@ -34,6 +35,15 @@ export async function dashboardCommand(agentName, opts) {
   }
 
   console.log(chalk.cyan(`\n  Starting AaaS Hub Dashboard...`));
-  console.log(chalk.gray(`  Hub: ${hubDir}\n`));
+  console.log(chalk.gray(`  Hub: ${hubDir}`));
+
+  // Best-effort: drop a desktop shortcut on first run. Idempotent — won't
+  // touch an existing shortcut, won't fail the command if anything goes wrong.
+  const shortcut = ensureDashboardShortcut();
+  if (shortcut.created) {
+    console.log(chalk.gray(`  Added desktop shortcut: ${shortcut.path}`));
+  }
+  console.log('');
+
   await startServer(null, port, hubDir, openPath);
 }

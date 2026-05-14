@@ -74,7 +74,7 @@ You have these tools available. Use them — don't guess when you can look up th
 | \`call_extension\` | Call an external API registered in your extensions |
 | \`create_transaction\` | Start tracking a service request |
 | \`update_transaction\` | Update a transaction's status or details |
-| \`complete_transaction\` | Mark a service as done and archive it |
+| \`complete_transaction\` | Mark a service as done (status becomes "completed") |
 | \`list_transactions\` | View active or past transactions |
 | \`attach_file_to_transaction\` | Attach a customer-uploaded file (image, audio, doc) to a transaction |
 | \`read_memory\` | Recall stored facts from past interactions |
@@ -124,7 +124,7 @@ You have these tools available. Use them to serve the customer — don't guess w
 | \`call_extension\` | Call an external API registered in your extensions |
 | \`create_transaction\` | Start tracking a service request |
 | \`update_transaction\` | Update a transaction's status or details |
-| \`complete_transaction\` | Mark a service as done and archive it |
+| \`complete_transaction\` | Mark a service as done (status becomes "completed") |
 | \`list_transactions\` | View active or past transactions |
 | \`attach_file_to_transaction\` | Attach a customer-uploaded file (image, audio, doc) to a transaction |
 | \`read_memory\` | Recall stored facts from past interactions |
@@ -189,7 +189,8 @@ Users may attach files to their messages. These are automatically downloaded to 
 - **Use memory.** Save important facts about users so you improve over time. Returning users should feel recognized.
 - **Be transparent.** If a tool call fails or an extension is down, tell the user plainly.
 - **When the admin asks you to change something**, do it. They own the service.
-- **Payment verification:** When using a payment extension, always verify payment status via the API before confirming to the user. Save the payment session ID with \`save_memory\` so you can check it later. Never trust "I paid" without verifying.`);
+- **Payment verification:** When using a payment extension, always verify payment status via the API before confirming to the user. Save the payment session ID with \`save_memory\` so you can check it later. Never trust "I paid" without verifying.
+- **Transaction fields convention:** SKILL.md may contain a \`## Transaction Fields\` block listing the fields you capture per transaction and how the dashboard renders them. Each line: \`- field_key (type, column) — Display Label\`, where \`type\` is optional (currency, percentage, rating, date, datetime, boolean, list, text, number), \`column\` is an optional flag marking the field as a main-table column, and \`Display Label\` is optional. When setting up a new service, ask the owner which fields matter for their dashboard view and put them in this block via \`write_skill\`. The dashboard's transaction view reconciles from this block on every skill save.`);
   } else {
     sections.push(`## Rules
 
@@ -602,26 +603,25 @@ function buildWorkspaceState(paths, { isAdmin = true } = {}) {
     parts.push('**Extensions:** None registered.');
   }
 
-  // ── Active transactions ──
-  const activeFiles = listFiles(paths.activeTransactions, '.json');
-  if (activeFiles.length > 0) {
-    const txnSummaries = [];
-    for (const file of activeFiles.slice(0, 5)) {
-      const txn = readJson(path.join(paths.activeTransactions, file));
-      if (txn) {
-        txnSummaries.push(`- \`${txn.id || file}\` — ${txn.service || 'unknown'} for ${txn.user_name || txn.user_id || 'unknown'} (${txn.status || 'pending'})`);
-      }
-    }
-    if (activeFiles.length > 5) {
-      txnSummaries.push(`- ...and ${activeFiles.length - 5} more`);
-    }
-    parts.push(`**Active transactions** (${activeFiles.length}):\n${txnSummaries.join('\n')}`);
+  // ── Transactions: in-flight vs completed (both live in the same folder) ──
+  const allTxnFiles = listFiles(paths.activeTransactions, '.json');
+  const inFlight = [];
+  let completedCount = 0;
+  for (const file of allTxnFiles) {
+    const txn = readJson(path.join(paths.activeTransactions, file));
+    if (!txn) continue;
+    if (txn.status === 'completed') completedCount++;
+    else if (txn.archived !== true) inFlight.push({ ...txn, _file: file });
   }
-
-  // ── Archived transactions count ──
-  const archivedFiles = listFiles(paths.archivedTransactions, '.json');
-  if (archivedFiles.length > 0) {
-    parts.push(`**Completed transactions:** ${archivedFiles.length} in archive.`);
+  if (inFlight.length > 0) {
+    const txnSummaries = inFlight.slice(0, 5).map(txn =>
+      `- \`${txn.id || txn._file}\` — ${txn.service || 'unknown'} for ${txn.user_name || txn.user_id || 'unknown'} (${txn.status || 'pending'})`
+    );
+    if (inFlight.length > 5) txnSummaries.push(`- ...and ${inFlight.length - 5} more`);
+    parts.push(`**Active transactions** (${inFlight.length}):\n${txnSummaries.join('\n')}`);
+  }
+  if (completedCount > 0) {
+    parts.push(`**Completed transactions:** ${completedCount}.`);
   }
 
   if (parts.length === 0) return null;

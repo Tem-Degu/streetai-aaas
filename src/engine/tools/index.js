@@ -272,7 +272,7 @@ export class ToolRegistry {
       },
       {
         name: 'complete_transaction',
-        description: 'Mark a transaction as completed and move it to the archive.',
+        description: 'Mark a transaction as completed. Sets status to "completed" and records completed_at. The transaction stays visible in the dashboard until the owner archives it.',
         parameters: {
           type: 'object',
           properties: {

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { readText, readJson, writeJson } from '../../utils/workspace.js';
+import { reconcileFromSkill, saveOwnerOverrides } from './transaction-view.js';
 
 /**
  * Read the current SKILL.md content.
@@ -18,6 +19,9 @@ export function writeSkill(paths, { content }) {
   if (!content) return JSON.stringify({ error: 'content is required.' });
   fs.mkdirSync(path.dirname(paths.skill), { recursive: true });
   fs.writeFileSync(paths.skill, content, 'utf-8');
+  // Reconcile the transaction view config from the new skill content. Best
+  // effort — a parser error must not block a successful skill write.
+  try { reconcileFromSkill(paths, content); } catch { /* non-fatal */ }
   return JSON.stringify({ ok: true, message: 'SKILL.md updated.', size: content.length });
 }
 

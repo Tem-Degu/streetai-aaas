@@ -11,6 +11,7 @@ import { listConnections, loadConnection, saveConnection, removeConnection } fro
 import { AgentEngine } from '../engine/index.js';
 import { extractFiles } from '../connectors/media.js';
 import { buildPlatformSkill, parseTruuzeSkill } from '../connectors/truuze-skill.js';
+import { getConnectorMap } from './connector-registry.js';
 
 
 const __api_dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -353,6 +354,50 @@ export function apiRouter(workspace) {
     res.json(txn);
   });
 
+  // Manually mark a transaction as completed. Useful when the admin
+  // delivers the service outside the agent flow and just needs to update
+  // the record. Idempotent: completing an already-completed transaction is
+  // a no-op (returns 409 so the client can show the disabled state).
+  router.post('/transactions/:id/complete', (req, res) => {
+    const fp = findTransactionFile(paths, req.params.id);
+    if (!fp) return res.status(404).json({ error: 'Transaction not found' });
+    const txn = readJson(fp);
+    if (txn.status === 'completed') {
+      return res.status(409).json({ error: 'Transaction is already completed', transaction: txn });
+    }
+    const now = new Date().toISOString();
+    txn.status = 'completed';
+    txn.completed_at = now;
+    txn.updated_at = now;
+    writeJson(fp, txn);
+    res.json({ ok: true, transaction: txn });
+  });
+
+  // Archive / unarchive a transaction. The file stays in place; only the
+  // `archived` flag changes. The default list filters `archived: true` out;
+  // `?all=true` includes them.
+  router.post('/transactions/:id/archive', (req, res) => {
+    const fp = findTransactionFile(paths, req.params.id);
+    if (!fp) return res.status(404).json({ error: 'Transaction not found' });
+    const txn = readJson(fp);
+    txn.archived = true;
+    txn.archived_at = new Date().toISOString();
+    txn.updated_at = txn.archived_at;
+    writeJson(fp, txn);
+    res.json({ ok: true, transaction: txn });
+  });
+
+  router.post('/transactions/:id/unarchive', (req, res) => {
+    const fp = findTransactionFile(paths, req.params.id);
+    if (!fp) return res.status(404).json({ error: 'Transaction not found' });
+    const txn = readJson(fp);
+    delete txn.archived;
+    delete txn.archived_at;
+    txn.updated_at = new Date().toISOString();
+    writeJson(fp, txn);
+    res.json({ ok: true, transaction: txn });
+  });
+
   router.get('/transactions-stats', (req, res) => {
     const all = loadAllTransactions(paths, true);
     const active = loadAllTransactions(paths, false);
@@ -399,9 +444,26 @@ export function apiRouter(workspace) {
   });
 
   // ─── Transaction View Config ─────────────────────
+  // GET returns the full file. The dashboard reads the top-level merged
+  // fields (table_columns, detail_sections, labels, formats) for rendering,
+  // and the _skill_derived / _owner_overrides layers for the editor UI.
   router.get('/transaction-view', (req, res) => {
     const config = readJson(paths.transactionView);
     res.json(config || {});
+  });
+
+  // PUT saves the owner-overrides layer (column order, hidden fields, label
+  // and format overrides). The skill-derived layer is left untouched — it
+  // only changes when SKILL.md is written. Body shape:
+  //   { column_order?: string[], hidden?: string[], labels?: {}, formats?: {} }
+  router.put('/transaction-view', async (req, res) => {
+    try {
+      const { saveOwnerOverrides } = await import('../engine/tools/transaction-view.js');
+      const saved = saveOwnerOverrides(paths, req.body || {});
+      res.json(saved || {});
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ─── Extensions ──────────────────────────────────
@@ -1415,7 +1477,10 @@ export function apiRouter(workspace) {
 
   // ─── Deploy ───────────────────────────────────
 
-  const activeConnectors = {};
+  // Shared registry entry — same object reference used by the hub so its
+  // workspace cards reflect in-process connector status. All existing
+  // read/write/delete patterns below continue to work unchanged.
+  const activeConnectors = getConnectorMap(workspace);
 
   router.get('/deploy/status', (req, res) => {
     const connections = listConnections(workspace);
@@ -1672,28 +1737,31 @@ function loadAllTransactions(paths, includeArchived) {
 
   for (const f of listFiles(paths.activeTransactions, '.json')) {
     const data = readJson(path.join(paths.activeTransactions, f));
-    if (data) txns.push({ ...data, _file: f, _location: 'active' });
-  }
-
-  if (includeArchived) {
-    for (const f of listFiles(paths.archivedTransactions, '.json')) {
-      const data = readJson(path.join(paths.archivedTransactions, f));
-      if (data) txns.push({ ...data, _file: f, _location: 'archive' });
-    }
+    if (!data) continue;
+    if (!includeArchived && data.archived === true) continue;
+    txns.push({ ...data, _file: f });
   }
 
   return txns.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 }
 
 function findTransaction(paths, id) {
-  for (const dir of [paths.activeTransactions, paths.archivedTransactions]) {
-    for (const f of listFiles(dir, '.json')) {
-      const data = readJson(path.join(dir, f));
-      if (!data) continue;
-      if (data.id === id || f === id || f === `${id}.json`) {
-        return data;
-      }
+  for (const f of listFiles(paths.activeTransactions, '.json')) {
+    const data = readJson(path.join(paths.activeTransactions, f));
+    if (!data) continue;
+    if (data.id === id || f === id || f === `${id}.json`) {
+      return { ...data, _file: f };
     }
+  }
+  return null;
+}
+
+function findTransactionFile(paths, id) {
+  for (const f of listFiles(paths.activeTransactions, '.json')) {
+    const fp = path.join(paths.activeTransactions, f);
+    const data = readJson(fp);
+    if (!data) continue;
+    if (data.id === id || f === id || f === `${id}.json`) return fp;
   }
   return null;
 }

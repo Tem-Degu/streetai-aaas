@@ -6,6 +6,7 @@ import multer from 'multer';
 import { readJson, readText, writeJson, listFiles } from '../utils/workspace.js';
 import { getProviderCredential, setProviderCredential, removeProviderCredential, listProviders, maskApiKey } from '../auth/credentials.js';
 import { getValidWorkspaces, registerWorkspace, unregisterWorkspace } from '../utils/registry.js';
+import { getConnectorStatus, hasRunningConnector } from './connector-registry.js';
 
 export function hubRouter(hubDir) {
   const router = express.Router();
@@ -33,24 +34,27 @@ export function hubRouter(hubDir) {
       const nameMatch = skill.match(/^#\s+(.+)/m);
       const agentName = nameMatch ? nameMatch[1].replace(/\s*—.*/, '').trim() : entry.name;
 
-      // Check connections
+      // Check connections (and attach in-process status for each platform)
       const connectionsDir = path.join(wsPath, '.aaas', 'connections');
       const connections = [];
       if (fs.existsSync(connectionsDir)) {
         for (const f of fs.readdirSync(connectionsDir)) {
           if (f.endsWith('.json')) {
             const conn = readJson(path.join(connectionsDir, f));
+            const platform = f.replace('.json', '');
             connections.push({
-              platform: f.replace('.json', ''),
+              platform,
               ...(conn || {}),
+              // In-process status wins over any stale field in the on-disk JSON.
+              status: getConnectorStatus(wsPath, platform),
             });
           }
         }
       }
 
-      // Check if running (PID file)
+      // Check if running: daemon PID file OR any in-process connector
       const pidFile = path.join(wsPath, '.aaas', 'agent.pid');
-      const isRunning = fs.existsSync(pidFile);
+      const isRunning = fs.existsSync(pidFile) || hasRunningConnector(wsPath);
 
       // Data files count
       const dataDir = path.join(wsPath, 'data');
@@ -62,8 +66,19 @@ export function hubRouter(hubDir) {
       const factCount = Array.isArray(facts) ? facts.length : 0;
 
       // Active transactions
+      // Count transactions that are neither completed nor archived (i.e.
+      // genuinely in-flight). Completed and archived items stay in the same
+      // folder but shouldn't inflate the "active jobs" hub counter.
       const activeTxDir = path.join(wsPath, 'transactions', 'active');
-      const activeTx = fs.existsSync(activeTxDir) ? listFiles(activeTxDir, '.json').length : 0;
+      let activeTx = 0;
+      if (fs.existsSync(activeTxDir)) {
+        for (const f of listFiles(activeTxDir, '.json')) {
+          const data = readJson(path.join(activeTxDir, f));
+          if (!data) continue;
+          if (data.status === 'completed' || data.archived === true) continue;
+          activeTx++;
+        }
+      }
 
       // Last modified
       let lastActive = null;
@@ -131,20 +146,37 @@ export function hubRouter(hubDir) {
         for (const f of fs.readdirSync(connectionsDir)) {
           if (f.endsWith('.json')) {
             const conn = readJson(path.join(connectionsDir, f));
-            connections.push({ platform: f.replace('.json', ''), ...(conn || {}) });
+            const platform = f.replace('.json', '');
+            connections.push({
+              platform,
+              ...(conn || {}),
+              // In-process status wins over any stale field in the on-disk JSON.
+              status: getConnectorStatus(wsPath, platform),
+            });
           }
         }
       }
 
       const pidFile = path.join(wsPath, '.aaas', 'agent.pid');
-      const isRunning = fs.existsSync(pidFile);
+      const isRunning = fs.existsSync(pidFile) || hasRunningConnector(wsPath);
       const dataDir = path.join(wsPath, 'data');
       const dataFiles = fs.existsSync(dataDir) ? listFiles(dataDir).length : 0;
       const factsPath = path.join(wsPath, 'memory', 'facts.json');
       const facts = readJson(factsPath);
       const factCount = Array.isArray(facts) ? facts.length : 0;
+      // Count transactions that are neither completed nor archived (i.e.
+      // genuinely in-flight). Completed and archived items stay in the same
+      // folder but shouldn't inflate the "active jobs" hub counter.
       const activeTxDir = path.join(wsPath, 'transactions', 'active');
-      const activeTx = fs.existsSync(activeTxDir) ? listFiles(activeTxDir, '.json').length : 0;
+      let activeTx = 0;
+      if (fs.existsSync(activeTxDir)) {
+        for (const f of listFiles(activeTxDir, '.json')) {
+          const data = readJson(path.join(activeTxDir, f));
+          if (!data) continue;
+          if (data.status === 'completed' || data.archived === true) continue;
+          activeTx++;
+        }
+      }
 
       let lastActive = null;
       try {

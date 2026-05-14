@@ -330,6 +330,25 @@ Visitors chat through `streetai.org`, which forwards messages over WebSocket to 
 | `aaas stop` | Stop a running agent |
 | `aaas logs [--days 5]` | View recent agent activity and memory changes |
 
+### Moving and Sharing Agents
+
+Bundle a workspace into a single `.tar.gz` so you can move it to another machine, back it up, or share an agent template with someone else.
+
+| Command | Description |
+|---------|-------------|
+| `aaas export` | Bundle the current workspace (includes credentials and connection tokens) |
+| `aaas export <name>` | Bundle a workspace by name without `cd`-ing into it |
+| `aaas export --no-secrets` | Sanitized bundle: strips LLM keys, connection tokens, payment ledger, sessions, and literal extension API keys. Safe to share |
+| `aaas export -o <path>` | Override the output path |
+| `aaas import <archive.tgz> [target-dir]` | Restore a workspace into `target-dir` (default: workspace name from the manifest) |
+| `aaas import <archive.tgz> --force` | Allow overwriting an existing non-empty target folder |
+
+The default filename is `aaas-<workspace>-<yyyymmdd>.tar.gz`, written to the current directory. A sanitized export gets a `-shareable` suffix.
+
+When importing a sanitized bundle, the CLI prompts inline for any missing LLM API keys and points to the dashboard for connection and SMTP secrets (Deploy and Notifications tabs). Memory, transactions, activity log, data files, and the agent's skill and soul are preserved in both modes. Stripe payment records and live sessions are only in the full export and are dropped from sanitized bundles by design.
+
+Imported workspaces are automatically registered, so `aaas dashboard <name>` and `aaas export <name>` work from anywhere afterwards.
+
 ### Hub (Multi-Agent Management)
 
 | Command | Description |

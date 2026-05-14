@@ -11,6 +11,7 @@ flux_point/
 image_geenrator/
 kings_melody/
 .claude/
+calicut_paragon_restaurant_llc/
 
 # Credentials and secrets
 .aaas/credentials.json

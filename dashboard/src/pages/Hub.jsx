@@ -274,7 +274,20 @@ export default function Hub() {
                 {ws.connections.length > 0 && (
                   <div className="deploy-detail">
                     <span>Platforms</span>
-                    <span>{ws.connections.map(c => c.platform).join(', ')}</span>
+                    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
+                      {ws.connections.map(c => {
+                        const running = c.status === 'connected';
+                        return (
+                          <span
+                            key={c.platform}
+                            className={`badge ${running ? 'badge-green' : 'badge-gray'}`}
+                            title={running ? `${c.platform} is running` : `${c.platform} is stopped`}
+                          >
+                            {c.platform}
+                          </span>
+                        );
+                      })}
+                    </span>
                   </div>
                 )}
                 <div className="deploy-detail">

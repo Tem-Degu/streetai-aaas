@@ -26,6 +26,8 @@ import {
   hubConfigCommand, hubCredsCommand,
   hubRunCommand, hubStopCommand, hubRemoveCommand,
 } from './commands/hub.js';
+import { exportCommand } from './commands/export.js';
+import { importCommand } from './commands/import.js';
 
 const program = new Command();
 
@@ -370,5 +372,19 @@ program
   .description('Open the web dashboard (optionally for a specific agent)')
   .option('-p, --port <port>', 'Port number', '3400')
   .action(dashboardCommand);
+
+program
+  .command('export [agent-name]')
+  .description('Bundle a workspace into a single .tar.gz for moving or sharing')
+  .option('--no-secrets', 'Strip credentials, tokens, and ledgers — safe for sharing')
+  .option('-o, --output <path>', 'Output file path (default: aaas-<workspace>-<date>.tar.gz)')
+  .action(exportCommand);
+
+program
+  .command('import <archive>')
+  .description('Restore a workspace from a .tar.gz produced by `aaas export`')
+  .argument('[target-dir]', 'Folder to restore into (default: workspace name from the bundle)')
+  .option('--force', 'Allow overwriting an existing non-empty target folder')
+  .action(importCommand);
 
 program.parse();

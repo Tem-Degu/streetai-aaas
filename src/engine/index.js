@@ -315,9 +315,11 @@ export class AgentEngine {
           this.agentName = nameMatch ? nameMatch[1].trim() : path.basename(this.workspace);
         } else if (tc.name === 'write_soul') {
           this.soul = readText(this.paths.soul) || '';
-        } else if (tc.name === 'create_transaction') {
-          this._maybeGenerateTransactionView(tc.arguments);
         }
+        // Note: the transaction view config is no longer auto-generated from
+        // the first transaction. It's derived from SKILL.md's `## Transaction
+        // Fields` block (see tools/transaction-view.js), reconciled on every
+        // write_skill, and refinable by the owner via the dashboard editor.
 
         currentMessages.push({
           role: 'tool',
