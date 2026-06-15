@@ -7,6 +7,7 @@ import { spawn } from 'child_process';
 import chalk from 'chalk';
 import { apiRouter } from './api.js';
 import { autoStartConnectors, daemonRunning } from './connector-control.js';
+import { disconnectAllConnectors } from './connector-registry.js';
 import { hubRouter } from './hub.js';
 import { getValidWorkspaces } from '../utils/registry.js';
 import { syncDueDataSources } from '../datasync/index.js';
@@ -51,7 +52,10 @@ function openBrowserDetached(url) {
   }
 }
 
-export async function startServer(workspace, port, hubDir, openPath = '/') {
+export async function startServer(workspace, port, hubDir, openPath = '/', opts = {}) {
+  // Service mode: headless — run quietly under a supervisor, never auto-open a
+  // browser. Everything else (autoStartAll, retry, dashboard.pid) is identical.
+  const serviceMode = !!opts.service;
   // Capture hard process crashes in the curated error log (preserves crash
   // semantics: uncaughtException still exits so a supervisor can restart).
   installGlobalErrorHandlers();
@@ -242,12 +246,28 @@ export async function startServer(workspace, port, hubDir, openPath = '/') {
       fs.writeFileSync(pidFile, JSON.stringify({ pid: process.pid, port, startedAt: new Date().toISOString() }));
       const cleanupPid = () => { try { fs.unlinkSync(pidFile); } catch { /* ignore */ } };
       process.on('exit', cleanupPid);
-      process.on('SIGINT', () => { cleanupPid(); process.exit(0); });
-      process.on('SIGTERM', () => { cleanupPid(); process.exit(0); });
+      // Graceful shutdown for Ctrl+C / service stop: disconnect connectors so
+      // WebSockets close cleanly, then remove the pid file and exit. Capped so a
+      // hung disconnect can't block the service from stopping.
+      let shuttingDown = false;
+      const gracefulExit = async () => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        try {
+          await Promise.race([
+            disconnectAllConnectors(),
+            new Promise((r) => setTimeout(r, 5000)),
+          ]);
+        } catch { /* ignore */ }
+        cleanupPid();
+        process.exit(0);
+      };
+      process.on('SIGINT', gracefulExit);
+      process.on('SIGTERM', gracefulExit);
     } catch { /* pid file is best-effort */ }
 
     console.log(chalk.green(`  Dashboard running at ${chalk.bold(url)}\n`));
-    openBrowserDetached(openUrl);
+    if (!serviceMode) openBrowserDetached(openUrl);
     autoStartAll();
     syncAllDataSources();                              // catch-up at boot
     setInterval(syncAllDataSources, DATA_SYNC_TICK_MS); // then every 15 min

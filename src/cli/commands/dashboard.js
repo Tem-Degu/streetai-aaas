@@ -7,6 +7,7 @@ import { ensureDashboardShortcut } from '../shortcut.js';
 
 export async function dashboardCommand(agentName, opts) {
   const port = parseInt(opts.port) || 3400;
+  const service = !!opts.service;
   let hubDir;
   let openPath = '/';
 
@@ -34,16 +35,18 @@ export async function dashboardCommand(agentName, opts) {
     openPath = ws ? `/ws/${path.basename(ws)}` : '/';
   }
 
-  console.log(chalk.cyan(`\n  Starting AaaS Hub Dashboard...`));
+  console.log(chalk.cyan(`\n  Starting AaaS Hub Dashboard${service ? ' (service mode)' : ''}...`));
   console.log(chalk.gray(`  Hub: ${hubDir}`));
 
-  // Best-effort: drop a desktop shortcut on first run. Idempotent — won't
-  // touch an existing shortcut, won't fail the command if anything goes wrong.
-  const shortcut = ensureDashboardShortcut();
-  if (shortcut.created) {
-    console.log(chalk.gray(`  Added desktop shortcut: ${shortcut.path}`));
+  // Best-effort: drop a desktop shortcut on first run. Skipped in service mode
+  // (a supervised background service shouldn't create desktop shortcuts).
+  if (!service) {
+    const shortcut = ensureDashboardShortcut();
+    if (shortcut.created) {
+      console.log(chalk.gray(`  Added desktop shortcut: ${shortcut.path}`));
+    }
   }
   console.log('');
 
-  await startServer(null, port, hubDir, openPath);
+  await startServer(null, port, hubDir, openPath, { service });
 }

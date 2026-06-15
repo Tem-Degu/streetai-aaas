@@ -1,0 +1,42 @@
+# Keep the build context small + never ship dev/workspace/secret material into
+# the base image. (The Dockerfile only COPYs explicit paths, so this is mainly
+# about upload speed — but it also keeps client workspaces out of the base.)
+
+.git
+.gitignore
+node_modules
+dashboard/node_modules
+dashboard/src
+dashboard/package.json
+dashboard/package-lock.json
+dashboard/vite.config.js
+
+# Docs / dev / temp
+*.md
+*.log
+*.txt
+.claude
+.vscode
+.idea
+Output/
+docs/
+examples/
+
+# Client + dev workspaces (baked per-client via an overlay image, never the base)
+Lyon/
+matchmaking/
+dubai_matchmaker/
+gulf_star_ladies_salon/
+streetai/
+his-mock/
+lifer_hospital/
+lifer2_hospital/
+local-aaas/
+kpub/
+
+# Credentials / runtime state (never in an image)
+**/.aaas/credentials.json
+**/.aaas/connections/
+**/.aaas/sessions/
+**/.aaas/agent.pid
+**/.aaas/agent.log

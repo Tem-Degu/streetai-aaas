@@ -10,12 +10,11 @@ import { readErrorLogTail } from '../utils/errlog.js';
 import { validateStatusTransition, TXN_STATUSES } from '../engine/tools/transactions.js';
 import { getProviderCredential, setProviderCredential, removeProviderCredential, listProviders, maskApiKey } from '../auth/credentials.js';
 import { listConnections, loadConnection, saveConnection, removeConnection } from '../auth/connections.js';
-import { AgentEngine } from '../engine/index.js';
 import { extractFiles } from '../connectors/media.js';
 import { buildPlatformSkill, parseTruuzeSkill } from '../connectors/truuze-skill.js';
 import { sendDirectToCustomer } from '../connectors/index.js';
 import { getConnectorMap } from './connector-registry.js';
-import { startConnector } from './connector-control.js';
+import { startConnector, createWorkspaceEngine } from './connector-control.js';
 
 
 const __api_dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1003,17 +1002,12 @@ export function apiRouter(workspace) {
 
   let engine = null;
 
+  // Delegate to the shared per-workspace engine factory so the API router and
+  // the boot auto-start path use the SAME engine instance (one scheduler per
+  // workspace — no double-fire). The factory starts the delayed-event scheduler.
   async function getEngine() {
     if (engine?.initialized) return engine;
-
-    const config = readJson(path.join(workspace, '.aaas', 'config.json'));
-    if (!config?.provider) {
-      throw new Error('No LLM configured. Go to Settings to configure a provider.');
-    }
-
-    const eng = new AgentEngine({ workspace, provider: config.provider, config });
-    await eng.initialize();
-    engine = eng;
+    engine = await createWorkspaceEngine(workspace);
     return engine;
   }
 

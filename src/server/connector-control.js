@@ -15,14 +15,33 @@ import { AgentEngine } from '../engine/index.js';
  * visible to the workspace's API router and the hub badge with no extra wiring.
  */
 
-/** Create + initialize an engine for a workspace. Throws if no provider set. */
+// One engine per workspace for the whole server process. Both the boot
+// auto-start path and the API router share it, so there is exactly ONE engine
+// (and ONE scheduler) per workspace — no double-fire of scheduled actions.
+const _engineCache = new Map(); // resolved workspace path -> AgentEngine
+
+/**
+ * Get (or create) the shared, initialized engine for a workspace.
+ * Throws if no provider set. Starts the delayed-event scheduler once — the
+ * dashboard server is now the runtime that fires scheduled actions (previously
+ * only the daemon did). Skipped if a legacy daemon still owns the workspace so
+ * the two can't double-fire.
+ */
 export async function createWorkspaceEngine(workspace) {
+  const key = path.resolve(workspace);
+  const cached = _engineCache.get(key);
+  if (cached?.initialized) return cached;
+
   const config = readJson(path.join(workspace, '.aaas', 'config.json'));
   if (!config?.provider) {
     throw new Error('No LLM configured. Set a provider in Settings.');
   }
   const eng = new AgentEngine({ workspace, provider: config.provider, config });
   await eng.initialize();
+  if (!daemonRunning(workspace)) {
+    try { eng.startScheduler(); } catch { /* non-fatal */ }
+  }
+  _engineCache.set(key, eng);
   return eng;
 }
 

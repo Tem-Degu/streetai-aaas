@@ -3,6 +3,7 @@ import path from 'path';
 import WebSocket from 'ws';
 import { BaseConnector } from './index.js';
 import { buildPlatformSkill } from './truuze-skill.js';
+import { logError } from '../utils/errlog.js';
 
 /**
  * Truuze connector — connects to Truuze via WebSocket for real-time events,
@@ -229,24 +230,23 @@ export default class TruuzeConnector extends BaseConnector {
   }
 
   _handleReconnect() {
-    const MAX_RECONNECT_ATTEMPTS = 5;
-
     if (this.status === 'disconnected' || this.reconnecting) return;
 
-    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      this.status = 'error';
-      this.error = `WebSocket connection lost. Failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts.`;
-      console.log(`[truuze] Giving up after ${MAX_RECONNECT_ATTEMPTS} reconnect attempts`);
-      return;
-    }
-
+    // Retry indefinitely with capped backoff so a long network/relay outage
+    // self-heals instead of permanently dropping the connection (a hard crash
+    // is the service supervisor's job, not ours). Cap the delay at 60s.
     this.reconnecting = true;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30_000);
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60_000);
     this.reconnectAttempts++;
     this.status = 'reconnecting';
-    this.error = `Connection lost. Reconnecting (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`;
+    this.error = `Connection lost. Reconnecting (attempt ${this.reconnectAttempts})...`;
 
-    console.log(`[truuze] Reconnecting in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+    // Surface prolonged outages in the curated log without spamming it.
+    if (this.reconnectAttempts === 10 || this.reconnectAttempts % 50 === 0) {
+      logError(this.engine?.workspace, 'connector:truuze', `Still reconnecting after ${this.reconnectAttempts} attempts`);
+    }
+
+    console.log(`[truuze] Reconnecting in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempts})`);
 
     setTimeout(async () => {
       this.reconnecting = false;

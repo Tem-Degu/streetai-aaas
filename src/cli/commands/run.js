@@ -1,32 +1,27 @@
 import fs from 'fs';
 import path from 'path';
-import readline from 'readline';
-import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import { requireWorkspace, readJson } from '../../utils/workspace.js';
 import { getProviderCredential } from '../../auth/credentials.js';
-import { AgentEngine } from '../../engine/index.js';
-import { loadAllConnectors } from '../../connectors/index.js';
+import { listConnections } from '../../auth/connections.js';
+import { ensureServer, apiCall } from '../server-client.js';
+import { errorLogPath } from '../../utils/errlog.js';
 
-function prompt(question) {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
-}
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
+/**
+ * Start connectors through the dashboard runtime — the same place the dashboard
+ * "Start" button runs them, so the CLI and the dashboard share one runtime and
+ * one state. (Replaces the old separate daemon: `aaas run` no longer spawns its
+ * own process; it ensures the dashboard server is up and asks it to start.)
+ *
+ *   aaas run                    → start all configured connectors
+ *   aaas run truuze whatsapp    → start just those
+ *   aaas run truuze --autostart → also enable auto-start for truuze (= the checkbox)
+ *   aaas run truuze --attach    → start, then tail the agent error log (Ctrl+C detaches)
+ */
 export async function runCommand(platforms, opts) {
-  // Backwards compatibility: if called with only opts (old single-arg signature), shift args
+  // Back-compat with the old single-arg signature: run(opts)
   if (platforms && !Array.isArray(platforms) && typeof platforms === 'object') {
     opts = platforms;
     platforms = [];
@@ -35,160 +30,120 @@ export async function runCommand(platforms, opts) {
   opts = opts || {};
 
   const ws = requireWorkspace();
+  const name = path.basename(ws);
 
-  // 1. Load config
-  const configPath = path.join(ws, '.aaas', 'config.json');
-  const config = readJson(configPath);
-
+  // 1. Config + credentials (clear errors before we touch the server)
+  const config = readJson(path.join(ws, '.aaas', 'config.json'));
   if (!config?.provider) {
     console.error(chalk.red('\n  No LLM configured. Run: aaas config\n'));
     return;
   }
-
-  // 2. Verify credentials
   const credential = getProviderCredential(config.provider);
   if (!credential && config.provider !== 'ollama') {
     console.error(chalk.red(`\n  No API key for ${config.provider}. Run: aaas config\n`));
     return;
   }
 
-  // 3. Check PID file — prevent duplicate instances
-  const pidFile = path.join(ws, '.aaas', 'agent.pid');
-  if (fs.existsSync(pidFile)) {
-    const existingPid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim());
-    let alive = false;
-    try {
-      process.kill(existingPid, 0); // Check if process exists
-      alive = true;
-    } catch {
-      // Process doesn't exist — clean up stale PID file
-      fs.unlinkSync(pidFile);
-    }
-
-    if (alive) {
-      // If a platform filter is set, offer to replace the running agent.
-      if (platforms.length > 0) {
-        const answer = await prompt(
-          chalk.yellow(`\n  An agent is already running (PID ${existingPid}).\n`) +
-          chalk.yellow(`  Stop it and start a new agent with: ${platforms.join(', ')}? (y/N) `)
-        );
-        if (answer.trim().toLowerCase() !== 'y') {
-          console.log(chalk.gray('\n  Keeping existing agent. Nothing changed.\n'));
-          return;
-        }
-
-        console.log(chalk.gray(`\n  Stopping PID ${existingPid}...`));
-        try { process.kill(existingPid, 'SIGTERM'); } catch { /* already gone */ }
-        // Wait briefly for the agent to shut down and release its connectors
-        await sleep(1500);
-        try { fs.unlinkSync(pidFile); } catch { /* already gone */ }
-      } else {
-        console.error(chalk.red(`\n  Agent already running (PID ${existingPid}). Run: aaas stop\n`));
-        return;
-      }
-    }
+  // 2. Resolve target platforms
+  let connections;
+  try { connections = listConnections(ws); } catch { connections = []; }
+  if (connections.length === 0) {
+    console.log(chalk.yellow('\n  No connections configured. Run: aaas connect <platform>'));
+    console.log(chalk.gray('  Available: truuze, http, whatsapp, telegram, discord, slack, relay, openclaw\n'));
+    return;
+  }
+  const configured = connections.map((c) => c.platform);
+  let targets = platforms.length ? platforms : configured;
+  const unknown = targets.filter((p) => !configured.includes(p));
+  if (unknown.length) {
+    console.log(chalk.yellow(`\n  No connection configured for: ${unknown.join(', ')}`));
+    targets = targets.filter((p) => configured.includes(p));
+  }
+  if (targets.length === 0) {
+    console.log(chalk.gray('  Nothing to start.\n'));
+    return;
   }
 
-  // 4. Daemon mode — spawn detached worker process, fall back to foreground if it fails
-  if (opts.daemon) {
-    try {
-      const workerPath = path.join(__dirname, '..', 'agent-worker.js');
-      const logPath = path.join(ws, '.aaas', 'agent.log');
-
-      fs.mkdirSync(path.dirname(logPath), { recursive: true });
-
-      const out = fs.openSync(logPath, 'a');
-      const err = fs.openSync(logPath, 'a');
-
-      const child = spawn(process.execPath, [workerPath, ws, ...platforms], {
-        detached: true,
-        stdio: ['ignore', out, err],
-        cwd: ws,
-      });
-
-      child.unref();
-
-      console.log(chalk.green(`\n  Agent started in background (PID ${child.pid})`));
-      if (platforms.length > 0) console.log(chalk.gray(`  Platforms: ${platforms.join(', ')}`));
-      console.log(chalk.gray(`  Log: ${logPath}`));
-      console.log(chalk.gray('  Run "aaas stop" to stop the agent.\n'));
-      return;
-    } catch (e) {
-      console.log(chalk.yellow(`\n  Background mode unavailable. Running in this terminal session instead.`));
-      console.log(chalk.yellow(`  The agent will stop when you close this window.`));
-    }
-  }
-
-  // 5. Foreground mode — run directly in this process
-  console.log(chalk.gray('\n  Starting agent...'));
-
-  let engine;
+  // 3. Ensure the dashboard runtime is up (starts it headless if needed)
+  console.log(chalk.gray('\n  Connecting to the agent runtime...'));
+  let port;
   try {
-    engine = new AgentEngine({ workspace: ws, provider: config.provider, config });
-    await engine.initialize();
-    console.log(chalk.green(`  Engine ready (${config.provider}/${config.model})`));
-  } catch (err) {
-    console.error(chalk.red(`\n  Failed to start engine: ${err.message}\n`));
+    port = await ensureServer({ name });
+  } catch (e) {
+    console.error(chalk.red(`\n  ${e.message}\n`));
     return;
   }
 
-  // 6. Load and start connectors
-  const connectors = await loadAllConnectors(ws, engine, { platforms });
-
-  if (connectors.length === 0) {
-    if (platforms.length > 0) {
-      console.log(chalk.yellow(`\n  No connection configured for: ${platforms.join(', ')}`));
-      console.log(chalk.gray('  Run: aaas connect <platform>\n'));
-    } else {
-      console.log(chalk.yellow('\n  No connections configured. Run: aaas connect <platform>'));
-      console.log(chalk.gray('  Available: truuze, http, openclaw\n'));
+  // 4. Optionally enable auto-start (same as ticking the dashboard checkbox)
+  if (opts.autostart) {
+    for (const p of targets) {
+      try { await apiCall(name, `/deploy/${p}/autostart`, { body: { enabled: true } }); }
+      catch { /* non-fatal */ }
     }
-    return;
   }
 
-  for (const connector of connectors) {
+  // 5. Start each connector via the runtime
+  let started = 0;
+  for (const p of targets) {
     try {
-      await connector.connect();
-      const status = connector.getStatus();
-      let info = status.platform;
-      if (status.url) info += ` (${status.url})`;
-      console.log(chalk.green(`  Connected: ${info}`));
-    } catch (err) {
-      console.error(chalk.red(`  Failed: ${connector.platformName} — ${err.message}`));
+      const r = await apiCall(name, `/deploy/${p}/start`, { body: {} });
+      const tag = r?.alreadyRunning ? 'already running' : (r?.status || 'started');
+      console.log(chalk.green(`  ${p}: ${tag}`));
+      started++;
+    } catch (e) {
+      console.error(chalk.red(`  ${p}: ${e.message}`));
     }
   }
 
-  const connected = connectors.filter(c => c.status === 'connected');
-  if (connected.length === 0) {
-    console.error(chalk.red('\n  No connectors started successfully. Exiting.\n'));
+  if (started === 0) {
+    console.error(chalk.red('\n  No connectors started.\n'));
     return;
   }
 
-  // 7. Write PID file
-  fs.mkdirSync(path.dirname(pidFile), { recursive: true });
-  fs.writeFileSync(pidFile, String(process.pid));
+  console.log(chalk.blue(`\n  Running in the agent runtime on port ${port}.`));
+  console.log(chalk.gray('  This survives closing the terminal. Use "aaas stop" or the dashboard to stop it.'));
+  if (opts.daemon) {
+    console.log(chalk.gray('  (--daemon is no longer needed — connectors already run in the background runtime.)'));
+  }
 
-  // 8. Status summary
-  console.log(chalk.blue(`\n  ${engine.agentName} running with ${connected.length} connection(s)`));
-  console.log(chalk.gray('  Press Ctrl+C to stop.\n'));
+  // 6. Optional: tail the curated error log until Ctrl+C (detaches only)
+  if (opts.attach) {
+    await attachLog(ws);
+  } else {
+    console.log('');
+  }
+}
 
-  // 9. Graceful shutdown
-  const shutdown = async () => {
-    console.log(chalk.gray('\n  Shutting down...'));
-    for (const connector of connectors) {
-      try {
-        await connector.disconnect();
-      } catch { /* ignore */ }
-    }
-    // Clean up PID file
-    try { fs.unlinkSync(pidFile); } catch { /* ignore */ }
-    console.log(chalk.gray('  Stopped.\n'));
+/** Tail the workspace error log; Ctrl+C detaches the view (connector keeps running). */
+async function attachLog(ws) {
+  const file = errorLogPath(ws);
+  console.log(chalk.gray(`\n  Attached to ${file}`));
+  console.log(chalk.gray('  Press Ctrl+C to detach (the connector keeps running).\n'));
+
+  let pos = 0;
+  try { pos = fs.statSync(file).size; } catch { /* not created yet */ }
+
+  let stop = false;
+  process.on('SIGINT', () => {
+    stop = true;
+    console.log(chalk.gray('\n  Detached. The connector is still running.\n'));
     process.exit(0);
-  };
+  });
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-
-  // Keep process alive
-  setInterval(() => {}, 1 << 30);
+  while (!stop) {
+    try {
+      const size = fs.statSync(file).size;
+      if (size > pos) {
+        const fd = fs.openSync(file, 'r');
+        const buf = Buffer.alloc(size - pos);
+        fs.readSync(fd, buf, 0, buf.length, pos);
+        fs.closeSync(fd);
+        pos = size;
+        process.stdout.write(buf.toString('utf-8'));
+      } else if (size < pos) {
+        pos = size; // rotated
+      }
+    } catch { /* file may not exist yet */ }
+    await sleep(1000);
+  }
 }

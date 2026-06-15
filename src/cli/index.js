@@ -353,14 +353,16 @@ program
 
 program
   .command('run [platforms...]')
-  .description('Start the agent with all connected platforms, or only the ones listed')
-  .option('--daemon', 'Run in background')
+  .description('Start connectors via the dashboard runtime (same as clicking Start). With no platforms, starts all configured connectors.')
+  .option('--autostart', 'Also enable auto-start for the given platforms (same as ticking the dashboard checkbox)')
+  .option('--attach', 'After starting, tail the agent log in this terminal (Ctrl+C detaches; the connector keeps running)')
+  .option('--daemon', 'Deprecated: kept for compatibility; connectors now run in the supervised dashboard runtime')
   .action((platforms, opts) => runCommand(platforms, opts));
 
 program
-  .command('stop')
-  .description('Stop a running agent')
-  .action(stopCommand);
+  .command('stop [platforms...]')
+  .description('Stop connectors via the dashboard runtime (same as clicking Stop). With no platforms, stops all running connectors.')
+  .action((platforms, opts) => stopCommand(platforms, opts));
 
 program
   .command('deploy')
@@ -378,6 +380,7 @@ program
   .command('dashboard [agent-name]')
   .description('Open the web dashboard (optionally for a specific agent)')
   .option('-p, --port <port>', 'Port number', '3400')
+  .option('--service', 'Headless mode for a supervised service: run quietly, do not open a browser')
   .action(dashboardCommand);
 
 program
@@ -410,6 +413,12 @@ program
   .option('--server <url>', 'StreetAI server (default https://streetai.org or $STREETAI_PUBLISH_URL)')
   .option('--key <key>', 'Admin key (or set $STREETAI_PUBLISH_KEY)')
   .option('--no-secrets', 'Strip credentials before uploading')
+  .option('--exe', 'Also build + sign a Windows installer .exe (online; bakes in the bundle URL)')
+  .option('--service', 'With --exe: register the always-on boot service (admin + Windows password at install)')
+  .option('--bundle-url <url>', 'With --exe: override the bundle URL baked into the installer')
+  .option('--install-dir <dir>', 'With --exe: path to streetai/install assets (default: repo)')
+  .option('--iscc <path>', 'With --exe: path to Inno Setup ISCC.exe (or set $AAAS_ISCC)')
+  .option('--sign-thumbprint <hex>', 'With --exe: code-signing cert thumbprint (or set $AAAS_SIGN_THUMBPRINT)')
   .action(publishCommand);
 
 program.parse();

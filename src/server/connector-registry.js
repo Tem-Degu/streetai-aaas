@@ -50,6 +50,21 @@ export function getConnectorStatus(workspacePath, platform) {
 }
 
 /**
+ * Disconnect every in-process connector across all workspaces. Used for a
+ * clean service/Ctrl+C shutdown so WebSockets close gracefully. Best-effort
+ * and never throws — a failed disconnect can't block process exit.
+ */
+export async function disconnectAllConnectors() {
+  for (const map of _connectorsByWorkspace.values()) {
+    for (const platform of Object.keys(map)) {
+      const c = map[platform];
+      try { await c?.disconnect?.(); } catch { /* ignore */ }
+      delete map[platform];
+    }
+  }
+}
+
+/**
  * True if the workspace has at least one connector currently `connected`.
  */
 export function hasRunningConnector(workspacePath) {

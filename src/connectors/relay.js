@@ -788,17 +788,19 @@ Bad (will NOT work):
 
   _handleReconnect() {
     if (this.status === 'disconnected' || this.reconnecting) return;
-    if (this.reconnectAttempts >= 10) {
-      this.status = 'error';
-      this.error = 'Relay connection lost after 10 attempts';
-      logError(this.engine?.workspace, 'connector:relay', 'Relay connection lost — gave up after 10 reconnect attempts');
-      return;
-    }
 
+    // Retry indefinitely with capped backoff (cap 60s) so a long network/relay
+    // outage self-heals instead of permanently dropping. A hard crash is the
+    // service supervisor's job; this handles the common transient case.
     this.reconnecting = true;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60_000);
     this.reconnectAttempts++;
     this.status = 'reconnecting';
+
+    // Surface prolonged outages without spamming the curated log.
+    if (this.reconnectAttempts === 10 || this.reconnectAttempts % 50 === 0) {
+      logError(this.engine?.workspace, 'connector:relay', `Still reconnecting after ${this.reconnectAttempts} attempts`);
+    }
 
     console.log(`[relay] Reconnecting in ${Math.round(delay / 1000)}s (attempt ${this.reconnectAttempts})`);
 

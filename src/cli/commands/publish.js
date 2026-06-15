@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { findWorkspace } from '../../utils/workspace.js';
 import { getValidWorkspaces } from '../../utils/registry.js';
 import { exportWorkspace, slugify } from '../../export/index.js';
+import { buildSignedExe } from '../exe-build.js';
 
 /**
  * aaas publish [agent-name] --business "<name>"
@@ -100,6 +101,64 @@ export async function publishCommand(agentName, options = {}) {
   if (!noSecrets) {
     console.log(chalk.yellow('\n  Note: this bundle includes credentials. Only send the link to this client.'));
   }
+
+  // 4. Optionally build + sign a per-client installer .exe (online; bakes in the
+  //    direct bundle download URL). The .bat link above always remains as the
+  //    fallback, so this never breaks the existing flow.
+  if (options.exe) {
+    console.log(chalk.gray('\n  Building the installer .exe (Inno Setup + signing) ...'));
+    let exe;
+    try {
+      exe = buildSignedExe({
+        slug,
+        business,
+        bundleUrl: options.bundleUrl || data.downloadUrl,
+        version: new Date().toISOString().slice(0, 10).replace(/-/g, '.'),
+        service: !!options.service,
+        installDir: options.installDir,
+        iscc: options.iscc,
+        signThumbprint: options.signThumbprint,
+      });
+    } catch (err) {
+      console.error(chalk.red(`  .exe build failed: ${err.message}`));
+      console.log(chalk.gray('  The setup link above still works (.bat fallback).\n'));
+      return;
+    }
+
+    // Try to host it for a download link; fall back to leaving the file locally.
+    let exeUrl = null;
+    try {
+      const resp = await fetch(`${server}/admin/exe`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/octet-stream',
+          'X-Slug': slug,
+          'X-Business': encodeURIComponent(business),
+        },
+        body: fs.readFileSync(exe.exePath),
+      });
+      if (resp.ok) { const j = await resp.json().catch(() => ({})); exeUrl = j.exeUrl || j.downloadUrl || null; }
+    } catch { /* server may not host .exe yet — fall back below */ }
+
+    if (exeUrl) {
+      console.log(chalk.green('\n  Installer .exe published.'));
+      console.log(chalk.bold('  Send this .exe link to the client:'));
+      console.log('    ' + chalk.cyan(exeUrl));
+    } else {
+      const dest = path.join(process.cwd(), path.basename(exe.exePath));
+      try { fs.copyFileSync(exe.exePath, dest); } catch { /* keep temp path */ }
+      console.log(chalk.green('\n  Installer .exe built.'));
+      console.log('    ' + chalk.cyan(fs.existsSync(dest) ? dest : exe.exePath));
+      console.log(chalk.gray('  (Server .exe hosting unavailable — send this file to the client.)'));
+    }
+    if (!exe.signed && exe.signNote) console.log(chalk.yellow('  ' + exe.signNote));
+    console.log(chalk.gray(`  Signed:  ${exe.signed ? 'yes' : 'NO'}`));
+    console.log(chalk.gray(`  SHA-256: ${exe.sha256}`));
+    console.log(chalk.gray(`  Mode:    ${options.service ? 'always-on boot service (admin + password at install)' : 'per-user (no admin)'}`));
+    try { fs.rmSync(path.dirname(exe.exePath), { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+
   console.log('');
 }
 

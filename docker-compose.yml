@@ -1,0 +1,24 @@
+# One-command run for the StreetAI agent.
+#   docker compose up -d        # start (build first time)
+#   docker compose logs -f      # watch logs
+#   docker compose down         # stop (data is kept on the volume)
+#
+# The dashboard is then at http://localhost:3400 — their system embeds that as a
+# tab (iframe / reverse-proxy). Data persists in the named volume "agent-data".
+
+services:
+  agent:
+    build: .                      # or: image: streetai/<client>:1.0  (a baked per-client image)
+    container_name: streetai-agent
+    restart: unless-stopped       # auto-restart on crash + on host reboot
+    ports:
+      - "3400:3400"               # host:container — change the host side if 3400 is taken
+    environment:
+      AGENT_NAME: "lifer2_hospital"   # the baked template, or the folder mounted below
+    volumes:
+      - agent-data:/data          # persistent state (workspace, registry, credentials, logs)
+      # To supply the workspace from the host instead of baking it into the image:
+      # - ./lifer2_hospital:/data/agents/lifer2_hospital
+
+volumes:
+  agent-data:
