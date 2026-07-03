@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, NavLink, useParams, useNavigate, useLocation } from 'react-router-dom';
 import { WorkspaceContext, useResolveUrl } from './hooks/useApi.js';
-import { withBase } from './base.js';
+import { withBase, AGENT_BASE } from './base.js';
 import { ThemeContext, useThemeState } from './hooks/useTheme.js';
 import { NavModeContext, useNavModeStore, useNavMode } from './hooks/useNavMode.js';
 import Overview from './pages/Overview.jsx';
@@ -342,6 +342,24 @@ function WorkspaceLayout({ navItems, wsName, prefix, navMode }) {
   );
 }
 
+// Hosted (in-account) entry: the container holds a single workspace, so open it
+// directly instead of showing the hub. Falls back to a message if none is found.
+function HostedEntry() {
+  const navigate = useNavigate();
+  const [msg, setMsg] = useState('Opening…');
+  useEffect(() => {
+    fetch(withBase('/api/hub/workspaces'))
+      .then(r => r.json())
+      .then(d => {
+        const list = d.workspaces || [];
+        if (list.length) navigate(`/ws/${list[0].directory}`, { replace: true });
+        else setMsg('No workspace found for this assistant.');
+      })
+      .catch(() => setMsg('Could not open the assistant. Please refresh.'));
+  }, [navigate]);
+  return <div className="page-loading">{msg}</div>;
+}
+
 function HubLayout() {
   const navigate = useNavigate();
   const [hasAgents, setHasAgents] = useState(null);
@@ -441,7 +459,9 @@ export default function App() {
   const content = mode === 'hub' ? (
     <Routes>
       <Route path="/ws/:wsName/*" element={<WorkspaceView />} />
-      <Route path="/*" element={<HubLayout />} />
+      {/* Hosted (in-account) dashboards open straight into their workspace,
+          skipping the hub. Self-hosted/local keeps the hub as the landing. */}
+      <Route path="/*" element={AGENT_BASE ? <HostedEntry /> : <HubLayout />} />
     </Routes>
   ) : (
     <StandaloneLayout />
