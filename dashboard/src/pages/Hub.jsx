@@ -185,7 +185,7 @@ export default function Hub() {
                       onSelect={() => setSelectedTemplate(t.type)}
                       name={t.name}
                       description={t.description}
-                      imageSrc={t.hasImage ? withBase(`/api/hub/templates/${t.type}/preview`) : null}
+                      imageSrc={t.hasImage ? `/api/hub/templates/${t.type}/preview` : null}
                     />
                   ))}
                 </div>
@@ -247,7 +247,7 @@ export default function Hub() {
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {ws.photo ? (
                   <span className="deploy-platform-icon" style={{ padding: 0, overflow: 'hidden' }}>
-                    <img src={withBase(ws.photo)} alt={ws.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }} />
+                    <img src={ws.photo} alt={ws.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }} />
                   </span>
                 ) : (
                   <span className="deploy-platform-icon" style={{

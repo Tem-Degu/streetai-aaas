@@ -186,7 +186,7 @@ function Sidebar({ navItems, mode, onLogoClick, workspaceName, health }) {
         )}
       </div>
 
-      {mode === 'hub' && workspaceName && (
+      {mode === 'hub' && workspaceName && !AGENT_BASE && (
         <div style={{ padding: '0 16px 8px' }}>
           <NavLink to="/" style={{ fontSize: 12, color: 'var(--text-muted)', textDecoration: 'none' }}>
             &larr; All Agents
@@ -318,7 +318,7 @@ function WorkspaceLayout({ navItems, wsName, prefix, navMode }) {
         navItems={decoratedNav}
         mode="hub"
         workspaceName={wsName}
-        onLogoClick={() => navigate('/')}
+        onLogoClick={() => { if (AGENT_BASE) window.location.reload(); else navigate('/'); }}
         health={health}
       />
       <main className="main">
@@ -342,24 +342,6 @@ function WorkspaceLayout({ navItems, wsName, prefix, navMode }) {
   );
 }
 
-// Hosted (in-account) entry: the container holds a single workspace, so open it
-// directly instead of showing the hub. Falls back to a message if none is found.
-function HostedEntry() {
-  const navigate = useNavigate();
-  const [msg, setMsg] = useState('Opening…');
-  useEffect(() => {
-    fetch(withBase('/api/hub/workspaces'))
-      .then(r => r.json())
-      .then(d => {
-        const list = d.workspaces || [];
-        if (list.length) navigate(`/ws/${list[0].directory}`, { replace: true });
-        else setMsg('No workspace found for this assistant.');
-      })
-      .catch(() => setMsg('Could not open the assistant. Please refresh.'));
-  }, [navigate]);
-  return <div className="page-loading">{msg}</div>;
-}
-
 function HubLayout() {
   const navigate = useNavigate();
   const [hasAgents, setHasAgents] = useState(null);
@@ -367,9 +349,18 @@ function HubLayout() {
   useEffect(() => {
     fetch(withBase('/api/hub/workspaces'))
       .then(r => r.json())
-      .then(d => setHasAgents((d.workspaces || []).length > 0))
+      .then(d => {
+        const list = d.workspaces || [];
+        // Hosted mode: this dashboard is one customer's single agent — skip the
+        // hub landing entirely and open its workspace directly.
+        if (AGENT_BASE && list.length >= 1) {
+          navigate(`/ws/${list[0].directory}`, { replace: true });
+          return;
+        }
+        setHasAgents(list.length > 0);
+      })
       .catch(() => setHasAgents(false));
-  }, []);
+  }, [navigate]);
 
   if (hasAgents === null) return <div className="page-loading">Loading...</div>;
 
@@ -459,9 +450,7 @@ export default function App() {
   const content = mode === 'hub' ? (
     <Routes>
       <Route path="/ws/:wsName/*" element={<WorkspaceView />} />
-      {/* Hosted (in-account) dashboards open straight into their workspace,
-          skipping the hub. Self-hosted/local keeps the hub as the landing. */}
-      <Route path="/*" element={AGENT_BASE ? <HostedEntry /> : <HubLayout />} />
+      <Route path="/*" element={<HubLayout />} />
     </Routes>
   ) : (
     <StandaloneLayout />
