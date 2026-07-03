@@ -30,6 +30,7 @@ import { exportCommand } from './commands/export.js';
 import { importCommand } from './commands/import.js';
 import { updateCommand } from './commands/update.js';
 import { publishCommand } from './commands/publish.js';
+import { updateImageCommand } from './commands/update-image.js';
 
 const program = new Command();
 
@@ -410,9 +411,11 @@ program
   .command('publish [agent-name]')
   .description('Export a workspace and upload it to StreetAI, returning a customer setup link')
   .option('--business <name>', 'Business display name (used for the desktop shortcut)')
+  .option('--email <customer-email>', "Attach to a customer's StreetAI account (shows in their dashboard, installer re-downloadable there)")
   .option('--server <url>', 'StreetAI server (default https://streetai.org or $STREETAI_PUBLISH_URL)')
   .option('--key <key>', 'Admin key (or set $STREETAI_PUBLISH_KEY)')
   .option('--no-secrets', 'Strip credentials before uploading')
+  .option('--hosted', "Managed hosting: StreetAI runs the agent on our server; the customer opens its dashboard in-account (requires --email)")
   .option('--exe', 'Also build + sign a Windows installer .exe (online; bakes in the bundle URL)')
   .option('--service', 'With --exe: register the always-on boot service (admin + Windows password at install)')
   .option('--bundle-url <url>', 'With --exe: override the bundle URL baked into the installer')
@@ -420,5 +423,13 @@ program
   .option('--iscc <path>', 'With --exe: path to Inno Setup ISCC.exe (or set $AAAS_ISCC)')
   .option('--sign-thumbprint <hex>', 'With --exe: code-signing cert thumbprint (or set $AAAS_SIGN_THUMBPRINT)')
   .action(publishCommand);
+
+program
+  .command('update-image')
+  .description('Pull the latest aaas image on the StreetAI server (built by GitHub Actions) and optionally redeploy hosted agents')
+  .option('--redeploy', 'After pulling, recreate every hosted agent onto the new image (data preserved)')
+  .option('--server <url>', 'StreetAI server (default https://streetai.org or $STREETAI_PUBLISH_URL)')
+  .option('--key <key>', 'Admin key (or set $STREETAI_PUBLISH_KEY)')
+  .action(updateImageCommand);
 
 program.parse();

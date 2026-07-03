@@ -1,10 +1,12 @@
 import { useState, useEffect, useContext } from 'react';
 import { WorkspaceContext } from './useApi.js';
+import { withBase } from '../base.js';
 
 const POLL_MS = 20000;
 
-// Mirror useApi's hub-mode rewrite without dragging its full surface in.
+// Mirror useApi's hub-mode rewrite (+ hosted base) without dragging its full surface in.
 function resolveUrl(url, workspace) {
+  let out = url;
   if (
     workspace &&
     url.startsWith('/api/') &&
@@ -12,9 +14,9 @@ function resolveUrl(url, workspace) {
     !url.startsWith('/api/mode') &&
     !url.startsWith('/api/ws/')
   ) {
-    return url.replace('/api/', `/api/ws/${workspace}/`);
+    out = url.replace('/api/', `/api/ws/${workspace}/`);
   }
-  return url;
+  return url.startsWith('/api/') ? withBase(out) : out;
 }
 
 /**

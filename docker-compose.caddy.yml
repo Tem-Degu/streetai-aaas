@@ -1,0 +1,48 @@
+# StreetAI assistant + Caddy reverse proxy (the easy, all-in-one option).
+#
+# Caddy fronts the agent: it gets HTTPS certificates automatically, exposes the
+# public voice endpoint, and serves the dashboard to the internal network only.
+# The agent itself is not published to the host — only Caddy is reachable.
+#
+# Setup:
+#   1. Point VOICE_DOMAIN and ADMIN_DOMAIN (DNS) at this server.
+#   2. Open inbound ports 80 and 443.
+#   3. Copy .env.example to .env and fill in your values.
+#   4. docker compose -f docker-compose.caddy.yml up -d
+
+services:
+  agent:
+    image: ${AGENT_IMAGE:-streetai/aaas:latest}
+    container_name: streetai-assistant
+    restart: unless-stopped
+    environment:
+      AGENT_NAME: ${AGENT_NAME}
+    volumes:
+      - agent-data:/data
+    expose:
+      - "3400"   # dashboard (internal)
+      - "3500"   # voice endpoint (internal; published by Caddy)
+
+  caddy:
+    image: caddy:2
+    container_name: streetai-caddy
+    restart: unless-stopped
+    depends_on:
+      - agent
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      VOICE_DOMAIN: ${VOICE_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN}
+      ADMIN_ALLOW_IPS: ${ADMIN_ALLOW_IPS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  agent-data:
+  caddy-data:
+  caddy-config:

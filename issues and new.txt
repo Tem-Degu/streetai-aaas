@@ -1,0 +1,56 @@
+Issues-General 
+- Seems like changing a provider and model doesn't take effect unless server restarted
+- Truuze connectors do not try to auto-start when the server is down
+- Error Log file to track issues and debug--should be on dashboard - setting 
+- Allowing backup of non-skeleton data on cloud or streetai 
+- Allowing install the dashboard on multiple machines and working on same data 
+- Allowwing selecting transaction type to receive and duplicate connectors (e.g. multiple whatsapp connectors)
+- Implementing subscription
+- How do we do with real-time price updates of items (Extension|Cycled-Fetch)
+- There no way to track covnesations unless it has reached a conversation
+=======================================
+
+New
+- Since we have now customer account and we are pushing agents, maybe we could allow customers to run them on streetai server with a dashboard or quick controls applying recurring monthly charge
+
+
+
+Issues-Hospital-Demo
+- How will the agent be deployed -- Windows App | Browser enabled 
+- Documenation 
+- what if the client doesn't want dashboard system
+- How will the agent be configured manually 
+- Cost analysis in organized way and payment
+
+
+
+HIFS - SYSTEM - CARD1 PINNACLE 
+STUDENTS- MANUAL - CRM  
+
+STANDARDS OF ACCEPTABLE AI-ASSISTED CODING
+
+Cost:  0.08$ ~ 0.3AED
+
+[Frame]
+# Define Product 
+# Prepare specification Prompt and Resources (Context)
+# Decide Tech Stack with AI review  
+# Develop Frame of Product with Above 3 
+# Test frame and specify incomplete elements and bugs 
+
+[Iteration] 
+# Test to find bug and incomplete features 
+# Explain bug and ask for review 
+# Specify missing feature and ask for review 
+# Ask to plan for big work 
+# Ask to implement without breaking previous work 
+# Document as it goes 
+# Repeat 
+
+[Test] 
+# Test againt each functionality 
+
+[Product]
+# Product + Documentation
+
+

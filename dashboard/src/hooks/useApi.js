@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useContext, createContext } from 'react';
+import { withBase } from '../base.js';
 
 // Context for workspace-scoped API calls in hub mode
 export const WorkspaceContext = createContext(null);
@@ -6,10 +7,13 @@ export const WorkspaceContext = createContext(null);
 function resolveUrl(url, workspace) {
   // In hub mode with a workspace selected, rewrite /api/... to /api/ws/:name/...
   // But don't rewrite /api/hub/... or /api/mode
+  let out = url;
   if (workspace && url.startsWith('/api/') && !url.startsWith('/api/hub/') && !url.startsWith('/api/mode') && !url.startsWith('/api/ws/')) {
-    return url.replace('/api/', `/api/ws/${workspace}/`);
+    out = url.replace('/api/', `/api/ws/${workspace}/`);
   }
-  return url;
+  // Prefix the runtime base (empty for the normal deployment; /agent/<slug> when
+  // this dashboard is proxied in-account by StreetAI hosting).
+  return url.startsWith('/api/') ? withBase(out) : out;
 }
 
 export function useFetch(url) {

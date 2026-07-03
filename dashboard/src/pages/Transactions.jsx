@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { marked } from 'marked';
 import { useFetch, useResolveUrl, useApi, WorkspaceContext } from '../hooks/useApi.js';
+import { withBase } from '../base.js';
 import { getTableColumns, getLabel, formatCellWithConfig, formatCurrency, prettyKey } from '../utils/transactionView.js';
 import { setLastSeen, getLastSeen } from '../utils/unseenTransactions.js';
 import TransactionViewEditor from '../components/TransactionViewEditor.jsx';
@@ -141,7 +142,7 @@ export default function Transactions() {
       const base = since
         ? `/api/transactions/count?since=${encodeURIComponent(since)}`
         : '/api/transactions/count';
-      return workspace ? base.replace('/api/', `/api/ws/${workspace}/`) : base;
+      return withBase(workspace ? base.replace('/api/', `/api/ws/${workspace}/`) : base);
     };
     let lastKnown = highlightSince || null;
     let cancelled = false;

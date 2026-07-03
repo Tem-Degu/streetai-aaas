@@ -14,6 +14,7 @@ const ENV_VAR_MAP = {
   cohere: ['COHERE_API_KEY'],
   azure: ['AZURE_OPENAI_API_KEY'],
   deepseek: ['DEEPSEEK_API_KEY'],
+  streetai: ['STREETAI_API_KEY'],
   groq: ['GROQ_API_KEY'],
   ollama: [], // no key needed
 };

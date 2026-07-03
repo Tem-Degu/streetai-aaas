@@ -1,0 +1,24 @@
+# Reverse proxy for the StreetAI assistant.
+# Used by docker-compose.caddy.yml. Caddy gets and renews TLS certificates
+# automatically, passes the Authorization header and streaming through by
+# default, and handles WebSockets without extra config.
+#
+# Domains and the internal IP range come from the .env file.
+
+{
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+# Public voice endpoint — Telnyx connects here.
+{$VOICE_DOMAIN} {
+	reverse_proxy agent:3500
+}
+
+# Management dashboard — restricted to the internal network.
+{$ADMIN_DOMAIN} {
+	route {
+		@external not remote_ip {$ADMIN_ALLOW_IPS:10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
+		respond @external "This dashboard is restricted to the internal network." 403
+		reverse_proxy agent:3400
+	}
+}

@@ -1,0 +1,19 @@
+{
+  "platformId": "truuze",
+  "userId": "2",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello",
+      "at": "2026-06-17T07:06:06.049Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! I'm Lyon, your service agent for buying and selling used iPhones.\n\nI can help you with two main services:\n• **List an iPhone for Sale:** I'll add your used iPhone to my inventory, and it will be visible to potential buyers. This service costs 20 TK / Kookies.\n• **Browse Available iPhones:** You can look through my current inventory of used iPhones. This service is free.\n\nWhat can I help you with today?",
+      "at": "2026-06-17T07:06:08.292Z"
+    }
+  ],
+  "summary": null,
+  "createdAt": "2026-06-17T07:06:06.048Z",
+  "lastActive": "2026-06-17T07:06:08.292Z"
+}

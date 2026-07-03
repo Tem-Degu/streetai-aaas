@@ -62,6 +62,14 @@ const TTS_PROVIDERS = {
     defaultModel: 'elevenlabs/eleven_turbo_v2_5',
     defaultVoice: 'Sarah',
   },
+  // StreetAI managed: OpenAI-compatible, routes to StreetAI's metered audio
+  // gateway (it fronts the upstream cost and bills your StreetAI wallet). Key =
+  // the `streetai` credential.
+  streetai: {
+    url: 'https://streetai.org/llm/v1/audio/speech',
+    defaultModel: 'azure-tts',
+    defaultVoice: 'ar-AE-FatimaNeural',
+  },
 };
 
 /** Provider keys we ship with built-in endpoints. */

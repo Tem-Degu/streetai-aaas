@@ -26,7 +26,17 @@ export async function publishCommand(agentName, options = {}) {
   const ws = resolveWorkspace(agentName);
   const server = (options.server || process.env.STREETAI_PUBLISH_URL || 'https://streetai.org').replace(/\/$/, '');
   const key = options.key || process.env.STREETAI_PUBLISH_KEY;
-  const noSecrets = options.secrets === false;
+  const hosted = !!options.hosted;
+  // Hosting needs the agent's keys to run + a customer account to attach to.
+  const noSecrets = hosted ? false : (options.secrets === false);
+
+  if (hosted && !(options.email || '').trim()) {
+    console.error(chalk.red('\n  Error: --hosted requires --email (the customer account to attach the agent to).\n'));
+    process.exit(1);
+  }
+  if (hosted && options.secrets === false) {
+    console.log(chalk.yellow('  (ignoring --no-secrets: a hosted agent needs its credentials to run)'));
+  }
 
   if (!key) {
     console.error(chalk.red('\n  Error: no admin key.\n'));
@@ -61,6 +71,13 @@ export async function publishCommand(agentName, options = {}) {
 
   const slug = slugify(result.manifest.workspace_name || path.basename(ws));
   const business = options.business || result.manifest.workspace_name || slug;
+  const version = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+  const accountEmail = (options.email || '').trim();
+  // Headers that attach the upload to a customer account when --email is given.
+  const linkHeaders = accountEmail
+    ? { 'X-Account-Email': encodeURIComponent(accountEmail), 'X-Version': version }
+    : { 'X-Version': version };
+  if (hosted) linkHeaders['X-Hosted'] = '1';
 
   // 2. Upload to the server.
   console.log(chalk.gray(`  Uploading to ${server} ...`));
@@ -74,6 +91,7 @@ export async function publishCommand(agentName, options = {}) {
         'Content-Type': 'application/gzip',
         'X-Business': encodeURIComponent(business),
         'X-Slug': slug,
+        ...linkHeaders,
       },
       body: bytes,
     });
@@ -88,6 +106,48 @@ export async function publishCommand(agentName, options = {}) {
     try { fs.unlinkSync(result.outputPath); } catch { /* ignore */ }
   }
 
+  // 2b. When account-linked, upload the agent's avatar (if set) so it shows in
+  //     the customer's dashboard. Best-effort — never fails the publish.
+  if (accountEmail) {
+    try {
+      const avatar = findAvatar(ws);
+      if (avatar) {
+        const resp = await fetch(`${server}/admin/assistant-avatar`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': `image/${avatar.ext === 'jpg' ? 'jpeg' : avatar.ext}`,
+            'X-Slug': slug,
+            'X-Ext': avatar.ext,
+            'X-Account-Email': encodeURIComponent(accountEmail),
+          },
+          body: fs.readFileSync(avatar.path),
+        });
+        if (resp.ok) console.log(chalk.gray(`  Avatar:   uploaded (${avatar.ext})`));
+      }
+    } catch { /* avatar is optional — ignore upload failures */ }
+  }
+
+  // 3a. Hosted mode: report provisioning + the in-account dashboard, and stop
+  //     (no installer link to send — the customer opens it from their dashboard).
+  if (hosted) {
+    const h = data.hosting || {};
+    if (h.hosted) {
+      console.log(chalk.green('\n  Published & hosted.\n'));
+      console.log(chalk.gray(`  Running on StreetAI (port ${h.port}) · status: ${h.active ? chalk.green('active') : chalk.yellow('starting…')}`));
+      console.log(chalk.bold(`\n  ${accountEmail} opens it in their dashboard:`));
+      console.log('    ' + chalk.cyan('https://streetai.org/account → Assistants → click the agent'));
+      console.log('');
+      console.log(chalk.gray('  Re-publish anytime to update it in place (keeps sessions + credentials).'));
+    } else {
+      console.log(chalk.yellow('\n  Published, but hosting did not complete.'));
+      console.log(chalk.red(`  ${h.error || 'Unknown hosting error.'}`));
+      console.log(chalk.gray('  The bundle uploaded and the assistant is linked; fix the server and re-publish --hosted.'));
+    }
+    console.log('');
+    return;
+  }
+
   // 3. Show the link to send the client.
   console.log(chalk.green('\n  Published.\n'));
   console.log(chalk.bold('  Send this link to the client:'));
@@ -97,7 +157,10 @@ export async function publishCommand(agentName, options = {}) {
   console.log(chalk.gray('  (keeps their sessions, data, and credentials). Same link either way.'));
   console.log('');
   console.log(chalk.gray(`  Business: ${business}`));
-  console.log(chalk.gray(`  Expires:  ${new Date(data.expiresAt).toLocaleString()}`));
+  if (accountEmail) {
+    console.log(chalk.gray(`  Account:  ${accountEmail} (shows in their dashboard → Assistants)`));
+  }
+  console.log(chalk.gray(`  Expires:  ${data.expiresAt ? new Date(data.expiresAt).toLocaleString() : 'never (account-linked)'}`));
   if (!noSecrets) {
     console.log(chalk.yellow('\n  Note: this bundle includes credentials. Only send the link to this client.'));
   }
@@ -135,6 +198,7 @@ export async function publishCommand(agentName, options = {}) {
           'Content-Type': 'application/octet-stream',
           'X-Slug': slug,
           'X-Business': encodeURIComponent(business),
+          ...linkHeaders,
         },
         body: fs.readFileSync(exe.exePath),
       });
@@ -160,6 +224,15 @@ export async function publishCommand(agentName, options = {}) {
   }
 
   console.log('');
+}
+
+/** Find the agent's avatar image in the workspace, if any. */
+function findAvatar(ws) {
+  for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif']) {
+    const p = path.join(ws, '.aaas', `avatar.${ext}`);
+    if (fs.existsSync(p)) return { path: p, ext };
+  }
+  return null;
 }
 
 /**

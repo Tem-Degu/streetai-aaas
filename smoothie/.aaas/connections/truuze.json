@@ -1,0 +1,17 @@
+{
+  "baseUrl": "https://origin.truuze.com/api/v1",
+  "agentKey": "trz_agent_Fjn92Z6NwerzeEnJ46metxWBaEZAEx4QwRwJfV84G8E",
+  "platformApiKey": "4a3b2c9d1e4f5a6b7c8d9e0f123456789abcdef0123456789abcdef01234567",
+  "agentId": 162,
+  "agentUsername": "smoothie",
+  "agentName": "Smoothie",
+  "agentProvider": "google",
+  "agentDescription": "Helps you sell your used iphone",
+  "agentPhoto": "https://origin.truuze.com/media/account/profile/smoothie_avatar.png",
+  "avatarBgColor": "#b5821d",
+  "jobTitle": "iPhone Sales Agent",
+  "ownerUsername": "carly_11",
+  "heartbeatInterval": 30,
+  "connectedAt": "2026-06-17T07:03:40.633Z",
+  "autoStart": true
+}

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useApi, WorkspaceContext } from '../hooks/useApi.js';
 import { ThemeContext } from '../hooks/useTheme.js';
 import { useNavMode } from '../hooks/useNavMode.js';
 
 const PROVIDERS = [
+  { value: 'streetai', label: 'StreetAI', hasOAuth: false },
   { value: 'anthropic', label: 'Anthropic (Claude)', hasOAuth: true },
   { value: 'openai', label: 'OpenAI (GPT)', hasOAuth: false },
   { value: 'google', label: 'Google (Gemini)', hasOAuth: true },
@@ -38,6 +38,29 @@ const VOICE_PROVIDERS = [
       { value: 'whisper-1', label: 'Whisper (whisper-1)' },
       { value: 'gpt-4o-mini-transcribe', label: 'GPT-4o mini transcribe' },
       { value: 'gpt-4o-transcribe', label: 'GPT-4o transcribe — most accurate' },
+    ],
+  },
+  {
+    // Microsoft Azure Speech — real streaming STT for the live Voice Call
+    // connector, and batch (WAV/OGG) for voice notes. Uses the `azure_speech`
+    // key + the region set on the TTS card. The "model" picks the language.
+    value: 'azure_speech',
+    label: 'Microsoft Azure (Speech)',
+    models: [
+      { value: 'auto', label: 'Auto-detect (Arabic + English)' },
+      { value: 'ar-AE', label: 'Arabic (UAE)' },
+      { value: 'en-US', label: 'English (US)' },
+    ],
+  },
+  {
+    // StreetAI managed: routes STT through StreetAI's metered audio gateway
+    // (StreetAI fronts the cost, billed to your StreetAI wallet). Uses the
+    // `streetai` key.
+    value: 'streetai',
+    label: 'StreetAI (managed)',
+    models: [
+      { value: 'azure-stt', label: 'Azure (Arabic + English)' },
+      { value: 'whisper-1', label: 'Whisper' },
     ],
   },
 ];
@@ -105,12 +128,22 @@ const TTS_PROVIDERS = [
       },
     ],
   },
+  {
+    // StreetAI managed: routes TTS through StreetAI's metered audio gateway
+    // (StreetAI fronts the cost, billed to your StreetAI wallet). Uses the
+    // `streetai` key.
+    value: 'streetai',
+    label: 'StreetAI (managed)',
+    models: [
+      { value: 'azure-tts', label: 'Azure neural', voices: ['ar-AE-FatimaNeural', 'ar-AE-HamdanNeural', 'en-US-JennyNeural', 'en-US-AriaNeural'] },
+      { value: 'tts-1', label: 'OpenAI', voices: ['alloy', 'nova', 'shimmer', 'echo', 'fable', 'onyx'] },
+    ],
+  },
 ];
 
 export default function Settings() {
   const api = useApi();
   const workspace = useContext(WorkspaceContext);
-  const navigate = useNavigate();
   const themeCtx = useContext(ThemeContext);
   const theme = themeCtx?.theme || 'dark';
   const setTheme = themeCtx?.setTheme || (() => {});
@@ -130,6 +163,7 @@ export default function Settings() {
   const [agentType, setAgentType] = useState('service');
   const [saveMsg, setSaveMsg] = useState('');
   const [showRestartNotice, setShowRestartNotice] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   // API key form
   const [keyProvider, setKeyProvider] = useState('');
@@ -197,14 +231,17 @@ export default function Settings() {
     try {
       const providerChanged = provider !== (config?.provider || '');
       const modelChanged = model !== (config?.model || '');
+      const agentTypeChanged = agentType !== (config?.agentType || 'service');
       await api.put('/api/config', { provider, model, agentType });
       const cfg = await api.get('/api/config');
       setConfig(cfg);
       setSaveMsg('Saved!');
       setTimeout(() => setSaveMsg(''), 2500);
 
-      // Only workspace mode runs an agent daemon — skip in hub mode.
-      if (workspace && (providerChanged || modelChanged)) {
+      // Provider/model/agent-type are baked into the engine at init, so they only
+      // apply after a connector restart — prompt for it, but only if something's
+      // actually running to restart.
+      if (workspace && (providerChanged || modelChanged || agentTypeChanged)) {
         try {
           const status = await api.get('/api/deploy/status');
           if (status?.daemonRunning || status?.sessionRunning) {
@@ -216,6 +253,21 @@ export default function Settings() {
       setSaveMsg('Error: ' + err.message);
     }
     setSaving(false);
+  };
+
+  // Restart the running connectors in place (rebuilds the engine with the new
+  // provider/model), so the user doesn't have to visit the Deploy page.
+  const restartConnectors = async () => {
+    setRestarting(true);
+    try {
+      await api.post('/api/deploy/restart');
+      setShowRestartNotice(false);
+      setSaveMsg('Connectors restarted — changes applied.');
+      setTimeout(() => setSaveMsg(''), 2500);
+    } catch (err) {
+      setSaveMsg('Error restarting: ' + err.message);
+    }
+    setRestarting(false);
   };
 
   const saveKey = async () => {
@@ -427,9 +479,9 @@ export default function Settings() {
             )}
             {showRestartNotice && (
               <div className="deploy-banner" style={{ marginTop: 12, marginBottom: 0, justifyContent: 'space-between' }}>
-                <span>Your running connectors are still using the previous provider/model. Stop and start them on the Deploy page to apply the change.</span>
-                <button className="btn btn-sm" onClick={() => navigate(`/ws/${workspace}/deploy`)}>
-                  Go to Deploy
+                <span>Your running connectors are still using the previous provider/model. Restart them to apply the change.</span>
+                <button className="btn btn-sm" onClick={restartConnectors} disabled={restarting}>
+                  {restarting ? 'Restarting…' : 'Restart connectors'}
                 </button>
               </div>
             )}
@@ -703,6 +755,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
   const [enabled, setEnabled] = useState(false);
   const [provider, setProvider] = useState('groq');
   const [model, setModel] = useState('');
+  const [segmentation, setSegmentation] = useState('semantic'); // Azure turn detection (live Voice Call)
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -731,6 +784,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
     setProvider(prov);
     const provModels = (VOICE_PROVIDERS.find(p => p.value === prov)?.models) || [];
     setModel(v.model || provModels[0]?.value || '');
+    setSegmentation(v.segmentation || 'semantic');
 
     const t = v.tts || {};
     setWebcallEnabled(!!v.webcall_enabled);
@@ -797,6 +851,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
       await api.put('/api/config', {
         voice: {
           enabled, provider, model: model || defaultModel,
+          segmentation,
           webcall_enabled: webcallEnabled,
           // Preserve an optional second-language (e.g. English) fallback voice
           // configured outside this form, so saving the main voice doesn't wipe it.
@@ -848,6 +903,21 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
                 {models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
             </div>
+
+            {provider === 'azure_speech' && (
+              <div className="form-group">
+                <label>Turn detection</label>
+                <select className="form-select" value={segmentation} onChange={e => setSegmentation(e.target.value)}>
+                  <option value="semantic">Semantic — AI decides when the caller finished (recommended)</option>
+                  <option value="default">Silence timeout — finish after a pause</option>
+                </select>
+                <p className="form-hint">
+                  For the live <strong>Voice Call</strong> connector. “Semantic” lets Azure judge from the content when the
+                  caller has finished speaking, instead of waiting for a fixed silence. Azure Speech only — other STT
+                  providers always use the silence/pause method.
+                </p>
+              </div>
+            )}
 
             {hasKey ? (
               <p className="form-hint" style={{ color: 'var(--green)' }}>
@@ -933,7 +1003,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
                     <input className="form-input" value={ttsPitch} onChange={e => setTtsPitch(e.target.value)} placeholder="e.g. +3%" />
                   </div>
                 </div>
-                <p className="form-hint">Tune how the voice sounds. Use a signed percent like <code>+6%</code> / <code>-5%</code>. A slightly higher speed and pitch usually sounds livelier and less robotic; leave blank for the default. (Listen, adjust, save, restart.)</p>
+                <p className="form-hint">Tune how the voice sounds. Use a signed percent like <code>+6%</code> / <code>-5%</code>. A slightly higher speed and pitch usually sounds livelier and less robotic; leave blank for the default. (Listen, adjust, save — applies to new calls right away.)</p>
               </>
             )}
             <p className="form-hint">

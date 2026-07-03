@@ -1,0 +1,6 @@
+{
+  "provider": "google",
+  "model": "gemini-2.5-flash",
+  "agentType": "service",
+  "description": "Helps buy and sell old used iphones"
+}

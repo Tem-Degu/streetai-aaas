@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useFetch, useApi } from '../hooks/useApi.js';
+import { withBase } from '../base.js';
 
 const TYPES = [
   { value: 'api', label: 'API', desc: 'External REST API' },
@@ -327,7 +328,7 @@ export default function Extensions() {
     updateOp(index, 'testing', true);
     updateOp(index, 'testResult', null);
     try {
-      const res = await fetch('/api/extensions/test', {
+      const res = await fetch(withBase('/api/extensions/test'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -14,7 +14,7 @@ import { extractFiles } from '../connectors/media.js';
 import { buildPlatformSkill, parseTruuzeSkill } from '../connectors/truuze-skill.js';
 import { sendDirectToCustomer } from '../connectors/index.js';
 import { getConnectorMap } from './connector-registry.js';
-import { startConnector, createWorkspaceEngine } from './connector-control.js';
+import { startConnector, createWorkspaceEngine, applyLiveConfig, resetWorkspaceEngine, RESTART_CONFIG_KEYS } from './connector-control.js';
 
 
 const __api_dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1201,8 +1201,12 @@ export function apiRouter(workspace) {
     const current = readJson(configPath) || {};
     const updated = { ...current, ...req.body };
     writeJson(configPath, updated);
-    engine = null; // Reset engine to pick up new config
-    res.json({ ok: true });
+    // Live-read fields (voice, greeting, …) apply to the running engine now.
+    applyLiveConfig(workspace, req.body);
+    // Init-baked fields (provider / model / agent type) need a connector restart
+    // to take effect — flag it so the UI can offer the Restart button.
+    const restartRequired = RESTART_CONFIG_KEYS.some(k => k in req.body && current[k] !== updated[k]);
+    res.json({ ok: true, restartRequired });
   });
 
   // ─── Credentials ──────────────────────────────
@@ -1218,15 +1222,18 @@ export function apiRouter(workspace) {
     if (baseUrl) credential.baseUrl = baseUrl;
 
     setProviderCredential(provider, credential);
-    engine = null;
-    res.json({ ok: true });
+    // A key for the active LLM provider is baked into the provider client at
+    // engine init → needs a restart. Other keys (e.g. a TTS provider) are read
+    // live, so they don't.
+    const activeProvider = readJson(path.join(workspace, '.aaas', 'config.json'))?.provider;
+    res.json({ ok: true, restartRequired: provider === activeProvider });
   });
 
   router.delete('/credentials/:provider', (req, res) => {
     const removed = removeProviderCredential(req.params.provider);
     if (!removed) return res.status(404).json({ error: 'Provider not found' });
-    engine = null;
-    res.json({ ok: true });
+    const activeProvider = readJson(path.join(workspace, '.aaas', 'config.json'))?.provider;
+    res.json({ ok: true, restartRequired: req.params.provider === activeProvider });
   });
 
   // ─── Models ──────────────────────────────────
@@ -1347,7 +1354,7 @@ export function apiRouter(workspace) {
 
   router.post('/connections/:platform', conditionalPhotoUpload, async (req, res) => {
     const { platform } = req.params;
-    const validPlatforms = ['truuze', 'http', 'openclaw', 'telegram', 'discord', 'slack', 'whatsapp', 'telnyx', 'webcall', 'relay'];
+    const validPlatforms = ['truuze', 'http', 'openclaw', 'telegram', 'discord', 'slack', 'whatsapp', 'telnyx', 'webcall', 'voicecall', 'relay'];
     if (!validPlatforms.includes(platform)) {
       return res.status(400).json({ error: `Invalid platform. Use: ${validPlatforms.join(', ')}` });
     }
@@ -1707,6 +1714,28 @@ export function apiRouter(workspace) {
             connectedAt: new Date().toISOString(),
           });
         }
+      } else if (platform === 'voicecall') {
+        // Real-time voice (streaming + barge-in). The agent runs the pipeline;
+        // relay just bridges the media. Public per-slug at /voice/<slug> (also
+        // the test widget). Unlike webcall there's no per-agent enable flag on
+        // the relay — any online agent with voice configured serves the line —
+        // so this just records the connection + surfaces the URL.
+        const relayConn = loadConnection(workspace, 'relay');
+        if (relayConn?.slug && relayConn?.relayKey) {
+          saveConnection(workspace, 'voicecall', {
+            platform: 'voicecall', mode: 'relay', slug: relayConn.slug,
+            baseUrl: `https://streetai.org/voice/${relayConn.slug}`,
+            connectedAt: new Date().toISOString(),
+          });
+        } else {
+          const port = parseInt(req.body.port) || 3304;
+          const publicUrl = (req.body.publicUrl || '').trim().replace(/\/$/, '');
+          saveConnection(workspace, 'voicecall', {
+            platform: 'voicecall', mode: 'direct', port, publicUrl,
+            baseUrl: publicUrl || `http://localhost:${port}`,
+            connectedAt: new Date().toISOString(),
+          });
+        }
       } else if (platform === 'relay') {
         const { name } = req.body;
         if (!name) return res.status(400).json({ error: 'Agent name is required' });
@@ -1959,6 +1988,35 @@ export function apiRouter(workspace) {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Restart all currently-running connectors, rebuilding the engine in between so
+  // init-baked config changes (provider / model / agent type / LLM key) take
+  // effect. Composes the existing stop + engine reset + start; connectors that
+  // weren't running are left as-is.
+  router.post('/deploy/restart', async (req, res) => {
+    const running = Object.keys(activeConnectors);
+    for (const p of running) {
+      try { await activeConnectors[p].disconnect(); } catch { /* ignore */ }
+      delete activeConnectors[p];
+    }
+    resetWorkspaceEngine(workspace); // dispose old engine (+ its scheduler)
+    engine = null;
+    let eng;
+    try {
+      eng = await getEngine(); // rebuilds fresh (cache cleared)
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    const connections = listConnections(workspace);
+    const restarted = [];
+    for (const p of running) {
+      const conn = connections.find(c => c.platform === p);
+      if (!conn) continue;
+      try { await startConnector(workspace, p, eng, conn.config); restarted.push(p); }
+      catch (err) { restarted.push({ platform: p, error: err.message }); }
+    }
+    res.json({ ok: true, restarted });
   });
 
   // Start agent as a background process (survives dashboard close)
@@ -2331,6 +2389,14 @@ const PROVIDER_MODELS = {
   deepseek: [
     { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
     { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+  ],
+  streetai: [
+    { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gpt-5.4', label: 'GPT-5.4' },
   ],
 };
 

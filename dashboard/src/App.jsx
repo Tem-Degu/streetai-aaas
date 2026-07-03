@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, NavLink, useParams, useNavigate, useLocation } from 'react-router-dom';
 import { WorkspaceContext, useResolveUrl } from './hooks/useApi.js';
+import { withBase } from './base.js';
 import { ThemeContext, useThemeState } from './hooks/useTheme.js';
 import { NavModeContext, useNavModeStore, useNavMode } from './hooks/useNavMode.js';
 import Overview from './pages/Overview.jsx';
@@ -346,7 +347,7 @@ function HubLayout() {
   const [hasAgents, setHasAgents] = useState(null);
 
   useEffect(() => {
-    fetch('/api/hub/workspaces')
+    fetch(withBase('/api/hub/workspaces'))
       .then(r => r.json())
       .then(d => setHasAgents((d.workspaces || []).length > 0))
       .catch(() => setHasAgents(false));
@@ -429,7 +430,7 @@ export default function App() {
   const navModeStore = useNavModeStore();
 
   useEffect(() => {
-    fetch('/api/mode')
+    fetch(withBase('/api/mode'))
       .then(r => r.json())
       .then(d => setMode(d.mode))
       .catch(() => setMode('workspace'));

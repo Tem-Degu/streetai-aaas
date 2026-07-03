@@ -46,6 +46,41 @@ export async function createWorkspaceEngine(workspace) {
 }
 
 /**
+ * Config keys that are baked into the engine at initialize() (the provider
+ * client, the base prompt), so changing them needs the engine rebuilt — i.e. a
+ * connector restart. Everything else (voice, greeting, …) is read live per call.
+ */
+export const RESTART_CONFIG_KEYS = ['provider', 'model', 'agentType'];
+
+/**
+ * Apply live-read config changes to the running engine in place — no rebuild.
+ * Connectors hold this same engine instance and read fields like `config.voice`
+ * per call, so the change takes effect on the next call. Skips the init-baked
+ * keys so they stay consistent with the already-built provider client until a
+ * restart rebuilds the engine. No-op if the engine isn't running yet.
+ */
+export function applyLiveConfig(workspace, changed) {
+  const eng = _engineCache.get(path.resolve(workspace));
+  if (!eng?.config || !changed) return;
+  for (const [k, v] of Object.entries(changed)) {
+    if (!RESTART_CONFIG_KEYS.includes(k)) eng.config[k] = v;
+  }
+}
+
+/**
+ * Dispose the cached engine so the next createWorkspaceEngine() rebuilds it with
+ * fresh config (new provider client). Stops the old scheduler first to keep the
+ * one-engine / one-scheduler-per-workspace invariant. No-op if none is cached.
+ */
+export function resetWorkspaceEngine(workspace) {
+  const key = path.resolve(workspace);
+  const eng = _engineCache.get(key);
+  if (!eng) return;
+  try { eng.stopScheduler(); } catch { /* non-fatal */ }
+  _engineCache.delete(key);
+}
+
+/**
  * Start one connector in-process for a workspace, if not already running.
  * `connConfig` is the connection's saved config object; `engine` is the
  * workspace engine to hand the connector.

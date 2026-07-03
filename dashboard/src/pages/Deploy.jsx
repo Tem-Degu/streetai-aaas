@@ -14,6 +14,7 @@ const PLATFORM_ICONS = {
   whatsapp: { Icon: SiWhatsapp, color: '#25d366' },
   telnyx:   { Icon: TbPhone, color: '#00c389' },
   webcall:  { Icon: TbMicrophone, color: '#0ea5e9' },
+  voicecall: { Icon: TbMicrophone, color: '#e11d48' },
   discord:  { Icon: SiDiscord, color: '#5865f2' },
   slack:    { Icon: SiSlack, color: '#e01e5a' },
   relay:    { Icon: TbRelationManyToMany, color: '#8b5cf6' },
@@ -26,7 +27,8 @@ const PLATFORM_META = {
   telegram: { label: 'Telegram',  color: '#29a9eb', desc: 'Telegram bot integration', supported: true, help: 'Connect a Telegram bot so users can chat with your agent directly in Telegram. Requires a bot token from @BotFather.' },
   whatsapp: { label: 'WhatsApp',  color: '#25d366', desc: 'WhatsApp Business API', supported: true, help: 'Connect to WhatsApp Business API so customers can message your agent via WhatsApp. Requires Meta Business credentials.' },
   telnyx:   { label: 'Phone (Telnyx)', color: '#00c389', desc: 'Voice calls — take orders & bookings by phone', supported: true, help: 'Telnyx runs the phone call (speech to text and back); your agent is the brain. Best with the Public Link (Relay) so no public server is needed. Requires a Telnyx Voice AI Assistant and a phone number.' },
-  webcall:  { label: 'Voice Call',  color: '#0ea5e9', desc: 'Talk to your agent by voice — website, app, or any client', supported: true, help: 'Callers talk to your agent by voice — from a website, a mobile app, or any client that sends audio. The agent turns speech into text and its reply back into speech using your own Groq key (set under Settings → Voice). Best with the Public Link (Relay) so no public server is needed.' },
+  webcall:  { label: 'Voice Call (Basic)',  color: '#0ea5e9', desc: 'Turn-based browser voice (legacy — being replaced by Voice Call)', supported: true, help: 'The original browser voice path: record a clip, the agent transcribes, replies, and speaks back. Being superseded by the real-time "Voice Call" connector. Kept for now until that is fully verified.' },
+  voicecall: { label: 'Voice Call', color: '#e11d48', desc: 'Real-time voice — talk live with natural turn-taking and barge-in', supported: true, help: 'Callers talk to your agent live, with streaming speech-to-text, streaming replies, and the ability to interrupt (barge-in). Works in a browser or over an SBC/phone line. Uses the voice provider you set under Settings → Voice. Best with the Public Link (Relay) so no public server is needed.' },
   discord:  { label: 'Discord',   color: '#5865f2', desc: 'Discord bot integration', supported: true, help: 'Add your agent as a Discord bot that can respond to messages in your server channels.' },
   slack:    { label: 'Slack',     color: '#e01e5a', desc: 'Slack app integration', supported: true, help: 'Install your agent as a Slack app that can respond to messages in your workspace channels.' },
   http:     { label: 'HTTP API',  color: '#10b981', desc: 'REST API + chat widget (requires public server)', supported: true, help: 'Run a local REST API on your machine. Best for development or when you have a server with a public IP. Includes an embeddable chat widget.' },
@@ -114,10 +116,14 @@ export default function Deploy() {
   const [telnyxPublicUrl, setTelnyxPublicUrl] = useState('');
   const [telnyxPort, setTelnyxPort] = useState('3302');
   const [telnyxResult, setTelnyxResult] = useState(null);
-  // Web Call form
+  // Web Call form (legacy, turn-based)
   const [webcallPublicUrl, setWebcallPublicUrl] = useState('');
   const [webcallPort, setWebcallPort] = useState('3303');
   const [webcallResult, setWebcallResult] = useState(null);
+  // Voice Call form (real-time)
+  const [voicecallPublicUrl, setVoicecallPublicUrl] = useState('');
+  const [voicecallPort, setVoicecallPort] = useState('3304');
+  const [voicecallResult, setVoicecallResult] = useState(null);
   // Owner verification
   const [verifyPending, setVerifyPending] = useState([]);
 
@@ -306,6 +312,9 @@ export default function Deploy() {
       } else if (platform === 'webcall') {
         if (webcallPublicUrl.trim()) body.publicUrl = webcallPublicUrl.trim();
         if (webcallPort.trim()) body.port = parseInt(webcallPort) || 3303;
+      } else if (platform === 'voicecall') {
+        if (voicecallPublicUrl.trim()) body.publicUrl = voicecallPublicUrl.trim();
+        if (voicecallPort.trim()) body.port = parseInt(voicecallPort) || 3304;
       }
       const result = await api.post(`/api/connections/${platform}`, body);
       if (platform === 'relay' && result?.connections) {
@@ -316,6 +325,9 @@ export default function Deploy() {
       } else if (platform === 'telnyx' && result?.connections) {
         const tc = result.connections.find(c => c.platform === 'telnyx');
         if (tc?.config) setTelnyxResult(tc.config);
+      } else if (platform === 'voicecall' && result?.connections) {
+        const vc = result.connections.find(c => c.platform === 'voicecall');
+        if (vc?.config) setVoicecallResult(vc.config);
       } else if (platform === 'webcall' && result?.connections) {
         const wc = result.connections.find(c => c.platform === 'webcall');
         if (wc?.config) setWebcallResult(wc.config);
@@ -366,11 +378,12 @@ export default function Deploy() {
   // that connector's form showing the details, pulled from the saved connection
   // config (which carries slug/baseUrl/apiKey/model), so users can retrieve them
   // any time — not just in the moment right after connecting.
-  const URL_CONNECTORS = ['relay', 'telnyx', 'webcall'];
+  const URL_CONNECTORS = ['relay', 'telnyx', 'webcall', 'voicecall'];
   const viewUrls = (platform, config) => {
     if (platform === 'relay') setRelayResult(config);
     else if (platform === 'telnyx') setTelnyxResult(config);
     else if (platform === 'webcall') setWebcallResult(config);
+    else if (platform === 'voicecall') setVoicecallResult(config);
     else return;
     setShowForm(platform);
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
@@ -740,6 +753,7 @@ export default function Deploy() {
                       setRelayResult(null);
                       setTelnyxResult(null);
                       setWebcallResult(null);
+                      setVoicecallResult(null);
                       setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
                     }}>Connect</button>
                   ) : (
@@ -1319,6 +1333,53 @@ Content-Type: application/json
               <p style={{ margin: '0' }}><strong>4.</strong> Make sure the agent is running and <strong>online</strong> (Start on the Relay card). Callers can only reach it while it's online.</p>
             </div>
             <p className="form-hint" style={{ marginTop: 10 }}>Speech runs on your own Groq key — StreetAI just passes the audio through and never stores it.</p>
+          </div>
+        </div>
+      )}
+
+      {showForm === 'voicecall' && (
+        <div ref={formRef} className="card deploy-form-card">
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Connect Voice Call</span>
+            <button className="btn btn-sm" onClick={() => { setShowForm(null); setVoicecallResult(null); }}>Cancel</button>
+          </div>
+          <div className="card-body">
+            <p className="form-hint" style={{ marginBottom: 12 }}>Real-time voice. Callers talk to your agent live, with streaming transcription, streaming replies, and the ability to interrupt (barge-in). Works in a browser or over an SBC/phone line. No telephony provider needed for the browser path.</p>
+
+            {!voicecallResult ? (
+              <>
+                <div className="form-group">
+                  <label>Public URL <span style={{ color: 'var(--text-muted)' }}>(direct mode only)</span></label>
+                  <input type="text" value={voicecallPublicUrl} onChange={e => setVoicecallPublicUrl(e.target.value)} className="form-input" placeholder="https://voice.your-domain.com" />
+                  <p className="form-hint">Only used if the Public Link (Relay) is NOT connected — your own reverse proxy in front of the voice connector. With the Relay connected, leave this blank.</p>
+                </div>
+                <div className="form-group">
+                  <label>Port <span style={{ color: 'var(--text-muted)' }}>(direct mode only)</span></label>
+                  <input type="number" value={voicecallPort} onChange={e => setVoicecallPort(e.target.value)} className="form-input" />
+                  <p className="form-hint">Local port the real-time voice server listens on (serves a test widget at <code>/</code> and the media stream at <code>/ws</code>). Ignored when using the Relay.</p>
+                </div>
+                <div className="form-actions">
+                  <button className="btn btn-primary" onClick={() => connect('voicecall')} disabled={saving}>{saving ? 'Connecting...' : 'Connect'}</button>
+                </div>
+                {formMsg && <p className="form-hint" style={{ color: 'var(--red)', marginTop: 8 }}>{formMsg}</p>}
+              </>
+            ) : (
+              <div style={{ padding: '14px 16px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: 8, marginBottom: 16 }}>
+                <p style={{ margin: '0 0 10px', fontSize: 13, color: '#10b981', fontWeight: 600 }}>Connected ({voicecallResult.mode} mode). Your live Voice Call line:</p>
+                <pre className="deploy-code-block" style={{ margin: '0 0 8px' }}>{voicecallResult.baseUrl}</pre>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)' }}>Open that URL in a browser to talk to your agent, embed it, or point an SBC's media stream at it.</p>
+              </div>
+            )}
+
+            <div className="deploy-form-divider" />
+            <h4 style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--text)' }}>Setup checklist</h4>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+              <p style={{ margin: '0 0 6px' }}><strong>1.</strong> Connect <strong>Public Link (Relay)</strong> first (recommended — no public server needed).</p>
+              <p style={{ margin: '0 0 6px' }}><strong>2.</strong> Under <strong>Settings → Voice</strong>, pick your speech-to-text and text-to-speech provider (Azure recommended for streaming + barge-in) and a voice.</p>
+              <p style={{ margin: '0 0 6px' }}><strong>3.</strong> Click <strong>Connect</strong> above to get your voice line URL.</p>
+              <p style={{ margin: '0' }}><strong>4.</strong> Make sure the agent is running and <strong>online</strong> (Start on the Relay card). Callers can only reach it while it's online.</p>
+            </div>
+            <p className="form-hint" style={{ marginTop: 10 }}>Speech runs on the voice provider you configure — StreetAI's relay just passes the audio through.</p>
           </div>
         </div>
       )}

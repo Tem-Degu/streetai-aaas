@@ -2,12 +2,14 @@ import { useState, useEffect, useContext, useRef } from 'react';
 import { WorkspaceContext } from './useApi.js';
 import { getLastSeen, setLastSeen, SEEN_EVENT } from '../utils/unseenTransactions.js';
 import { playChime, bindAudioUnlock } from '../utils/notificationSound.js';
+import { withBase } from '../base.js';
 
 const POLL_MS = 15000;
 
-// Mirrors the rewrite in useApi.js so the polling fetch hits the right path
-// in hub mode without dragging useApi's full surface in.
+// Mirrors the rewrite in useApi.js (+ hosted base) so the polling fetch hits the
+// right path in hub mode without dragging useApi's full surface in.
 function resolveUrl(url, workspace) {
+  let out = url;
   if (
     workspace &&
     url.startsWith('/api/') &&
@@ -15,9 +17,9 @@ function resolveUrl(url, workspace) {
     !url.startsWith('/api/mode') &&
     !url.startsWith('/api/ws/')
   ) {
-    return url.replace('/api/', `/api/ws/${workspace}/`);
+    out = url.replace('/api/', `/api/ws/${workspace}/`);
   }
-  return url;
+  return url.startsWith('/api/') ? withBase(out) : out;
 }
 
 // Polls /api/transactions/count every POLL_MS and returns the unseen count for

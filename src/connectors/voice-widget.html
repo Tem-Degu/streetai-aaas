@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StreetAI Voice Test</title>
+<style>
+  :root { --bg:#0f1115; --card:#1a1d23; --red:#e11d48; --teal:#22d3ee; --text:#f5f5f7; --muted:#9aa0aa; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+         display:grid; place-items:center; min-height:100vh; }
+  .card { background:var(--card); border:1px solid #262a31; border-radius:16px; padding:32px; width:360px; text-align:center; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p.sub { color:var(--muted); font-size:13px; margin:0 0 24px; }
+  button { font-family:inherit; font-size:16px; font-weight:600; border:none; border-radius:10px;
+           padding:14px 20px; cursor:pointer; width:100%; }
+  .call { background:var(--red); color:#fff; }
+  .hang { background:#2a2e36; color:var(--text); }
+  .status { margin-top:18px; font-size:13px; color:var(--muted); min-height:18px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#555; margin-right:6px; vertical-align:middle; }
+  .dot.live { background:var(--teal); }
+  .dot.speaking { background:var(--red); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>StreetAI Voice Test</h1>
+    <p class="sub">Real-time voice. Click Call and talk. Use headphones to avoid echo.</p>
+    <button id="btn" class="call">Call</button>
+    <div class="status"><span id="dot" class="dot"></span><span id="state">Idle</span></div>
+  </div>
+
+<script>
+const RATE = 16000;
+let ctx, ws, micStream, procNode, playTime = 0, sources = [], inCall = false;
+
+const btn = document.getElementById('btn');
+const stateEl = document.getElementById('state');
+const dot = document.getElementById('dot');
+
+function setState(text, cls) { stateEl.textContent = text; dot.className = 'dot' + (cls ? ' ' + cls : ''); }
+
+btn.onclick = () => (inCall ? hangup() : call());
+
+async function call() {
+  ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: RATE });
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ event: 'start', start: { format: { encoding: 'pcm16', sampleRate: RATE } } }));
+    startMic();
+    inCall = true;
+    btn.textContent = 'Hang up';
+    btn.className = 'hang';
+    setState('Connecting…', 'live');
+  };
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (m.event === 'ready') setState('Listening', 'live');
+    else if (m.event === 'media') playChunk(m.media.payload);
+    else if (m.event === 'clear') flushPlayback();
+    else if (m.event === 'error') setState('Error: ' + m.error);
+  };
+  ws.onclose = () => hangup();
+  ws.onerror = () => setState('Connection error');
+}
+
+function startMic() {
+  const src = ctx.createMediaStreamSource(micStream);
+  procNode = ctx.createScriptProcessor(512, 1, 1); // ~32ms frames at 16k
+  procNode.onaudioprocess = (ev) => {
+    if (!ws || ws.readyState !== 1) return;
+    const f32 = ev.inputBuffer.getChannelData(0);
+    const i16 = new Int16Array(f32.length);
+    for (let i = 0; i < f32.length; i++) {
+      const s = Math.max(-1, Math.min(1, f32[i]));
+      i16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    ws.send(JSON.stringify({ event: 'media', media: { payload: b64(i16) } }));
+  };
+  src.connect(procNode);
+  procNode.connect(ctx.destination); // node must be connected; it outputs silence
+}
+
+function playChunk(payload) {
+  const i16 = fromB64(payload);
+  const f32 = new Float32Array(i16.length);
+  for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 0x8000;
+  const buf = ctx.createBuffer(1, f32.length, RATE);
+  buf.copyToChannel(f32, 0);
+  const node = ctx.createBufferSource();
+  node.buffer = buf;
+  node.connect(ctx.destination);
+  const now = ctx.currentTime;
+  playTime = Math.max(playTime, now);
+  node.start(playTime);
+  playTime += buf.duration;
+  sources.push(node);
+  node.onended = () => { sources = sources.filter((s) => s !== node); };
+  setState('Speaking', 'speaking');
+  node.onended = () => { sources = sources.filter((s) => s !== node); if (!sources.length) setState('Listening', 'live'); };
+}
+
+function flushPlayback() {
+  // Barge-in: stop everything currently scheduled and reset the play cursor.
+  for (const s of sources) { try { s.stop(); } catch (e) {} }
+  sources = [];
+  playTime = 0;
+  setState('Listening', 'live');
+}
+
+function hangup() {
+  inCall = false;
+  try { ws && ws.readyState === 1 && ws.send(JSON.stringify({ event: 'stop' })); } catch (e) {}
+  try { ws && ws.close(); } catch (e) {}
+  try { procNode && procNode.disconnect(); } catch (e) {}
+  try { micStream && micStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+  try { ctx && ctx.close(); } catch (e) {}
+  flushPlayback();
+  btn.textContent = 'Call';
+  btn.className = 'call';
+  setState('Idle');
+}
+
+// base64 helpers for Int16 PCM
+function b64(i16) {
+  const bytes = new Uint8Array(i16.buffer);
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s);
+}
+function fromB64(str) {
+  const bin = atob(str);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Int16Array(bytes.buffer);
+}
+</script>
+</body>
+</html>

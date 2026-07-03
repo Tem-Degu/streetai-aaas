@@ -9,6 +9,8 @@ import { logError } from '../utils/errlog.js';
 import { formatForWhatsApp } from './whatsapp.js';
 import { extractTelnyxEvent, runVoiceTurn } from './telnyx.js';
 import { runWebcallTurn } from './webcall.js';
+import { VoicePipeline } from '../engine/voice-pipeline.js';
+import { makeVoiceCodec, base64ToBuf, bufToBase64 } from '../engine/audio-utils.js';
 import { applyTxnButtonAction } from './transaction-actions.js';
 import { renderTransactionCard } from '../notifications/transaction-card.js';
 import { flushPendingWhatsApp, isTransactionActor } from '../notifications/index.js';
@@ -34,6 +36,7 @@ export default class RelayConnector extends BaseConnector {
     this.relayKey = config.relayKey;
     this.slug = config.slug;
     this.ws = null;
+    this.voiceCalls = new Map(); // callId -> { pipeline, codec } (real-time relay voice)
     this.pingInterval = null;
     this.reconnectAttempts = 0;
     this.reconnecting = false;
@@ -158,6 +161,7 @@ Bad (will NOT work):
       this.ws.on('close', (code) => {
         clearTimeout(timeout);
         this._clearPing();
+        this._closeVoiceCalls();
         if (this.status !== 'disconnected') {
           console.log('[relay] WebSocket closed, code:', code);
           this._handleReconnect();
@@ -199,6 +203,73 @@ Bad (will NOT work):
       await this._handleWebcallAudio(data);
       return;
     }
+
+    if (data.type === 'voice:start') { this._handleVoiceStart(data); return; }
+    if (data.type === 'voice:media') { this._handleVoiceMedia(data); return; }
+    if (data.type === 'voice:stop') { this._handleVoiceStop(data); return; }
+  }
+
+  // ─── Real-time relay voice ───────────────────────────────────
+  // streetai.org bridges a public browser/SBC call to us over the relay socket,
+  // multiplexed by callId. We run the SAME VoicePipeline as the direct connector
+  // (streaming STT → brain → streaming TTS + barge-in) and stream frames back.
+  async _handleVoiceStart(data) {
+    const callId = data.callId;
+    if (!callId || this.voiceCalls.has(callId)) return;
+    // The transport (browser = PCM16/16k, an SBC = e.g. mulaw/8k) declares its
+    // codec in voice:start.format; we normalise both ways at this edge so the
+    // pipeline only ever sees PCM16/16k. Browser path = identity (unchanged).
+    const codec = makeVoiceCodec(data.format);
+    const send = (type, extra) => {
+      if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type, callId, ...extra }));
+    };
+    const sendMedia = codec.identity
+      ? (payload) => send('voice:media', { payload })
+      : (payload) => {
+          let out = payload;
+          try { out = bufToBase64(codec.encodeOut(base64ToBuf(payload))); } catch { /* send as-is */ }
+          send('voice:media', { payload: out });
+        };
+    const pipeline = new VoicePipeline({
+      engine: this.engine,
+      sendMedia,
+      sendClear: () => send('voice:clear', {}),
+      userId: data.userId || `voice_${callId}`,
+    });
+    this.voiceCalls.set(callId, { pipeline, codec });
+    try {
+      await pipeline.start();
+    } catch (err) {
+      console.error('[relay] voice start error:', err.message);
+      send('voice:end', {}); // tell streetai.org to close the client (not billed)
+      this._handleVoiceStop(data);
+    }
+  }
+
+  _handleVoiceMedia(data) {
+    const entry = this.voiceCalls.get(data.callId);
+    if (!entry) return;
+    let buf = null;
+    try { buf = data.payload ? Buffer.from(data.payload, 'base64') : null; } catch { /* bad base64 */ }
+    if (!buf || !buf.length) return;
+    try { buf = entry.codec.decodeIn(buf); } catch { return; } // wire codec → PCM16/16k
+    entry.pipeline.onAudio(buf);
+  }
+
+  _handleVoiceStop(data) {
+    const entry = this.voiceCalls.get(data.callId);
+    if (entry) {
+      try { entry.pipeline.close(); } catch { /* ignore */ }
+      this.voiceCalls.delete(data.callId);
+    }
+  }
+
+  /** Close all active relay voice calls (on disconnect). */
+  _closeVoiceCalls() {
+    for (const entry of this.voiceCalls.values()) {
+      try { entry.pipeline.close(); } catch { /* ignore */ }
+    }
+    this.voiceCalls.clear();
   }
 
   // ─── Web Call voice handling ─────────────────────────────────

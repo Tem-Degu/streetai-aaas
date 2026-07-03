@@ -188,6 +188,8 @@ aaas run
 
 Your agent is now live on all connected platforms. Users message it, and it follows the AaaS protocol to serve them.
 
+`aaas run` starts your connectors in the **dashboard runtime** — exactly the same as clicking **Start** in the dashboard's Deploy tab. The CLI and the dashboard control the same running agent, so whatever you start one way shows up the other. It also keeps running after you close the terminal (it runs in the background runtime), so there's no separate "daemon" to manage.
+
 To start only a subset of platforms, pass their names:
 
 ```bash
@@ -195,13 +197,21 @@ aaas run telegram
 aaas run telegram discord
 ```
 
-Add `--daemon` to run in the background:
+Useful flags:
 
 ```bash
-aaas run telegram --daemon
+aaas run telegram --autostart   # also turn on auto-start (same as ticking the dashboard checkbox)
+aaas run telegram --attach      # start, then tail the log here (Ctrl+C just stops watching)
 ```
 
-If a daemon is already running when you use `--daemon` with a platform filter, you'll be prompted to stop it and start a fresh daemon with the listed platforms.
+Stop connectors the same way (or use the dashboard's **Stop**):
+
+```bash
+aaas stop                # stop everything that's running
+aaas stop telegram       # stop just one platform
+```
+
+Stopping is operational — it does not change a connector's auto-start setting.
 
 ### Check everything is working
 
@@ -262,6 +272,7 @@ Visitors chat through `streetai.org`, which forwards messages over WebSocket to 
 | `aaas doctor` | Check workspace health — node version, credentials, connections, structure, LLM reachability |
 | `aaas chat` | Chat with your agent in the terminal. Drag files in to attach them. Shows recent session history on startup |
 | `aaas dashboard [agent-name]` | Open the web dashboard for an agent (or hub if no name given) |
+| `aaas dashboard [agent-name] --service` | Run the dashboard headless (no browser) — for running as a background service |
 
 ### Content
 
@@ -337,11 +348,11 @@ Visitors chat through `streetai.org`, which forwards messages over WebSocket to 
 
 | Command | Description |
 |---------|-------------|
-| `aaas run` | Start the agent on all connected platforms |
+| `aaas run` | Start all connected platforms in the dashboard runtime (same as clicking Start; keeps running after you close the terminal) |
 | `aaas run <platform> [<platform>...]` | Start only the listed platforms (e.g. `aaas run telegram discord`) |
-| `aaas run --daemon` | Start in the background |
-| `aaas run <platform> --daemon` | Start only the listed platforms in the background (prompts to replace an existing daemon) |
-| `aaas stop` | Stop a running agent |
+| `aaas run <platform> --autostart` | Start it and enable auto-start (same as ticking the dashboard checkbox) |
+| `aaas run <platform> --attach` | Start, then tail the log in your terminal (Ctrl+C just stops watching) |
+| `aaas stop [<platform>...]` | Stop running connectors (same as clicking Stop); no names = stop all. Doesn't change auto-start |
 | `aaas logs [--days 5]` | View recent agent activity and memory changes |
 
 ### Moving and Sharing Agents

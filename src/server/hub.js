@@ -935,6 +935,14 @@ const PROVIDER_MODELS = {
     { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
     { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
   ],
+  streetai: [
+    { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+    { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gpt-5.4', label: 'GPT-5.4' },
+  ],
 };
 
 const OAUTH_PROVIDERS = {

@@ -1,0 +1,853 @@
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="2e1333981b34606b",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (574 bytes) from UDP:51.68.34.143:5376 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5376;branch=z9hG4bK-2951402173;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "104" <sip:104@167.172.232.144>;tag=3130343a465042583132333435210132363535373731313930
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "104" <sip:104@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 396573647
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="104",realm="asterisk",nonce="1782800820/2ac2ce8ae13c7307d0ef46be91306558",uri="sip:167.172.232.144",response="76a96530ff92fb647b0d80bedb3b16f2",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1244]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"104" <sip:104@167.172.232.144>' failed for '51.68.34.143:5376' (callid: 396573647) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1244]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"104" <sip:104@167.172.232.144>' failed for '51.68.34.143:5376' (callid: 396573647) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (535 bytes) to UDP:51.68.34.143:5376 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5376;rport=5376;received=51.68.34.143;branch=z9hG4bK-2951402173
+asterisk-1  | Call-ID: 396573647
+asterisk-1  | From: "104" <sip:104@167.172.232.144>;tag=3130343a465042583132333435210132363535373731313930
+asterisk-1  | To: "104" <sip:104@167.172.232.144>;tag=z9hG4bK-2951402173
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/319041cdf010456281f6db8399b9e5df",opaque="4406b4bb7cb6c922",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (581 bytes) from UDP:172.110.223.135:5301 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5301;branch=z9hG4bK-1391071749;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a564f4958313032363801363533373132383338
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 4067498606
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1026",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="8654f55386fb6b1330f57c199becf53c",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[710]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5301' (callid: 4067498606) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[710]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5301' (callid: 4067498606) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (544 bytes) to UDP:172.110.223.135:5301 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5301;rport=5301;received=172.110.223.135;branch=z9hG4bK-1391071749
+asterisk-1  | Call-ID: 4067498606
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a564f4958313032363801363533373132383338
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>;tag=z9hG4bK-1391071749
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="7864c3c8507f9373",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (578 bytes) from UDP:172.110.223.135:5430 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5430;branch=z9hG4bK-1046434385;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a73696d313030300132323832383733373732
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 144193977
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1026",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="e999c56e16184865aa4310f445ba12f4",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[176]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5430' (callid: 144193977) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[176]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5430' (callid: 144193977) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (541 bytes) to UDP:172.110.223.135:5430 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5430;rport=5430;received=172.110.223.135;branch=z9hG4bK-1046434385
+asterisk-1  | Call-ID: 144193977
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a73696d313030300132323832383733373732
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>;tag=z9hG4bK-1046434385
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="22c0d4a666f36b2d",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (581 bytes) from UDP:172.110.223.135:5379 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5379;branch=z9hG4bK-3878475380;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a31713277336536303101383730363135353235
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 2676193714
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1026",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="f5cbbc5bf15b22b7621843f2b5e08206",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1066]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5379' (callid: 2676193714) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1066]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5379' (callid: 2676193714) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (544 bytes) to UDP:172.110.223.135:5379 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5379;rport=5379;received=172.110.223.135;branch=z9hG4bK-3878475380
+asterisk-1  | Call-ID: 2676193714
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a31713277336536303101383730363135353235
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>;tag=z9hG4bK-3878475380
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="751761a776dc8574",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (581 bytes) from UDP:172.110.223.135:5285 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5285;branch=z9hG4bK-2061958706;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a3230317a786376620134313532313138373238
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 3278086499
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1026",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="cfbb78b000d9dcb4982eda3f58749be0",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[799]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5285' (callid: 3278086499) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[799]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5285' (callid: 3278086499) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (544 bytes) to UDP:172.110.223.135:5285 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5285;rport=5285;received=172.110.223.135;branch=z9hG4bK-2061958706
+asterisk-1  | Call-ID: 3278086499
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a3230317a786376620134313532313138373238
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>;tag=z9hG4bK-2061958706
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="11310b3263855aae",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (589 bytes) from UDP:172.110.223.135:5473 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5473;branch=z9hG4bK-4238273056;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1027" <sip:1027@167.172.232.144>;tag=313032373a6b4c373934495137383566790133393233383438303137
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1027" <sip:1027@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 1631951358
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1027",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="6a9d422a68859ba4b69a42e26440b695",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[977]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1027" <sip:1027@167.172.232.144>' failed for '172.110.223.135:5473' (callid: 1631951358) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[977]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1027" <sip:1027@167.172.232.144>' failed for '172.110.223.135:5473' (callid: 1631951358) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (552 bytes) to UDP:172.110.223.135:5473 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5473;rport=5473;received=172.110.223.135;branch=z9hG4bK-4238273056
+asterisk-1  | Call-ID: 1631951358
+asterisk-1  | From: "1027" <sip:1027@167.172.232.144>;tag=313032373a6b4c373934495137383566790133393233383438303137
+asterisk-1  | To: "1027" <sip:1027@167.172.232.144>;tag=z9hG4bK-4238273056
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="1b171a0b45bc5cf8",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (582 bytes) from UDP:172.110.223.135:5632 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5632;branch=z9hG4bK-441335292;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1025" <sip:1025@167.172.232.144>;tag=313032353a404d4242414e4b31303101393230363038383938
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1025" <sip:1025@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 3966836150
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1025",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="5a497b24e02a6d004bd3f22dee0da974",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[621]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1025" <sip:1025@167.172.232.144>' failed for '172.110.223.135:5632' (callid: 3966836150) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[621]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1025" <sip:1025@167.172.232.144>' failed for '172.110.223.135:5632' (callid: 3966836150) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (544 bytes) to UDP:172.110.223.135:5632 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5632;rport=5632;received=172.110.223.135;branch=z9hG4bK-441335292
+asterisk-1  | Call-ID: 3966836150
+asterisk-1  | From: "1025" <sip:1025@167.172.232.144>;tag=313032353a404d4242414e4b31303101393230363038383938
+asterisk-1  | To: "1025" <sip:1025@167.172.232.144>;tag=z9hG4bK-441335292
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="486e233526d5916e",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (576 bytes) from UDP:51.68.34.143:5376 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5376;branch=z9hG4bK-3013686641;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "104" <sip:104@167.172.232.144>;tag=3130343a46504258313233343536210132383832323635323236
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "104" <sip:104@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 645696273
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="104",realm="asterisk",nonce="1782800822/319041cdf010456281f6db8399b9e5df",uri="sip:167.172.232.144",response="8e7e280d4ccce9ff8a9ec9b9d6a79c78",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1511]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"104" <sip:104@167.172.232.144>' failed for '51.68.34.143:5376' (callid: 645696273) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1511]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"104" <sip:104@167.172.232.144>' failed for '51.68.34.143:5376' (callid: 645696273) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (537 bytes) to UDP:51.68.34.143:5376 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5376;rport=5376;received=51.68.34.143;branch=z9hG4bK-3013686641
+asterisk-1  | Call-ID: 645696273
+asterisk-1  | From: "104" <sip:104@167.172.232.144>;tag=3130343a46504258313233343536210132383832323635323236
+asterisk-1  | To: "104" <sip:104@167.172.232.144>;tag=z9hG4bK-3013686641
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/319041cdf010456281f6db8399b9e5df",opaque="1c907a27010e5bc0",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (575 bytes) from UDP:172.110.223.135:5301 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5301;branch=z9hG4bK-2685868205;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a66726564310132383931383335333138
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 4067498606
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1026",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="1b0a2cf8849cc8444d54b3ec0878a289",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[265]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5301' (callid: 4067498606) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[265]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5301' (callid: 4067498606) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (538 bytes) to UDP:172.110.223.135:5301 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5301;rport=5301;received=172.110.223.135;branch=z9hG4bK-2685868205
+asterisk-1  | Call-ID: 4067498606
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a66726564310132383931383335333138
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>;tag=z9hG4bK-2685868205
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="2222511b6cc2efe1",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (580 bytes) from UDP:51.68.34.143:5485 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5485;branch=z9hG4bK-1802126100;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "216" <sip:216@167.172.232.144>;tag=3231363a6c6f67696e40313233343536240132363230313138333335
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: PBX
+asterisk-1  | To: "216" <sip:216@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 2180595643
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="216",realm="asterisk",nonce="1782800822/319041cdf010456281f6db8399b9e5df",uri="sip:167.172.232.144",response="40152c5f5f82b150be733366b27f39eb",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (579 bytes) from UDP:51.68.34.143:5376 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5376;branch=z9hG4bK-3990636457;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "104" <sip:104@167.172.232.144>;tag=3130343a4650425831323334353637210133353238343433333035
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "104" <sip:104@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 2333981556
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="104",realm="asterisk",nonce="1782800822/319041cdf010456281f6db8399b9e5df",uri="sip:167.172.232.144",response="b6076724df717d7f3feeac94c3cc9fa7",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1614]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"216" <sip:216@167.172.232.144>' failed for '51.68.34.143:5485' (callid: 2180595643) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1614]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"216" <sip:216@167.172.232.144>' failed for '51.68.34.143:5485' (callid: 2180595643) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (542 bytes) to UDP:51.68.34.143:5485 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5485;rport=5485;received=51.68.34.143;branch=z9hG4bK-1802126100
+asterisk-1  | Call-ID: 2180595643
+asterisk-1  | From: "216" <sip:216@167.172.232.144>;tag=3231363a6c6f67696e40313233343536240132363230313138333335
+asterisk-1  | To: "216" <sip:216@167.172.232.144>;tag=z9hG4bK-1802126100
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/319041cdf010456281f6db8399b9e5df",opaque="62c9bedc6b8c794f",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1614]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"104" <sip:104@167.172.232.144>' failed for '51.68.34.143:5376' (callid: 2333981556) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1614]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"104" <sip:104@167.172.232.144>' failed for '51.68.34.143:5376' (callid: 2333981556) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (540 bytes) to UDP:51.68.34.143:5376 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5376;rport=5376;received=51.68.34.143;branch=z9hG4bK-3990636457
+asterisk-1  | Call-ID: 2333981556
+asterisk-1  | From: "104" <sip:104@167.172.232.144>;tag=3130343a4650425831323334353637210133353238343433333035
+asterisk-1  | To: "104" <sip:104@167.172.232.144>;tag=z9hG4bK-3990636457
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/319041cdf010456281f6db8399b9e5df",opaque="76d559b57abc7598",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (584 bytes) from UDP:172.110.223.135:5430 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5430;branch=z9hG4bK-3336546797;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a636f6c756d62696135303001353639363936363835
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 144193977
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1026",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="9d391e0f082d09ff14aff6187b52716c",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (577 bytes) from UDP:172.110.223.135:5379 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5379;branch=z9hG4bK-3794858846;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a5365783630310131363931343832383139
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 2676193714
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1026",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="ba4b5a3202fe0eca03539822cb3b3c32",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[354]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5430' (callid: 144193977) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[888]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5379' (callid: 2676193714) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[888]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5379' (callid: 2676193714) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (540 bytes) to UDP:172.110.223.135:5379 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5379;rport=5379;received=172.110.223.135;branch=z9hG4bK-3794858846
+asterisk-1  | Call-ID: 2676193714
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a5365783630310131363931343832383139
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>;tag=z9hG4bK-3794858846
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="07bc64ba4927e58f",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[354]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5430' (callid: 144193977) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (547 bytes) to UDP:172.110.223.135:5430 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5430;rport=5430;received=172.110.223.135;branch=z9hG4bK-3336546797
+asterisk-1  | Call-ID: 144193977
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a636f6c756d62696135303001353639363936363835
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>;tag=z9hG4bK-3336546797
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="558659a852d2cae3",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (581 bytes) from UDP:172.110.223.135:5285 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5285;branch=z9hG4bK-1364132383;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a3230317a786376626e01323335323539333539
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 3278086499
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1026",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="6597cd407a10515472c509be5ac9cc22",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[443]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5285' (callid: 3278086499) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[443]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1026" <sip:1026@167.172.232.144>' failed for '172.110.223.135:5285' (callid: 3278086499) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (544 bytes) to UDP:172.110.223.135:5285 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5285;rport=5285;received=172.110.223.135;branch=z9hG4bK-1364132383
+asterisk-1  | Call-ID: 3278086499
+asterisk-1  | From: "1026" <sip:1026@167.172.232.144>;tag=313032363a3230317a786376626e01323335323539333539
+asterisk-1  | To: "1026" <sip:1026@167.172.232.144>;tag=z9hG4bK-1364132383
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="3910993b7ae09dfb",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (582 bytes) from UDP:172.110.223.135:5473 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5473;branch=z9hG4bK-833790798;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "1027" <sip:1027@167.172.232.144>;tag=313032373a78533469755a774e330133353438313735393337
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "1027" <sip:1027@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 1631951358
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="1027",realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",uri="sip:167.172.232.144",response="73395f3d81c700ac5562b5c1316f4824",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1155]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1027" <sip:1027@167.172.232.144>' failed for '172.110.223.135:5473' (callid: 1631951358) - No matching endpoint found
+asterisk-1  | [Jun 30 06:27:02] NOTICE[1155]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"1027" <sip:1027@167.172.232.144>' failed for '172.110.223.135:5473' (callid: 1631951358) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (544 bytes) to UDP:172.110.223.135:5473 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5473;rport=5473;received=172.110.223.135;branch=z9hG4bK-833790798
+asterisk-1  | Call-ID: 1631951358
+asterisk-1  | From: "1027" <sip:1027@167.172.232.144>;tag=313032373a78533469755a774e330133353438313735393337
+asterisk-1  | To: "1027" <sip:1027@167.172.232.144>;tag=z9hG4bK-833790798
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782800822/714e92cf015b48cbc62c82e9d344e3fc",opaque="1574ff3e14eb87a7",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs^C10.40431411-2^C
+root@truuze-api:/home/streetai/sbc/asterisk-stack# ^C
+root@truuze-api:/home/streetai/sbc/asterisk-stack# ^C
+root@truuze-api:/home/streetai/sbc/asterisk-stack# ^C
+root@truuze-api:/home/streetai/sbc/asterisk-stack# ^C
+root@truuze-api:/home/streetai/sbc/asterisk-stack# ^C
+root@truuze-api:/home/streetai/sbc/asterisk-stack# ^C
+root@truuze-api:/home/streetai/sbc/asterisk-stack# ^C
+root@truuze-api:/home/streetai/sbc/asterisk-stack# ^C
+root@truuze-api:/home/streetai/sbc/asterisk-stack# docker compose exec asterisk asterisk -rx "pjsip show contacts"
+No objects found.
+
+root@truuze-api:/home/streetai/sbc/asterisk-stack# docker compose logs --tail=200 asterisk
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: PBX
+asterisk-1  | To: "810" <sip:810@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 1207464664
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="810",realm="asterisk",nonce="1782801730/c2aa59446a901c3ac071688c3edc7342",uri="sip:167.172.232.144",response="340c39cd74cadb01dd27ec6a0a63379d",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:42:11] NOTICE[354]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 1207464664) - No matching endpoint found
+asterisk-1  | [Jun 30 06:42:11] NOTICE[354]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 1207464664) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (534 bytes) to UDP:51.68.34.143:5477 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;rport=5477;received=51.68.34.143;branch=z9hG4bK-2612918778
+asterisk-1  | Call-ID: 1207464664
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a3132333435364061736466013437393638323930
+asterisk-1  | To: "810" <sip:810@167.172.232.144>;tag=z9hG4bK-2612918778
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782801731/2112047c69109d58811c5267f03d9eb9",opaque="39ffd649303e50e4",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (576 bytes) from UDP:51.68.34.143:5477 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;branch=z9hG4bK-32140953;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a3132333435363740617364660134303930393736333336
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: PBX
+asterisk-1  | To: "810" <sip:810@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 3858446658
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="810",realm="asterisk",nonce="1782801730/c2aa59446a901c3ac071688c3edc7342",uri="sip:167.172.232.144",response="27229e9fa83574029b39a73b242ab51c",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:42:11] NOTICE[1066]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 3858446658) - No matching endpoint found
+asterisk-1  | [Jun 30 06:42:11] NOTICE[1066]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 3858446658) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (536 bytes) to UDP:51.68.34.143:5477 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;rport=5477;received=51.68.34.143;branch=z9hG4bK-32140953
+asterisk-1  | Call-ID: 3858446658
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a3132333435363740617364660134303930393736333336
+asterisk-1  | To: "810" <sip:810@167.172.232.144>;tag=z9hG4bK-32140953
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782801731/2112047c69109d58811c5267f03d9eb9",opaque="405a179536892872",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (577 bytes) from UDP:51.68.34.143:5477 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;branch=z9hG4bK-225183524;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a313233343536373840617364660131373633303531313233
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: PBX
+asterisk-1  | To: "810" <sip:810@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 80246297
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="810",realm="asterisk",nonce="1782801730/c2aa59446a901c3ac071688c3edc7342",uri="sip:167.172.232.144",response="5466fc1127217f43296ad87128c1c7c1",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:42:11] NOTICE[977]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 80246297) - No matching endpoint found
+asterisk-1  | [Jun 30 06:42:11] NOTICE[977]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 80246297) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (538 bytes) to UDP:51.68.34.143:5477 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;rport=5477;received=51.68.34.143;branch=z9hG4bK-225183524
+asterisk-1  | Call-ID: 80246297
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a313233343536373840617364660131373633303531313233
+asterisk-1  | To: "810" <sip:810@167.172.232.144>;tag=z9hG4bK-225183524
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782801731/2112047c69109d58811c5267f03d9eb9",opaque="30352cfc6172a14a",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (582 bytes) from UDP:51.68.34.143:5477 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;branch=z9hG4bK-3556103167;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a31323334353637383940617364660132383635353337333434
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: PBX
+asterisk-1  | To: "810" <sip:810@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 2011481637
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="810",realm="asterisk",nonce="1782801730/c2aa59446a901c3ac071688c3edc7342",uri="sip:167.172.232.144",response="62b4b3ff1ef33d7619eb28b9fcd1b992",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:42:11] NOTICE[265]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 2011481637) - No matching endpoint found
+asterisk-1  | [Jun 30 06:42:11] NOTICE[265]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 2011481637) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (544 bytes) to UDP:51.68.34.143:5477 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;rport=5477;received=51.68.34.143;branch=z9hG4bK-3556103167
+asterisk-1  | Call-ID: 2011481637
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a31323334353637383940617364660132383635353337333434
+asterisk-1  | To: "810" <sip:810@167.172.232.144>;tag=z9hG4bK-3556103167
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782801731/2112047c69109d58811c5267f03d9eb9",opaque="55bd72cf68c6aa26",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (572 bytes) from UDP:51.68.34.143:5477 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;branch=z9hG4bK-3514585779;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a3233343540617364660131313039303237323238
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: PBX
+asterisk-1  | To: "810" <sip:810@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 2789045345
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="810",realm="asterisk",nonce="1782801730/c2aa59446a901c3ac071688c3edc7342",uri="sip:167.172.232.144",response="acf91a73201d077c6d02b8b2fcd0be3f",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:42:11] NOTICE[1511]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 2789045345) - No matching endpoint found
+asterisk-1  | [Jun 30 06:42:11] NOTICE[1511]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 2789045345) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (534 bytes) to UDP:51.68.34.143:5477 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;rport=5477;received=51.68.34.143;branch=z9hG4bK-3514585779
+asterisk-1  | Call-ID: 2789045345
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a3233343540617364660131313039303237323238
+asterisk-1  | To: "810" <sip:810@167.172.232.144>;tag=z9hG4bK-3514585779
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782801731/2112047c69109d58811c5267f03d9eb9",opaque="598cbc083a14141c",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (572 bytes) from UDP:51.68.34.143:5477 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;branch=z9hG4bK-2192702672;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a3233343536406173646601343338323831373639
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: PBX
+asterisk-1  | To: "810" <sip:810@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 4201322838
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="810",realm="asterisk",nonce="1782801730/c2aa59446a901c3ac071688c3edc7342",uri="sip:167.172.232.144",response="976fdb9299438e7b3c480d0e78c926db",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:42:11] NOTICE[1422]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 4201322838) - No matching endpoint found
+asterisk-1  | [Jun 30 06:42:11] NOTICE[1422]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 4201322838) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (534 bytes) to UDP:51.68.34.143:5477 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;rport=5477;received=51.68.34.143;branch=z9hG4bK-2192702672
+asterisk-1  | Call-ID: 4201322838
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a3233343536406173646601343338323831373639
+asterisk-1  | To: "810" <sip:810@167.172.232.144>;tag=z9hG4bK-2192702672
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782801731/2112047c69109d58811c5267f03d9eb9",opaque="4115d9ff7455bccb",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (570 bytes) from UDP:51.68.34.143:5477 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;branch=z9hG4bK-3356698247;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a33323140617364660133333133393635303432
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: PBX
+asterisk-1  | To: "810" <sip:810@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 3858446658
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="810",realm="asterisk",nonce="1782801731/2112047c69109d58811c5267f03d9eb9",uri="sip:167.172.232.144",response="20e443f24d87f47334837348fe146335",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:42:11] NOTICE[176]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 3858446658) - No matching endpoint found
+asterisk-1  | [Jun 30 06:42:11] NOTICE[176]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"810" <sip:810@167.172.232.144>' failed for '51.68.34.143:5477' (callid: 3858446658) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (532 bytes) to UDP:51.68.34.143:5477 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5477;rport=5477;received=51.68.34.143;branch=z9hG4bK-3356698247
+asterisk-1  | Call-ID: 3858446658
+asterisk-1  | From: "810" <sip:810@167.172.232.144>;tag=3831303a33323140617364660133333133393635303432
+asterisk-1  | To: "810" <sip:810@167.172.232.144>;tag=z9hG4bK-3356698247
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782801731/2112047c69109d58811c5267f03d9eb9",opaque="593ec4c45f688936",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  |     -- Remote UNIX connection
+asterisk-1  |     -- Remote UNIX connection disconnected
+root@truuze-api:/home/streetai/sbc/asterisk-stack# ^C
+root@truuze-api:/home/streetai/sbc/asterisk-stack# docker compose logs --tail=200 asterisk | grep 92.96.182.137
+root@truuze-api:/home/streetai/sbc/asterisk-stack# docker compose logs --tail=200 asterisk
+asterisk-1  | From: "18" <sip:18@167.172.232.144>;tag=31383a31383138406161610132333830353131333139
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "18" <sip:18@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 3508608668
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="18",realm="asterisk",nonce="1782802710/9d9d6c29cddffc62ae97e81954c18d1d",uri="sip:167.172.232.144",response="c64f4381c5d4510b5c6bdc15ed564496",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"17" <sip:17@167.172.232.144>' failed for '172.110.223.135:5442' (callid: 823048664) - No matching endpoint found
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"17" <sip:17@167.172.232.144>' failed for '172.110.223.135:5442' (callid: 823048664) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (525 bytes) to UDP:172.110.223.135:5442 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5442;rport=5442;received=172.110.223.135;branch=z9hG4bK-3528886418
+asterisk-1  | Call-ID: 823048664
+asterisk-1  | From: "17" <sip:17@167.172.232.144>;tag=31373a31343332323201343832363839353839
+asterisk-1  | To: "17" <sip:17@167.172.232.144>;tag=z9hG4bK-3528886418
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782802710/9d9d6c29cddffc62ae97e81954c18d1d",opaque="64cbc9d26dd6dda6",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"18" <sip:18@167.172.232.144>' failed for '172.110.223.135:6105' (callid: 3508608668) - No matching endpoint found
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"18" <sip:18@167.172.232.144>' failed for '172.110.223.135:6105' (callid: 3508608668) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (532 bytes) to UDP:172.110.223.135:6105 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:6105;rport=6105;received=172.110.223.135;branch=z9hG4bK-2726799187
+asterisk-1  | Call-ID: 3508608668
+asterisk-1  | From: "18" <sip:18@167.172.232.144>;tag=31383a31383138406161610132333830353131333139
+asterisk-1  | To: "18" <sip:18@167.172.232.144>;tag=z9hG4bK-2726799187
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782802710/9d9d6c29cddffc62ae97e81954c18d1d",opaque="137bfac42178d7e6",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (571 bytes) from UDP:172.110.223.135:5386 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5386;branch=z9hG4bK-3020476967;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "18" <sip:18@167.172.232.144>;tag=31383a373030387137303038770131323834373333343036
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "18" <sip:18@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 3024799496
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="18",realm="asterisk",nonce="1782802710/9d9d6c29cddffc62ae97e81954c18d1d",uri="sip:167.172.232.144",response="5ffa076b70d7ff1b1696f2f57cf4d649",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"18" <sip:18@167.172.232.144>' failed for '172.110.223.135:5386' (callid: 3024799496) - No matching endpoint found
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"18" <sip:18@167.172.232.144>' failed for '172.110.223.135:5386' (callid: 3024799496) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (536 bytes) to UDP:172.110.223.135:5386 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5386;rport=5386;received=172.110.223.135;branch=z9hG4bK-3020476967
+asterisk-1  | Call-ID: 3024799496
+asterisk-1  | From: "18" <sip:18@167.172.232.144>;tag=31383a373030387137303038770131323834373333343036
+asterisk-1  | To: "18" <sip:18@167.172.232.144>;tag=z9hG4bK-3020476967
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782802710/9d9d6c29cddffc62ae97e81954c18d1d",opaque="7b038ea87d1bd99e",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (565 bytes) from UDP:51.68.34.143:5268 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5268;branch=z9hG4bK-145209614;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "116" <sip:116@167.172.232.144>;tag=3131363a3131323342620131363435383530343138
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: PBX
+asterisk-1  | To: "116" <sip:116@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 2400419798
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="116",realm="asterisk",nonce="1782802710/605aa221508b1944f12bee3b0c5026f9",uri="sip:167.172.232.144",response="e98043e6b9745d5d03dae75a6688c8e1",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (563 bytes) from UDP:172.110.223.135:5456 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5456;branch=z9hG4bK-2006774013;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "13" <sip:13@167.172.232.144>;tag=31333a3230303061610134313138323434363833
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "13" <sip:13@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 1631982127
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="13",realm="asterisk",nonce="1782802710/9d9d6c29cddffc62ae97e81954c18d1d",uri="sip:167.172.232.144",response="47c21f9d35d7181546f95f30d09e9116",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"116" <sip:116@167.172.232.144>' failed for '51.68.34.143:5268' (callid: 2400419798) - No matching endpoint found
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"116" <sip:116@167.172.232.144>' failed for '51.68.34.143:5268' (callid: 2400419798) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (526 bytes) to UDP:51.68.34.143:5268 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5268;rport=5268;received=51.68.34.143;branch=z9hG4bK-145209614
+asterisk-1  | Call-ID: 2400419798
+asterisk-1  | From: "116" <sip:116@167.172.232.144>;tag=3131363a3131323342620131363435383530343138
+asterisk-1  | To: "116" <sip:116@167.172.232.144>;tag=z9hG4bK-145209614
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782802710/605aa221508b1944f12bee3b0c5026f9",opaque="239e822b6423a621",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"13" <sip:13@167.172.232.144>' failed for '172.110.223.135:5456' (callid: 1631982127) - No matching endpoint found
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"13" <sip:13@167.172.232.144>' failed for '172.110.223.135:5456' (callid: 1631982127) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (528 bytes) to UDP:172.110.223.135:5456 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5456;rport=5456;received=172.110.223.135;branch=z9hG4bK-2006774013
+asterisk-1  | Call-ID: 1631982127
+asterisk-1  | From: "13" <sip:13@167.172.232.144>;tag=31333a3230303061610134313138323434363833
+asterisk-1  | To: "13" <sip:13@167.172.232.144>;tag=z9hG4bK-2006774013
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782802710/9d9d6c29cddffc62ae97e81954c18d1d",opaque="21ff9eb0252b91ab",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (563 bytes) from UDP:51.68.34.143:5476 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5476;branch=z9hG4bK-2357869243;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "207" <sip:207@167.172.232.144>;tag=3230373a6e3132400131383935353538333037
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "207" <sip:207@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 1771289829
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="207",realm="asterisk",nonce="1782802710/605aa221508b1944f12bee3b0c5026f9",uri="sip:167.172.232.144",response="690ba0dab1ede041c07b4fbbce47ff8d",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (558 bytes) from UDP:172.110.223.135:5202 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5202;branch=z9hG4bK-524199195;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "18" <sip:18@167.172.232.144>;tag=31383a343031686801383536313234303739
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "18" <sip:18@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 3200611119
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="18",realm="asterisk",nonce="1782802710/9d9d6c29cddffc62ae97e81954c18d1d",uri="sip:167.172.232.144",response="b67de3c1c7c443adede247d77e8719b5",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"207" <sip:207@167.172.232.144>' failed for '51.68.34.143:5476' (callid: 1771289829) - No matching endpoint found
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"207" <sip:207@167.172.232.144>' failed for '51.68.34.143:5476' (callid: 1771289829) - Failed to authenticate
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1705]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"18" <sip:18@167.172.232.144>' failed for '172.110.223.135:5202' (callid: 3200611119) - No matching endpoint found
+asterisk-1  | <--- Transmitting SIP response (524 bytes) to UDP:51.68.34.143:5476 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 51.68.34.143:5476;rport=5476;received=51.68.34.143;branch=z9hG4bK-2357869243
+asterisk-1  | Call-ID: 1771289829
+asterisk-1  | From: "207" <sip:207@167.172.232.144>;tag=3230373a6e3132400131383935353538333037
+asterisk-1  | To: "207" <sip:207@167.172.232.144>;tag=z9hG4bK-2357869243
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782802710/605aa221508b1944f12bee3b0c5026f9",opaque="732e0dac0b9d178c",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1705]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"18" <sip:18@167.172.232.144>' failed for '172.110.223.135:5202' (callid: 3200611119) - Failed to authenticate
+asterisk-1  | <--- Transmitting SIP response (522 bytes) to UDP:172.110.223.135:5202 --->
+asterisk-1  | SIP/2.0 401 Unauthorized
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:5202;rport=5202;received=172.110.223.135;branch=z9hG4bK-524199195
+asterisk-1  | Call-ID: 3200611119
+asterisk-1  | From: "18" <sip:18@167.172.232.144>;tag=31383a343031686801383536313234303739
+asterisk-1  | To: "18" <sip:18@167.172.232.144>;tag=z9hG4bK-524199195
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | WWW-Authenticate: Digest realm="asterisk",nonce="1782802710/9d9d6c29cddffc62ae97e81954c18d1d",opaque="24abe8970615ff1d",algorithm=md5,qop="auth"
+asterisk-1  | Server: Asterisk PBX 18.10.0~dfsg+~cs6.10.40431411-2
+asterisk-1  | Content-Length:  0
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | <--- Received SIP request (564 bytes) from UDP:172.110.223.135:6115 --->
+asterisk-1  | REGISTER sip:167.172.232.144 SIP/2.0
+asterisk-1  | Via: SIP/2.0/UDP 172.110.223.135:6115;branch=z9hG4bK-216313642;rport
+asterisk-1  | Content-Length: 0
+asterisk-1  | From: "19" <sip:19@167.172.232.144>;tag=31393a4a2172314321510132343330353236303737
+asterisk-1  | Accept: application/sdp
+asterisk-1  | User-Agent: FPBX
+asterisk-1  | To: "19" <sip:19@167.172.232.144>
+asterisk-1  | Contact: sip:123@1.1.1.1
+asterisk-1  | CSeq: 2 REGISTER
+asterisk-1  | Call-ID: 3995541759
+asterisk-1  | Max-Forwards: 70
+asterisk-1  | Authorization: Digest username="19",realm="asterisk",nonce="1782802710/9d9d6c29cddffc62ae97e81954c18d1d",uri="sip:167.172.232.144",response="b488900d927084b06e5c41d936b1a9e0",algorithm=MD5
+asterisk-1  | 
+asterisk-1  | 
+asterisk-1  | [Jun 30 06:58:30] NOTICE[1703]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '"19" <sip:19@167.172.232.144>' failed for '172.110.223.135:6115' (callid: 3995541759) - No matching endpoint found
+root@truuze-api:/home/streetai/sbc/asterisk-stack# 

@@ -114,6 +114,7 @@ const CONNECTOR_MODULES = {
   whatsapp: () => import('./whatsapp.js'),
   telnyx: () => import('./telnyx.js'),
   webcall: () => import('./webcall.js'),
+  voicecall: () => import('./voicecall.js'),
   relay: () => import('./relay.js'),
 };
 
@@ -238,7 +239,7 @@ export async function loadAllConnectors(workspace, engine, options = {}) {
   const hasRelay = connections.some(c => c.platform === 'relay');
   // Platforms whose local servers are replaced by the relay (streetai.org fronts
   // their inbound traffic — WhatsApp webhooks, HTTP chat, Telnyx voice, Web Call).
-  const relayedPlatforms = hasRelay ? new Set(['whatsapp', 'http', 'telnyx', 'webcall']) : new Set();
+  const relayedPlatforms = hasRelay ? new Set(['whatsapp', 'http', 'telnyx', 'webcall', 'voicecall']) : new Set();
 
   for (const { platform, config } of connections) {
     if (relayedPlatforms.has(platform)) {

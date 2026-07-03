@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFetch, useApi } from '../hooks/useApi.js';
+import { withBase } from '../base.js';
 import { HiEllipsisVertical } from 'react-icons/hi2';
 
 const NAME_COLORS = [
@@ -64,7 +65,7 @@ export default function Hub() {
       formData.append('description', editDesc.trim());
       if (editPhoto) formData.append('photo', editPhoto);
       if (editPhotoRemoved) formData.append('removePhoto', 'true');
-      const resp = await fetch(`/api/hub/workspaces/${dir}`, { method: 'PATCH', body: formData });
+      const resp = await fetch(withBase(`/api/hub/workspaces/${dir}`), { method: 'PATCH', body: formData });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Failed');
       setEditing(null);
@@ -122,7 +123,7 @@ export default function Hub() {
       if (photo) formData.append('photo', photo);
       // Empty selectedTemplate = Blank (existing generic scaffold behavior)
       if (selectedTemplate) formData.append('template', selectedTemplate);
-      const resp = await fetch('/api/hub/workspaces', { method: 'POST', body: formData });
+      const resp = await fetch(withBase('/api/hub/workspaces'), { method: 'POST', body: formData });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Failed');
       navigate(`/ws/${result.directory}`);

@@ -748,26 +748,27 @@ aaas run
 aaas run telegram
 aaas run telegram discord
 
-# Run in the background
-aaas run --daemon
+# Start and enable auto-start (same as the dashboard checkbox)
+aaas run telegram --autostart
 
-# Run only specific platforms in the background
-aaas run telegram --daemon
+# Start, then tail the log here (Ctrl+C just stops watching)
+aaas run telegram --attach
 
-# Stop a running agent
+# Stop running connectors (no name = stop all)
 aaas stop
+aaas stop telegram
 
 # Check status
 aaas status
 \`\`\`
 
+### Same runtime as the dashboard
+
+\`aaas run\` and \`aaas stop\` do exactly what the dashboard's **Start**/**Stop** buttons do — the CLI and the dashboard control the **same running agent**, so whatever you start one way appears the other. The agent runs in the dashboard runtime and **keeps running after you close the terminal** (there's no separate background "daemon" to manage). Stopping a connector is operational — it does not change its auto-start setting.
+
 ### Multiple platforms
 
-Your agent can be connected to multiple platforms at the same time. Each platform gets its own connection config in \`.aaas/connections/\`. When you run \`aaas run\` with no arguments, all platforms start simultaneously. Pass one or more platform names to start only those.
-
-### Swapping platforms on a running daemon
-
-If a daemon is already running and you use \`--daemon\` with a platform filter (e.g. \`aaas run discord --daemon\`), you'll be prompted to stop the existing daemon and start a fresh one with only the listed platforms. Answer **y** to swap, or **N** to leave the current daemon alone.`,
+Your agent can be connected to multiple platforms at the same time. Each platform gets its own connection config in \`.aaas/connections/\`. When you run \`aaas run\` with no arguments, all platforms start simultaneously. Pass one or more platform names to start only those.`,
   },
   {
     id: 'notifications',
@@ -1148,7 +1149,7 @@ Your agent has two modes that control what it can do:
 
 **Switching modes in the dashboard:**
 
-The Chat page has a toggle at the top to switch between User (customer) and Admin mode.
+The Chat page has an **Admin / Customer** toggle at the top — click to switch. No command or verification is needed here; the dashboard already knows you are the owner. Each mode keeps its own separate test conversation.
 
 **Switching modes on other platforms:**
 
@@ -1178,7 +1179,7 @@ How it works:
 Safety nets:
 
 - The Send button is disabled until you pause. The pause action is the explicit "I'm taking over" gate.
-- A paused session auto-resumes after 24 hours if you forget.
+- A paused session auto-resumes after about an hour if you forget (configurable via \`pauseMaxHours\`).
 - All paused sessions auto-resume when a connector restarts. Pause state does not survive a daemon restart.
 
 ### Switching Sidebar Layout (Admin / Basic)
@@ -1258,6 +1259,7 @@ aaas init <dir> [name] [desc]    # Create a new workspace
 aaas status                       # Show workspace status and config
 aaas chat                         # Chat with the agent in terminal
 aaas dashboard [--port 3400]      # Open the web dashboard
+aaas dashboard --service          # Headless (no browser) — for running as a background service
 \`\`\`
 
 ### Configuration
@@ -1290,12 +1292,14 @@ aaas connect truuze --key <agent_key>   # ...or reconnect an existing agent
 aaas connect http --port 3300     # Start an HTTP API
 aaas connections                  # List all connected platforms
 aaas disconnect <platform>        # Remove a platform connection
-aaas run                          # Start the agent on all platforms
+aaas run                          # Start all platforms (same as clicking Start; runs in the background)
 aaas run <platform> [<platform>]  # Start only the listed platforms
-aaas run --daemon                 # Start in the background
-aaas run <platform> --daemon      # Start only the listed platforms in the background
-aaas stop                         # Stop a running agent
+aaas run <platform> --autostart   # Start it and enable auto-start (same as the dashboard checkbox)
+aaas run <platform> --attach      # Start, then tail the log here (Ctrl+C just stops watching)
+aaas stop [<platform>]            # Stop running connectors (same as clicking Stop); no name = stop all
 \`\`\`
+
+\`aaas run\`/\`aaas stop\` control the same running agent as the dashboard's Start/Stop buttons — the CLI and dashboard share one runtime. The agent keeps running after you close the terminal; stopping doesn't change a connector's auto-start.
 
 ### Hub Commands (multi-agent)
 
