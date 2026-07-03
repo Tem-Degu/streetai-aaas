@@ -1,0 +1,55 @@
+name: Build & publish aaas image
+
+# Builds the aaas base image and pushes it to GitHub Container Registry (ghcr).
+# The streetai server pulls this image to run hosted agents (see HOSTED-AGENTS.md).
+#
+# Triggers:
+#   - manual  ("Run workflow" button in the Actions tab)
+#   - a version tag push (v1.2.3, etc.)
+# Auth uses the built-in GITHUB_TOKEN — no personal token needed.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/tem-degu/streetai-aaas
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The Docker build copies a prebuilt dashboard/dist (it isn't built inside
+      # the image), so produce a fresh dist here first.
+      - name: Build dashboard
+        working-directory: dashboard
+        run: |
+          npm ci
+          npm run build
+
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:base
+            ${{ env.IMAGE }}:${{ github.sha }}
