@@ -119,6 +119,7 @@ export class VoicePipeline {
       segmentation: this.voice.segmentation,     // defaults to 'semantic' in stt-stream
       onPartial: () => {},                       // reserved (interim display)
       onFinal: (text) => this._onTranscript(text),
+      workspace: this.engine.workspace,
     });
     // Opening line: agent speaks first (isGreeting) before the caller says anything.
     await this._respond('', true);
@@ -206,6 +207,7 @@ export class VoicePipeline {
         region: tts.region || this.voice.region,
         text: reply,
         signal: ac.signal,
+        workspace: this.engine.workspace,
         onAudio: (pcm) => {
           if (myTurn !== this.turnId) return;
           // Advance the playback clock by this chunk's real duration so

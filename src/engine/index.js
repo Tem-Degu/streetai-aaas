@@ -151,7 +151,7 @@ export class AgentEngine {
     this.provider = await createProvider(this.providerName, {
       model: this.config.model,
       baseUrl: this.config.baseUrl,
-    });
+    }, this.workspace);
 
     // Initialize subsystems
     const budgets = this.config.context?.budgets;

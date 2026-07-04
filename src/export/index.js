@@ -4,6 +4,7 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import * as tar from 'tar';
 import { readJson, writeJson } from '../utils/workspace.js';
+import { resolveEffectiveCredentials } from '../auth/credentials.js';
 
 /**
  * Workspace export/import.
@@ -201,8 +202,9 @@ export async function exportWorkspace(workspaceRoot, { noSecrets = false, output
       if (fs.existsSync(credsPath)) {
         try {
           const creds = readJson(credsPath) || {};
-          for (const provider of Object.keys(creds)) {
-            if (creds[provider]?.apiKey) {
+          const provMap = creds.providers || creds; // support {providers:{…}} + legacy flat
+          for (const provider of Object.keys(provMap)) {
+            if (provMap[provider]?.apiKey) {
               requires.push({ kind: 'llm', provider });
             }
           }
@@ -244,6 +246,18 @@ export async function exportWorkspace(workspaceRoot, { noSecrets = false, output
         for (const name of stripped_extensions) {
           requires.push({ kind: 'extension_api_key', name });
         }
+      }
+    } else {
+      // Secrets included (e.g. --hosted / --secrets): API keys live in the global
+      // hub store plus a sparse per-agent overlay (adds/overrides + tombstones),
+      // NOT in the workspace as a full file. Flatten the effective set
+      // (hub + overlay − tombstones) into the bundle so the target machine /
+      // container has a self-contained credentials store.
+      const effective = resolveEffectiveCredentials(workspaceRoot);
+      if (Object.keys(effective.providers || {}).length) {
+        const aaasDir = path.join(workspaceStage, '.aaas');
+        fs.mkdirSync(aaasDir, { recursive: true });
+        writeJson(path.join(aaasDir, 'credentials.json'), effective);
       }
     }
 

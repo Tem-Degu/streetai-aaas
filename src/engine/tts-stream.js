@@ -22,16 +22,16 @@ import { getProviderCredential } from '../auth/credentials.js';
 const OUT_RATE = 16000;
 const ELEVEN_DEFAULT_VOICE = '21m00Tcm4TlvDq8ikWAM'; // "Rachel"
 
-export async function synthesizeStream({ provider = 'azure_speech', model, voice, region, text, onAudio, signal } = {}) {
+export async function synthesizeStream({ provider = 'azure_speech', model, voice, region, text, onAudio, signal, workspace } = {}) {
   const clean = String(text || '').trim();
   if (!clean) return;
   switch (provider) {
-    case 'azure_speech': return azureTtsStream({ region, voice, text: clean, onAudio, signal });
-    case 'elevenlabs':   return elevenTtsStream({ model, voice, text: clean, onAudio, signal });
-    case 'openai':       return openaiTtsStream({ model, voice, text: clean, onAudio, signal });
-    case 'groq':         return groqTtsStream({ model, voice, text: clean, onAudio, signal });
-    case 'aimlapi':      return aimlapiTtsStream({ model, voice, text: clean, onAudio, signal });
-    case 'streetai':     return streetaiTtsStream({ model, voice, text: clean, onAudio, signal });
+    case 'azure_speech': return azureTtsStream({ region, voice, text: clean, onAudio, signal, workspace });
+    case 'elevenlabs':   return elevenTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
+    case 'openai':       return openaiTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
+    case 'groq':         return groqTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
+    case 'aimlapi':      return aimlapiTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
+    case 'streetai':     return streetaiTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
     default:
       throw new Error(`Streaming TTS not implemented for provider "${provider}".`);
   }
@@ -163,8 +163,8 @@ function mp3Err(provider) {
 }
 
 // ─── Azure Speech SDK (its own transport; emits raw 16 kHz PCM) ─────────────
-async function azureTtsStream({ region, voice, text, onAudio, signal }) {
-  const cred = getProviderCredential('azure_speech');
+async function azureTtsStream({ region, voice, text, onAudio, signal, workspace }) {
+  const cred = getProviderCredential('azure_speech', workspace);
   const key = cred?.apiKey;
   const reg = String(region || cred?.region || cred?.endpoint || cred?.baseUrl || '').trim();
   if (!key) throw new Error('No "azure_speech" API key.');
@@ -198,8 +198,8 @@ async function azureTtsStream({ region, voice, text, onAudio, signal }) {
 // ─── HTTP providers (all via the shared normalization core) ─────────────────
 
 // ElevenLabs streams raw pcm_16000 → no header, no resample.
-async function elevenTtsStream({ model, voice, text, onAudio, signal }) {
-  const cred = getProviderCredential('elevenlabs');
+async function elevenTtsStream({ model, voice, text, onAudio, signal, workspace }) {
+  const cred = getProviderCredential('elevenlabs', workspace);
   if (!cred?.apiKey) throw new Error('No "elevenlabs" API key.');
   const voiceId = voice || ELEVEN_DEFAULT_VOICE;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=pcm_16000`;
@@ -213,8 +213,8 @@ async function elevenTtsStream({ model, voice, text, onAudio, signal }) {
 }
 
 // OpenAI streams raw pcm (24 kHz, no header) → resample 24k→16k.
-async function openaiTtsStream({ model, voice, text, onAudio, signal }) {
-  const cred = getProviderCredential('openai');
+async function openaiTtsStream({ model, voice, text, onAudio, signal, workspace }) {
+  const cred = getProviderCredential('openai', workspace);
   if (!cred?.apiKey) throw new Error('No "openai" API key.');
   const res = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST', signal,
@@ -226,8 +226,8 @@ async function openaiTtsStream({ model, voice, text, onAudio, signal }) {
 }
 
 // Groq/Orpheus streams WAV (48 kHz) → strip header, resample 48k→16k.
-async function groqTtsStream({ model, voice, text, onAudio, signal }) {
-  const cred = getProviderCredential('groq');
+async function groqTtsStream({ model, voice, text, onAudio, signal, workspace }) {
+  const cred = getProviderCredential('groq', workspace);
   if (!cred?.apiKey) throw new Error('No "groq" API key.');
   const res = await fetch('https://api.groq.com/openai/v1/audio/speech', {
     method: 'POST', signal,
@@ -245,8 +245,8 @@ async function groqTtsStream({ model, voice, text, onAudio, signal }) {
 
 // AIMLAPI can emit pcm_16000 directly. With stream:true it returns a raw body;
 // some plans/paths return a JSON { audio: url } instead — handle both.
-async function aimlapiTtsStream({ model, voice, text, onAudio, signal }) {
-  const cred = getProviderCredential('aimlapi');
+async function aimlapiTtsStream({ model, voice, text, onAudio, signal, workspace }) {
+  const cred = getProviderCredential('aimlapi', workspace);
   if (!cred?.apiKey) throw new Error('No "aimlapi" API key.');
   const res = await fetch('https://api.aimlapi.com/v1/tts', {
     method: 'POST', signal,
@@ -278,8 +278,8 @@ async function aimlapiTtsStream({ model, voice, text, onAudio, signal }) {
 
 // StreetAI managed gateway: one-shot WAV (azure-tts is 24 kHz; tts-1 honours
 // response_format=wav). Gateway buffers the whole reply, so normalize as a batch.
-async function streetaiTtsStream({ model, voice, text, onAudio, signal }) {
-  const cred = getProviderCredential('streetai');
+async function streetaiTtsStream({ model, voice, text, onAudio, signal, workspace }) {
+  const cred = getProviderCredential('streetai', workspace);
   if (!cred?.apiKey) throw new Error('No "streetai" API key.');
   const res = await fetch('https://streetai.org/llm/v1/audio/speech', {
     method: 'POST', signal,

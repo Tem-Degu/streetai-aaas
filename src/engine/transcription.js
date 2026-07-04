@@ -47,19 +47,19 @@ export function sttDefaultModel(provider) {
  * @param {string} [opts.endpoint] Override URL for a custom OpenAI-compatible host.
  * @returns {Promise<string>} The transcript (may be empty if speech wasn't detected).
  */
-export async function transcribeAudio({ filePath, buffer: inputBuffer, filename, provider = 'groq', model, language, region, endpoint } = {}) {
+export async function transcribeAudio({ filePath, buffer: inputBuffer, filename, provider = 'groq', model, language, region, endpoint, workspace } = {}) {
   // Azure Speech is not OpenAI-compatible (region endpoint + its own response
   // shape), so it has its own branch. The live Voice Call connector uses Azure's
   // streaming SDK instead; this batch path covers voice notes (WAV / OGG-Opus).
   if (provider === 'azure_speech') {
-    return azureBatchTranscribe({ filePath, buffer: inputBuffer, filename, model, language, region });
+    return azureBatchTranscribe({ filePath, buffer: inputBuffer, filename, model, language, region, workspace });
   }
 
   const spec = STT_PROVIDERS[provider];
   const url = endpoint || spec?.url;
   if (!url) throw new Error(`Unknown transcription provider "${provider}" and no endpoint given.`);
 
-  const cred = getProviderCredential(provider);
+  const cred = getProviderCredential(provider, workspace);
   if (!cred?.apiKey) {
     throw new Error(`No API key for "${provider}". Add it in Settings → Add API Key.`);
   }
@@ -112,8 +112,8 @@ function azureContentType(name) {
  * OGG-Opus. `model` carries the language ('auto' | 'ar-AE' | 'en-US'); 'auto'
  * falls back to en-US here (the streaming SDK path does true auto-detect).
  */
-async function azureBatchTranscribe({ filePath, buffer: inputBuffer, filename, model, language, region }) {
-  const cred = getProviderCredential('azure_speech');
+async function azureBatchTranscribe({ filePath, buffer: inputBuffer, filename, model, language, region, workspace }) {
+  const cred = getProviderCredential('azure_speech', workspace);
   if (!cred?.apiKey) throw new Error('No API key for "azure_speech". Add it in Settings → Add API Key (Azure Speech).');
   const reg = String(region || cred.region || cred.endpoint || cred.baseUrl || '').trim();
   if (!reg) throw new Error('Azure region not set (e.g. "uaenorth"). Set it on the voice config (region) or the azure_speech credential.');

@@ -37,6 +37,7 @@ export async function buildInboundContent(engine, baseText, savedFiles) {
           model: voice.model,
           language: voice.language,
           endpoint: voice.endpoint,
+          workspace: engine.workspace,
         });
         if (text) {
           parts.push(`🎤 Customer voice message [${f.path}]: "${text}"`);

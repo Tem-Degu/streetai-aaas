@@ -56,7 +56,7 @@ async function main() {
   }
 
   // Verify credentials
-  const credential = getProviderCredential(config.provider);
+  const credential = getProviderCredential(config.provider, workspace);
   if (!credential && config.provider !== 'ollama') {
     log(`ERROR: No API key for ${config.provider}.`);
     cleanup();

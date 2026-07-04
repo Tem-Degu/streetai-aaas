@@ -99,7 +99,7 @@ export async function chatCommand(opts) {
   }
 
   // Verify credentials exist
-  const credential = getProviderCredential(config.provider);
+  const credential = getProviderCredential(config.provider, ws);
   if (!credential && config.provider !== 'ollama') {
     console.error(chalk.red(`\n  No API key for ${config.provider}. Run: aaas config\n`));
     return;

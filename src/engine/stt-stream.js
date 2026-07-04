@@ -29,16 +29,16 @@ function azureLanguages(model) {
   return [model]; // already a BCP-47 tag
 }
 
-export async function createSttStream({ provider = 'groq', model, region, endpointSilenceMs, segmentation, onPartial, onFinal } = {}) {
+export async function createSttStream({ provider = 'groq', model, region, endpointSilenceMs, segmentation, onPartial, onFinal, workspace } = {}) {
   if (provider === 'azure_speech') {
-    return azureStreamStt({ model, region, endpointSilenceMs, segmentation, onPartial, onFinal });
+    return azureStreamStt({ model, region, endpointSilenceMs, segmentation, onPartial, onFinal, workspace });
   }
-  return segmentStt({ provider, model, onFinal });
+  return segmentStt({ provider, model, onFinal, workspace });
 }
 
 // --- Azure: true streaming via the Speech SDK ------------------------------
-async function azureStreamStt({ model, region, endpointSilenceMs, segmentation, onPartial, onFinal }) {
-  const cred = getProviderCredential('azure_speech');
+async function azureStreamStt({ model, region, endpointSilenceMs, segmentation, onPartial, onFinal, workspace }) {
+  const cred = getProviderCredential('azure_speech', workspace);
   const key = cred?.apiKey;
   const reg = String(region || cred?.region || cred?.endpoint || cred?.baseUrl || '').trim();
   if (!key) throw new Error('No "azure_speech" API key. Add it in Settings -> Add API Key.');
@@ -111,7 +111,7 @@ async function azureStreamStt({ model, region, endpointSilenceMs, segmentation, 
 }
 
 // --- OpenAI-compatible (Groq / OpenAI): VAD-segmented batch ----------------
-function segmentStt({ provider, model, onFinal }) {
+function segmentStt({ provider, model, onFinal, workspace }) {
   return {
     mode: 'segment',
     pushFrame: null,
@@ -123,6 +123,7 @@ function segmentStt({ provider, model, onFinal }) {
           filename: 'audio.wav',
           provider,
           model,
+          workspace,
         });
         const t = (text || '').trim();
         if (t && onFinal) onFinal(t);

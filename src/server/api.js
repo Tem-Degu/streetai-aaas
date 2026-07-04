@@ -8,7 +8,7 @@ import multer from 'multer';
 import { getWorkspacePaths, readJson, readText, writeJson, listFiles, fileStats, formatBytes } from '../utils/workspace.js';
 import { readErrorLogTail } from '../utils/errlog.js';
 import { validateStatusTransition, TXN_STATUSES } from '../engine/tools/transactions.js';
-import { getProviderCredential, setProviderCredential, removeProviderCredential, listProviders, maskApiKey } from '../auth/credentials.js';
+import { getProviderCredential, setWorkspaceProviderCredential, removeWorkspaceProvider, listProviders, maskApiKey } from '../auth/credentials.js';
 import { listConnections, loadConnection, saveConnection, removeConnection } from '../auth/connections.js';
 import { extractFiles } from '../connectors/media.js';
 import { buildPlatformSkill, parseTruuzeSkill } from '../connectors/truuze-skill.js';
@@ -1185,10 +1185,12 @@ export function apiRouter(workspace) {
         config = { ...hubConfig, ...config };
       }
     }
-    const providers = listProviders().map(name => {
-      const cred = getProviderCredential(name);
+    const providers = listProviders(workspace).map(name => {
+      const cred = getProviderCredential(name, workspace);
       return {
         name,
+        // 'workspace' = set on this agent, 'file' = inherited from the hub,
+        // 'env' = from an environment variable.
         source: cred?.source || 'unknown',
         keyPreview: cred?.apiKey ? maskApiKey(cred.apiKey) : null,
       };
@@ -1221,7 +1223,7 @@ export function apiRouter(workspace) {
     if (endpoint) credential.endpoint = endpoint;
     if (baseUrl) credential.baseUrl = baseUrl;
 
-    setProviderCredential(provider, credential);
+    setWorkspaceProviderCredential(workspace, provider, credential);
     // A key for the active LLM provider is baked into the provider client at
     // engine init → needs a restart. Other keys (e.g. a TTS provider) are read
     // live, so they don't.
@@ -1230,7 +1232,7 @@ export function apiRouter(workspace) {
   });
 
   router.delete('/credentials/:provider', (req, res) => {
-    const removed = removeProviderCredential(req.params.provider);
+    const removed = removeWorkspaceProvider(workspace, req.params.provider);
     if (!removed) return res.status(404).json({ error: 'Provider not found' });
     const activeProvider = readJson(path.join(workspace, '.aaas', 'config.json'))?.provider;
     res.json({ ok: true, restartRequired: req.params.provider === activeProvider });
@@ -1327,8 +1329,8 @@ export function apiRouter(workspace) {
 
       const tokens = await tokenRes.json();
 
-      // Save as credential
-      setProviderCredential(oauthState.provider, {
+      // Save as credential (per-agent overlay)
+      setWorkspaceProviderCredential(workspace, oauthState.provider, {
         type: 'oauth',
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || null,

@@ -113,12 +113,12 @@ const DEFAULT_MODELS = {
  * Create a provider instance by name.
  * Loads credentials automatically.
  */
-export async function createProvider(name, config = {}) {
+export async function createProvider(name, config = {}, workspace = null) {
   const loader = PROVIDER_MODULES[name];
   if (!loader) throw new Error(`Unknown provider: ${name}. Available: ${listAvailableProviders().join(', ')}`);
 
-  // Load credentials
-  const credential = getProviderCredential(name);
+  // Load credentials (workspace overlay overrides the hub store when given)
+  const credential = getProviderCredential(name, workspace);
   if (!credential && name !== 'ollama') {
     throw new Error(`No API key for ${name}. Run: aaas config`);
   }

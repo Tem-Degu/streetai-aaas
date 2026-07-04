@@ -102,30 +102,30 @@ export function ttsDefaultVoice(provider) {
  * @param {string} [opts.pitch]    SSML prosody pitch (e.g. '+0%') — Azure only.
  * @returns {Promise<{ buffer: Buffer, mime: string }>}
  */
-export async function synthesizeSpeech({ text, provider = 'groq', model, voice, format = 'wav', endpoint, region, rate, pitch, stability, style, speed, similarityBoost } = {}) {
+export async function synthesizeSpeech({ text, provider = 'groq', model, voice, format = 'wav', endpoint, region, rate, pitch, stability, style, speed, similarityBoost, workspace } = {}) {
   const clean = (text || '').trim();
   if (!clean) throw new Error('No text to synthesize.');
 
   // Azure speaks SSML to a region-specific endpoint — its own path.
   if (provider === 'azure_speech') {
-    return azureSynthesize({ text: clean, voice: voice || TTS_PROVIDERS.azure_speech.defaultVoice, region, rate, pitch });
+    return azureSynthesize({ text: clean, voice: voice || TTS_PROVIDERS.azure_speech.defaultVoice, region, rate, pitch, workspace });
   }
 
   // ElevenLabs uses its own JSON API + voice_settings — its own path.
   if (provider === 'elevenlabs') {
-    return elevenlabsSynthesize({ text: clean, voice, model, stability, style, speed, similarityBoost });
+    return elevenlabsSynthesize({ text: clean, voice, model, stability, style, speed, similarityBoost, workspace });
   }
 
   // AI/ML API proxies ElevenLabs et al. via aimlapi.com — its own path.
   if (provider === 'aimlapi') {
-    return aimlapiSynthesize({ text: clean, voice, model, stability, style, speed, similarityBoost });
+    return aimlapiSynthesize({ text: clean, voice, model, stability, style, speed, similarityBoost, workspace });
   }
 
   const spec = TTS_PROVIDERS[provider];
   const url = endpoint || spec?.url;
   if (!url) throw new Error(`Unknown TTS provider "${provider}" and no endpoint given.`);
 
-  const cred = getProviderCredential(provider);
+  const cred = getProviderCredential(provider, workspace);
   if (!cred?.apiKey) {
     throw new Error(`No API key for "${provider}". Add it in Settings → Add API Key.`);
   }
@@ -171,8 +171,8 @@ function escapeXml(s) {
  * the voice name (e.g. `ar-AE-FatimaNeural` → `ar-AE`). Optional SSML `rate`
  * and `pitch` (e.g. '-5%', '+0%'). Returns 24 kHz WAV.
  */
-async function azureSynthesize({ text, voice, region, rate, pitch }) {
-  const cred = getProviderCredential('azure_speech');
+async function azureSynthesize({ text, voice, region, rate, pitch, workspace }) {
+  const cred = getProviderCredential('azure_speech', workspace);
   if (!cred?.apiKey) {
     throw new Error('No API key for "azure_speech". Add it in Settings → Add API Key (Azure Speech).');
   }
@@ -226,8 +226,8 @@ async function azureSynthesize({ text, voice, region, rate, pitch }) {
  * `style` adds expressiveness, `speed` (0.7–1.2) adjusts pace. Returns MP3
  * (the browser decodes it via Web Audio just like WAV).
  */
-async function elevenlabsSynthesize({ text, voice, model, stability, style, speed, similarityBoost }) {
-  const cred = getProviderCredential('elevenlabs');
+async function elevenlabsSynthesize({ text, voice, model, stability, style, speed, similarityBoost, workspace }) {
+  const cred = getProviderCredential('elevenlabs', workspace);
   if (!cred?.apiKey) {
     throw new Error('No API key for "elevenlabs". Add it in Settings → Add API Key.');
   }
@@ -269,8 +269,8 @@ async function elevenlabsSynthesize({ text, voice, model, stability, style, spee
  * The response is either raw audio bytes or a JSON `{ audio: <url> }` (depending
  * on streaming) — we handle both. Returns MP3.
  */
-async function aimlapiSynthesize({ text, voice, model, stability, style, speed, similarityBoost }) {
-  const cred = getProviderCredential('aimlapi');
+async function aimlapiSynthesize({ text, voice, model, stability, style, speed, similarityBoost, workspace }) {
+  const cred = getProviderCredential('aimlapi', workspace);
   if (!cred?.apiKey) {
     throw new Error('No API key for "aimlapi". Add it in Settings → Add API Key.');
   }

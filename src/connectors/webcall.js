@@ -145,6 +145,7 @@ export async function runWebcallTurn(engine, { userId, audioBuffer, mime, langua
     voice: tts.voice || ttsDefaultVoice(ttsProvider),
     region: tts.region, rate: tts.rate, pitch: tts.pitch,
     stability: tts.stability, style: tts.style, speed: tts.speed, similarityBoost: tts.similarity_boost,
+    workspace: engine?.workspace,
   };
 
   // 1. Get the caller's words. A `text` turn (e.g. the opening greeting trigger
@@ -162,6 +163,7 @@ export async function runWebcallTurn(engine, { userId, audioBuffer, mime, langua
         // Auto-detect the spoken language (no hint) so the agent can mirror a
         // caller who switches languages. `language` is left for the LLM context.
         language: undefined,
+        workspace: engine?.workspace,
       });
     } catch (err) {
       console.error('[webcall] STT error:', err.message);

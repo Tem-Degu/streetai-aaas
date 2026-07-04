@@ -38,7 +38,7 @@ export async function runCommand(platforms, opts) {
     console.error(chalk.red('\n  No LLM configured. Run: aaas config\n'));
     return;
   }
-  const credential = getProviderCredential(config.provider);
+  const credential = getProviderCredential(config.provider, ws);
   if (!credential && config.provider !== 'ollama') {
     console.error(chalk.red(`\n  No API key for ${config.provider}. Run: aaas config\n`));
     return;
