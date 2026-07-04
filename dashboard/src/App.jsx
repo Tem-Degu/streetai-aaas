@@ -194,6 +194,16 @@ function Sidebar({ navItems, mode, onLogoClick, workspaceName, health }) {
         </div>
       )}
 
+      {/* Hosted mode: a real navigation back to the customer's StreetAI account
+          (leaves the agent SPA — /account is served by streetai, not the agent). */}
+      {AGENT_BASE && (
+        <div style={{ padding: '0 16px 8px' }}>
+          <a href="/account/" style={{ fontSize: 12, color: 'var(--text-muted)', textDecoration: 'none' }}>
+            &larr; Back to your account
+          </a>
+        </div>
+      )}
+
       {navItems.map(({ section, items }) => (
         <div key={section || '_root'}>
           {section && <div className="sidebar-section">{section}</div>}
