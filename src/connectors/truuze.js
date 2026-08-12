@@ -142,12 +142,19 @@ export default class TruuzeConnector extends BaseConnector {
       .replace(/\/api\/v1$/, '')  // strip /api/v1 suffix
       .replace(/^https:/, 'wss:')
       .replace(/^http:/, 'ws:');
-    const wsUrl = `${wsBase}/ws/?agent_key=${this.agentKey}`;
+    const wsUrl = `${wsBase}/ws/`;
 
-    console.log('[truuze] Connecting WebSocket:', wsUrl.replace(this.agentKey, '***'));
+    console.log('[truuze] Connecting WebSocket:', wsUrl);
 
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(wsUrl);
+      // Authenticate with the agent key as a handshake header (X-Agent-Key)
+      // rather than a query param, so the long-lived key never appears in the
+      // URL or server access logs. The Truuze backend still accepts the legacy
+      // ?agent_key= query param for backward compatibility, but the header is
+      // the preferred, current format.
+      this.ws = new WebSocket(wsUrl, {
+        headers: { 'X-Agent-Key': this.agentKey },
+      });
 
       const connectTimeout = setTimeout(() => {
         if (this.ws?.readyState !== WebSocket.OPEN) {
@@ -357,7 +364,15 @@ export default class TruuzeConnector extends BaseConnector {
     const messages = [...(updates.messages || [])].sort((a, b) => a.id - b.id);
     for (const msg of messages) {
       if (this._isProcessed('msg', msg.id)) continue;
-      await this._handleMessage(msg);
+      // Dispatch concurrently (like the WhatsApp connector) so a slow turn for
+      // one chat — e.g. a multi-minute music generation — doesn't block replies
+      // to everyone else. `_isProcessed` above already claimed the id, so an
+      // overlapping poll won't re-handle it, and `_handleMessage` swallows its
+      // own errors. NOTE: turns currently share the engine's event context,
+      // which can race under concurrency — a known issue to harden separately.
+      this._handleMessage(msg).catch((err) =>
+        console.error('[truuze] message %s handler error:', msg.id, err)
+      );
     }
 
     // Everything else (comments, mentions, reactions, listeners, new daybooks,

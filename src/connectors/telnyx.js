@@ -171,7 +171,7 @@ const LATIN_G = /[A-Za-z]/g;
 const DOMINANT = 0.7; // one script must be ≥70% of the letters to lock that language
 
 /** Detect 'ar' | 'en' from text; undefined when not clearly either (→ agent decides). */
-function detectLang(text) {
+export function detectLang(text) {
   const s = String(text || '');
   const ar = (s.match(ARABIC_G) || []).length;
   const la = (s.match(LATIN_G) || []).length;
@@ -187,6 +187,24 @@ function detectLang(text) {
   return undefined;
 }
 
+// Reply-language codes we can inject a directive for (must stay in sync with
+// context.js LANG_NAMES). Anything else → undefined → fall back to detection.
+const SUPPORTED_REPLY_LANGS = new Set(['ar', 'en', 'hi', 'ml', 'fil', 'ru']);
+
+/**
+ * Normalize an STT-provided BCP-47 tag ("ar-AE", "en-US", "hi-IN") to a supported
+ * reply-language code ('ar'|'en'|'hi'). Returns undefined for an absent or
+ * unsupported tag so the caller falls back to script detection. This is the
+ * PRIMARY signal: the STT engine judged the language from the audio itself, which
+ * is more reliable than inferring it from the transcript's script (and it works
+ * for same-script languages and numeric/short utterances where script can't).
+ */
+export function normalizeSttLang(tag) {
+  if (!tag) return undefined;
+  const base = String(tag).toLowerCase().split(/[-_]/)[0];
+  return SUPPORTED_REPLY_LANGS.has(base) ? base : undefined;
+}
+
 /**
  * Run one voice turn through the engine and sanitise the reply for speech.
  * Shared shape used by the direct connector; the relay client mirrors this
@@ -198,7 +216,7 @@ function detectLang(text) {
  * `config.voice.greeting` (or `config.greeting`); defaults to "Hello", which the
  * agent's own SKILL turns into its branded/localized greeting.
  */
-export async function runVoiceTurn(engine, { userId, content, language, isGreeting }) {
+export async function runVoiceTurn(engine, { userId, content, language, isGreeting, greetLang, sttLang }) {
   try {
     let greeting = false;
     if (!String(content || '').trim() && isGreeting) {
@@ -206,9 +224,15 @@ export async function runVoiceTurn(engine, { userId, content, language, isGreeti
       content = (cfg.voice && cfg.voice.greeting) || cfg.greeting || 'Hello';
       greeting = true;
     }
-    // Lock the reply only when this message is clearly Arabic or English;
-    // otherwise leave it to the agent (replyLanguage stays undefined).
-    const replyLanguage = detectLang(content);
+    // Resolve the reply language, best signal first:
+    //  1) greeting turn + caller-selected greetLang → open in the chosen language;
+    //  2) the STT engine's own per-utterance language decision (sttLang) — the most
+    //     reliable source, since it judged the audio, not just the resulting script;
+    //  3) fallback: deterministic Arabic-vs-Latin script detection on the text.
+    // Undefined at every level → the agent decides. Telnyx (and the relay's
+    // telnyx:chat) pass neither greetLang nor sttLang, so their behavior is
+    // unchanged — still script detection only.
+    const replyLanguage = (greeting && greetLang) || normalizeSttLang(sttLang) || detectLang(content);
     const result = await engine.processEvent({
       platform: 'telnyx',
       userId,

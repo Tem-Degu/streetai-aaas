@@ -22,11 +22,11 @@ import { getProviderCredential } from '../auth/credentials.js';
 const OUT_RATE = 16000;
 const ELEVEN_DEFAULT_VOICE = '21m00Tcm4TlvDq8ikWAM'; // "Rachel"
 
-export async function synthesizeStream({ provider = 'azure_speech', model, voice, region, text, onAudio, signal, workspace } = {}) {
+export async function synthesizeStream({ provider = 'azure_speech', model, voice, region, text, onAudio, signal, workspace, rate, pitch, style, styleDegree } = {}) {
   const clean = String(text || '').trim();
   if (!clean) return;
   switch (provider) {
-    case 'azure_speech': return azureTtsStream({ region, voice, text: clean, onAudio, signal, workspace });
+    case 'azure_speech': return azureTtsStream({ region, voice, text: clean, rate, pitch, style, styleDegree, onAudio, signal, workspace });
     case 'elevenlabs':   return elevenTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
     case 'openai':       return openaiTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
     case 'groq':         return groqTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
@@ -163,7 +163,49 @@ function mp3Err(provider) {
 }
 
 // ─── Azure Speech SDK (its own transport; emits raw 16 kHz PCM) ─────────────
-async function azureTtsStream({ region, voice, text, onAudio, signal, workspace }) {
+
+const RATE_OK = /^[+-]?\d{1,3}%$/;
+const PITCH_OK = /^[+-]?\d{1,3}%$/;
+const DEGREE_OK = /^(?:0(?:\.\d+)?|1(?:\.\d+)?|2)$/; // Azure styledegree 0.01–2
+
+// Voices that accept an mstts:express-as speaking style. Azure styles are
+// voice-specific (mostly en-US); Arabic and other locales have none, so we only
+// wrap those that do. Keep in sync with STYLE_CAPABLE_VOICES in Settings.jsx.
+const VOICE_STYLES = {
+  'en-US-AriaNeural': ['customerservice', 'chat', 'cheerful', 'friendly', 'hopeful', 'newscast', 'empathetic'],
+  'en-US-JennyNeural': ['customerservice', 'chat', 'cheerful', 'friendly', 'hopeful', 'newscast', 'assistant'],
+};
+function voiceSupportsStyle(voice, style) {
+  const list = VOICE_STYLES[voice];
+  return !!(list && style && list.includes(String(style)));
+}
+
+function xmlEscape(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+/**
+ * Build the SSML Azure speaks on live calls. Always applies prosody (rate/pitch)
+ * — with a mild livelier default, since the streaming path previously sent plain
+ * text and applied none — and wraps an mstts speaking style when the chosen voice
+ * supports it (default "customerservice"). The voice is declared inside the SSML.
+ */
+function buildAzureSsml({ voice, text, rate, pitch, style, styleDegree }) {
+  const locale = String(voice).split('-').slice(0, 2).join('-') || 'en-US';
+  const r = RATE_OK.test(String(rate || '')) ? rate : '+4%';
+  const p = PITCH_OK.test(String(pitch || '')) ? pitch : '+2%';
+  let inner = `<prosody rate="${r}" pitch="${p}">${xmlEscape(text)}</prosody>`;
+  const st = style || 'customerservice';
+  if (voiceSupportsStyle(voice, st)) {
+    const deg = DEGREE_OK.test(String(styleDegree || '')) ? ` styledegree="${styleDegree}"` : '';
+    inner = `<mstts:express-as style="${xmlEscape(st)}"${deg}>${inner}</mstts:express-as>`;
+  }
+  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}"><voice name="${voice}">${inner}</voice></speak>`;
+}
+
+async function azureTtsStream({ region, voice, text, rate, pitch, style, styleDegree, onAudio, signal, workspace }) {
   const cred = getProviderCredential('azure_speech', workspace);
   const key = cred?.apiKey;
   const reg = String(region || cred?.region || cred?.endpoint || cred?.baseUrl || '').trim();
@@ -173,7 +215,8 @@ async function azureTtsStream({ region, voice, text, onAudio, signal, workspace 
   const sdk = (await import('microsoft-cognitiveservices-speech-sdk')).default;
   const speechConfig = sdk.SpeechConfig.fromSubscription(key, reg);
   speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Raw16Khz16BitMonoPcm;
-  speechConfig.speechSynthesisVoiceName = voice || 'ar-AE-FatimaNeural';
+  const voiceName = voice || 'ar-AE-FatimaNeural';
+  // With SSML the voice is set inside the markup, not on speechConfig.
 
   const synth = new sdk.SpeechSynthesizer(speechConfig, null);
   let done = false;
@@ -186,13 +229,23 @@ async function azureTtsStream({ region, voice, text, onAudio, signal, workspace 
     const ad = e?.result?.audioData;
     if (ad && ad.byteLength && !done && onAudio) onAudio(Buffer.from(ad));
   };
-  await new Promise((resolve) => {
-    synth.speakTextAsync(
-      text,
-      () => { finish(); resolve(); },
-      (err) => { console.error('[tts:azure] error:', err); finish(); resolve(); },
-    );
+
+  // Speak SSML so prosody/style apply on live calls. If Azure rejects the SSML
+  // (e.g. an HD voice that doesn't accept prosody), retry once as plain text so
+  // the caller hears the reply instead of silence.
+  const ssml = buildAzureSsml({ voice: voiceName, text, rate, pitch, style, styleDegree });
+  const speak = (payload, ssmlMode) => new Promise((resolve) => {
+    const ok = () => resolve(true);
+    const fail = (err) => { console.error('[tts:azure] error:', err); resolve(false); };
+    if (ssmlMode) synth.speakSsmlAsync(payload, ok, fail);
+    else {
+      speechConfig.speechSynthesisVoiceName = voiceName; // plain text needs the voice on config
+      synth.speakTextAsync(payload, ok, fail);
+    }
   });
+  const ok = await speak(ssml, true);
+  if (!ok && !done && !(signal && signal.aborted)) await speak(text, false);
+  finish();
 }
 
 // ─── HTTP providers (all via the shared normalization core) ─────────────────

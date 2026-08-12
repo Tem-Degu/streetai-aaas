@@ -117,6 +117,9 @@ These let you build and manage your own workspace — your service definition, p
 | \`delete_data_record\` | Delete a record from a JSON array file by matching a key field |
 | \`run_query\` | Execute SQL on the workspace SQLite database (CREATE TABLE, INSERT, SELECT, UPDATE, DELETE) |
 | \`list_tables\` | List all tables and their schemas in the database |
+| \`create_agent_tool\` | Author your own code tool (deterministic logic on your SQLite) — writes tools/<name>.js and registers it. Execution requires the host to enable agent tools |
+| \`list_agent_tools\` | List your custom agent tools and whether each is active |
+| \`remove_agent_tool\` | Delete and unregister one of your agent tools |
 
 ### Showing files in dashboard chat
 When chatting in the dashboard (admin/local mode), you can display images using markdown:

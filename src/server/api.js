@@ -1035,6 +1035,13 @@ export function apiRouter(workspace) {
     limits: { fileSize: 5 * 1024 * 1024 },
   });
 
+  // Memory storage for welcome-message media forwarded upstream. Accepts any
+  // field names (Truuze's {type}_{index}_{group} convention) via .any().
+  const mediaUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+  });
+
   // Apply photoUpload only when the request is multipart — JSON bodies pass
   // through untouched so the http/openclaw/telegram branches keep working.
   const conditionalPhotoUpload = (req, res, next) => {
@@ -1881,6 +1888,75 @@ export function apiRouter(workspace) {
       if (photoTouched) updatedConfig.agentPhoto = photoUrl;
       saveConnection(workspace, 'truuze', updatedConfig);
 
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Truuze welcome message ──────────────────────
+  // Per-agent template auto-sent as the first message when a user opens an
+  // empty chat with the agent. GET/POST/DELETE proxy to the agent-authed
+  // Truuze endpoint using the stored connection's agent key.
+  const TRUUZE_WELCOME_PATH = '/account/agent/welcome-message/';
+
+  router.get('/connections/truuze/welcome-message', async (req, res) => {
+    try {
+      const conn = loadConnection(workspace, 'truuze');
+      if (!conn) return res.status(404).json({ error: 'Not connected to Truuze' });
+      const PLATFORM_API_KEY = '4a3b2c9d1e4f5a6b7c8d9e0f123456789abcdef0123456789abcdef01234567';
+      const resp = await fetch(`${conn.baseUrl}${TRUUZE_WELCOME_PATH}`, {
+        headers: { 'X-Agent-Key': conn.agentKey, 'X-Api-Key': PLATFORM_API_KEY },
+      });
+      const text = await resp.text();
+      if (!resp.ok) return res.status(resp.status).json({ error: text.slice(0, 300) });
+      res.json(text ? JSON.parse(text) : {});
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/connections/truuze/welcome-message', mediaUpload.any(), async (req, res) => {
+    try {
+      const conn = loadConnection(workspace, 'truuze');
+      if (!conn) return res.status(404).json({ error: 'Not connected to Truuze' });
+      const PLATFORM_API_KEY = '4a3b2c9d1e4f5a6b7c8d9e0f123456789abcdef0123456789abcdef01234567';
+
+      // Transparent multipart forward: text fields from req.body, media files
+      // from req.files (each fieldname already follows {type}_{index}_{group}).
+      const fd = new FormData();
+      for (const [k, v] of Object.entries(req.body || {})) fd.append(k, String(v));
+      for (const file of (req.files || [])) {
+        const blob = new Blob([file.buffer], { type: file.mimetype || 'application/octet-stream' });
+        fd.append(file.fieldname, blob, file.originalname || 'file');
+      }
+
+      const resp = await fetch(`${conn.baseUrl}${TRUUZE_WELCOME_PATH}`, {
+        method: 'POST',
+        headers: { 'X-Agent-Key': conn.agentKey, 'X-Api-Key': PLATFORM_API_KEY },
+        body: fd,
+      });
+      const text = await resp.text();
+      if (!resp.ok) return res.status(resp.status).json({ error: text.slice(0, 300) });
+      res.json(text ? JSON.parse(text) : {});
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.delete('/connections/truuze/welcome-message', async (req, res) => {
+    try {
+      const conn = loadConnection(workspace, 'truuze');
+      if (!conn) return res.status(404).json({ error: 'Not connected to Truuze' });
+      const PLATFORM_API_KEY = '4a3b2c9d1e4f5a6b7c8d9e0f123456789abcdef0123456789abcdef01234567';
+      const resp = await fetch(`${conn.baseUrl}${TRUUZE_WELCOME_PATH}`, {
+        method: 'DELETE',
+        headers: { 'X-Agent-Key': conn.agentKey, 'X-Api-Key': PLATFORM_API_KEY },
+      });
+      if (!resp.ok && resp.status !== 204) {
+        const text = await resp.text();
+        return res.status(resp.status).json({ error: text.slice(0, 300) });
+      }
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });

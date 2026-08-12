@@ -411,6 +411,35 @@ Extensions also enable payment flows. When a service involves payments through a
 
 See [docs/extensions.md](docs/extensions.md) for the full spec.
 
+## Agent Tools
+
+For logic that should be **deterministic** — a matching algorithm, a stateful flow, heavy SQL — an agent can ship its own **code tools** in its workspace, so the LLM just calls a function instead of reasoning through it. These are a third tier alongside the engine's built-in tools and platform connector tools, but scoped to a single agent and running on that agent's own SQLite (`data/database.sqlite`).
+
+An agent tool is a module at `<agent>/tools/<name>.js` that default-exports the same shape connector tools use:
+
+```js
+export default {
+  definitions: [
+    { name: 'my_tool', description: '…', parameters: { type: 'object', properties: { /* … */ } } },
+  ],
+  handlers: {
+    // ctx = { workspace, paths, config, event, db, sql }
+    // ctx.db is the agent's better-sqlite3 handle; ctx.sql(query, params) wraps runQuery.
+    my_tool: async (ctx, args) => JSON.stringify({ ok: true }),
+  },
+};
+```
+
+Declare which modules to load in `.aaas/config.json`:
+
+```json
+{ "agentTools": ["my_tool"] }
+```
+
+Tool names must be unique across built-in and connector tools — collisions are rejected, never allowed to override a built-in.
+
+> **Security gate.** Agent tools execute agent-authored code inside the engine process, so they are **off by default**. Enable them only on hosts running trusted / first-party agents by setting the environment variable `AAAS_ALLOW_AGENT_TOOLS=1`. An agent cannot turn this on for itself.
+
 ## Dashboard
 
 The web dashboard gives you a complete view of your running agent:

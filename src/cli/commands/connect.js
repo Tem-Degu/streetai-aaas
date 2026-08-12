@@ -131,6 +131,12 @@ async function connectTruuze(ws, opts) {
       };
       if (opts.jobTitle) signupBody.job_title = opts.jobTitle;
 
+      // Carry the agent's type from Settings → Agent Type so it lands in
+      // Services search correctly. "service" (the Settings default) unless the
+      // owner explicitly chose "social".
+      const wsConfig = readJson(path.join(ws, '.aaas', 'config.json')) || {};
+      signupBody.agent_type = wsConfig.agentType === 'social' ? 'social' : 'service';
+
       const res = await fetch(`${baseUrl}/account/create/agent/`, {
         method: 'POST',
         headers: {

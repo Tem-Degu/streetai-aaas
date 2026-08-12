@@ -162,6 +162,9 @@ export class AgentEngine {
 
     // Discover tools owned by configured connectors (e.g. truuze escrow tools)
     await this.toolRegistry.loadConnectorTools();
+    // Discover per-agent "agent tools" declared in .aaas/config.json
+    // (loaded from the agent's own tools/ dir; gated by AAAS_ALLOW_AGENT_TOOLS)
+    await this.toolRegistry.loadAgentTools();
 
     this.initialized = true;
 
@@ -398,7 +401,7 @@ export class AgentEngine {
     } catch (e) { /* debug logging should never break chat */ }
 
     // 7. Call LLM with tool loop
-    const ADMIN_ONLY_TOOLS = ['read_skill', 'write_skill', 'apply_template_variables', 'read_soul', 'write_soul', 'read_data_file', 'write_data_file', 'rename_data_file', 'read_extensions', 'add_extension', 'remove_extension'];
+    const ADMIN_ONLY_TOOLS = ['read_skill', 'write_skill', 'apply_template_variables', 'read_soul', 'write_soul', 'read_data_file', 'write_data_file', 'rename_data_file', 'read_extensions', 'add_extension', 'remove_extension', 'create_agent_tool', 'list_agent_tools', 'remove_agent_tool'];
     let tools = this.toolRegistry.getToolDefinitions();
     if (mode !== 'admin') {
       tools = tools.filter(t => !ADMIN_ONLY_TOOLS.includes(t.name));

@@ -115,7 +115,7 @@ export class ContextAssembler {
     // when a caller-language was resolved (currently the voice path). This is the
     // last instruction before the user message, so it overrides any example /
     // template language baked into the SKILL above.
-    const LANG_NAMES = { ar: 'Arabic', en: 'English' };
+    const LANG_NAMES = { ar: 'Arabic', en: 'English', hi: 'Hindi', ml: 'Malayalam', fil: 'Filipino', ru: 'Russian' };
     if (LANG_NAMES[replyLanguage]) {
       const langName = LANG_NAMES[replyLanguage];
       const directive = `IMPORTANT — for THIS reply only: the caller's most recent message is in ${langName}. Respond ENTIRELY in ${langName}, including any read-back or booking confirmation. Do not switch or mix languages. This overrides the language of any example or template in the instructions above.`;

@@ -421,6 +421,88 @@ export function removeExtension(paths, { name }) {
   return JSON.stringify({ ok: true, message: `Extension "${name}" removed.`, total: registry.extensions.length });
 }
 
+// ── Agent tools (admin-authored code tools) ──
+
+const AGENT_TOOL_NAME = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * Create or replace an "agent tool": a code module at `tools/<name>.js` that
+ * default-exports `{ definitions, handlers }`. Writes the file and registers
+ * the module name in `.aaas/config.json` under `agentTools`. Does NOT load it —
+ * the caller reloads via `ToolRegistry.loadAgentTools()`, which also enforces
+ * the `AAAS_ALLOW_AGENT_TOOLS` gate and collision-checks.
+ */
+export function createAgentTool(paths, { name, code }) {
+  if (!name || !AGENT_TOOL_NAME.test(name)) {
+    return JSON.stringify({ error: 'A valid tool name is required (letters, numbers, _ or - only).' });
+  }
+  if (!code || typeof code !== 'string' || !code.trim()) {
+    return JSON.stringify({ error: 'code is required — the full JS module that default-exports { definitions, handlers }.' });
+  }
+
+  const toolsDir = path.join(paths.root, 'tools');
+  const file = path.join(toolsDir, `${name}.js`);
+  if (!path.resolve(file).startsWith(path.resolve(toolsDir) + path.sep)) {
+    return JSON.stringify({ error: 'Invalid tool name — path escapes tools/.' });
+  }
+
+  fs.mkdirSync(toolsDir, { recursive: true });
+  fs.writeFileSync(file, code, 'utf-8');
+
+  const config = readJson(paths.config) || {};
+  if (!Array.isArray(config.agentTools)) config.agentTools = [];
+  if (!config.agentTools.includes(name)) config.agentTools.push(name);
+  writeJson(paths.config, config);
+
+  return JSON.stringify({
+    ok: true,
+    message: `Agent tool "${name}" written to tools/${name}.js and registered.`,
+    file: `tools/${name}.js`,
+    registered: config.agentTools,
+  });
+}
+
+/**
+ * List the agent tools registered in config, noting which files exist on disk.
+ */
+export function listAgentTools(paths) {
+  const config = readJson(paths.config) || {};
+  const registered = Array.isArray(config.agentTools) ? config.agentTools : [];
+  const toolsDir = path.join(paths.root, 'tools');
+  const files = registered.map(n => ({
+    name: n,
+    file: `tools/${n}.js`,
+    exists: fs.existsSync(path.join(toolsDir, `${n}.js`)),
+  }));
+  return JSON.stringify({ registered, files });
+}
+
+/**
+ * Remove an agent tool: delete `tools/<name>.js` and unregister it from
+ * `.aaas/config.json`. The caller reloads so it drops from the live toolset.
+ */
+export function removeAgentTool(paths, { name }) {
+  if (!name || !AGENT_TOOL_NAME.test(name)) {
+    return JSON.stringify({ error: 'A valid tool name is required.' });
+  }
+  const toolsDir = path.join(paths.root, 'tools');
+  const file = path.join(toolsDir, `${name}.js`);
+  if (path.resolve(file).startsWith(path.resolve(toolsDir) + path.sep) && fs.existsSync(file)) {
+    try { fs.unlinkSync(file); } catch { /* best-effort */ }
+  }
+
+  const config = readJson(paths.config) || {};
+  const before = Array.isArray(config.agentTools) ? config.agentTools : [];
+  config.agentTools = before.filter(n => n !== name);
+  writeJson(paths.config, config);
+
+  return JSON.stringify({
+    ok: true,
+    message: `Agent tool "${name}" removed (file deleted, unregistered).`,
+    registered: config.agentTools,
+  });
+}
+
 /**
  * Import (copy) a file from uploads into the data/ directory.
  */

@@ -54,3 +54,15 @@ Cost:  0.08$ ~ 0.3AED
 # Product + Documentation
 
 
+
+Latest - Issues 
+- In dashboard hub, agents are not sorted and there is no search 
+- Auto-start doesn't seem to work or some agents 
+- Concurrency and thread issues 
+- When editting truuze connector on deploy, photo disappears without touching on save 
+- When updating a model, truuze connector might need a backend restart 
+
+
+
+
+

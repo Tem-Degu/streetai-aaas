@@ -50,7 +50,8 @@ export default class RelayConnector extends BaseConnector {
         this.whatsappConfig = {
           accessToken: waConn.accessToken,
           phoneNumberId: waConn.phoneNumberId,
-          apiBase: 'https://graph.facebook.com/v21.0',
+          // v23.0+ needed for the read-receipt + typing_indicator payload.
+          apiBase: 'https://graph.facebook.com/v23.0',
         };
         this.whatsappOwnerId = waConn.ownerId || null;
       }
@@ -235,6 +236,7 @@ Bad (will NOT work):
       sendMedia,
       sendClear: () => send('voice:clear', {}),
       userId: data.userId || `voice_${callId}`,
+      greetLang: data.lang || null,   // caller-selected opening language (from the widget)
     });
     this.voiceCalls.set(callId, { pipeline, codec });
     try {
@@ -343,6 +345,10 @@ Bad (will NOT work):
           const userName = contact?.profile?.name || message.from;
 
           try {
+            // Show read + typing right away so the customer sees the agent is
+            // on it — free status update, not a charged message. Fire-and-forget
+            // so it runs in parallel with the processing below.
+            this._markReadAndTyping(message.id);
             let content = textPart || '';
 
             // Download incoming media, then transcribe voice notes (and append
@@ -391,6 +397,29 @@ Bad (will NOT work):
         }
       }
     }
+  }
+
+  /**
+   * Mark an inbound message as read and show the "typing…" indicator so the
+   * customer knows the agent is preparing a reply. Status update, not a charged
+   * message (free), and doubles as a read receipt. Clears on our reply or after
+   * ~25s. Best-effort — never throws, never blocks processing.
+   */
+  _markReadAndTyping(messageId) {
+    if (!messageId || !this.whatsappConfig) return;
+    const { accessToken, phoneNumberId, apiBase } = this.whatsappConfig;
+    // Fire-and-forget: a free status update (read receipt + typing dots) that's
+    // non-critical — never awaited, never blocks or affects the reply.
+    fetch(`${apiBase}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: messageId,
+        typing_indicator: { type: 'text' },
+      }),
+    }).catch(() => {});
   }
 
   /**

@@ -375,6 +375,72 @@ async function listMyServices(workspace, args) {
   return ok({ count: seen.size, services: [...seen.values()] });
 }
 
+async function sendWatch(workspace, args) {
+  const chat_id = args?.chat_id;
+  const url = String(args?.url ?? '').trim();
+  const title = String(args?.title ?? '').trim();
+  const idOrCode = args?.id_or_code ?? args?.escrow_id ?? args?.reference_code;
+
+  if (!chat_id) return fail('chat_id is required');
+  if (!url) return fail('url is required — the player URL the in-app player will load');
+  if (!/^https?:\/\//i.test(url)) return fail('url must be an http(s) URL');
+  if (!title) return fail('title is required');
+
+  let cfg;
+  try { cfg = loadTruuzeConfig(workspace); }
+  catch (err) { return fail(err.message); }
+
+  // If this watch is gated behind a paid service, verify the escrow is paid
+  // with the server before handing over the content. Omit id_or_code for free
+  // or preview content. Mirrors the "verify state before acting" rule the
+  // other tools follow so a confused agent can't leak paid content unpaid.
+  if (idOrCode) {
+    let snapshot;
+    try { ({ snapshot } = await resolveEscrow(cfg, idOrCode)); }
+    catch (err) { return fail(err.message); }
+    const status = snapshot?.status;
+    const paidStatuses = ['active', 'delivered', 'completed', 'resolved'];
+    if (!status || !paidStatuses.includes(status)) {
+      return fail(
+        `Cannot deliver watch — the linked service is not paid (status "${status || 'unknown'}"). Wait until the user has accepted and paid.`,
+        { service: summarizeSnapshot(snapshot), next_step: nextStepFor(status) },
+      );
+    }
+  }
+
+  const body = { chat: chat_id, url, title };
+  // "audio" makes the card play the track inline (a song, etc.); default video.
+  const kind = String(args?.kind ?? 'video').trim().toLowerCase();
+  body.kind = kind === 'audio' ? 'audio' : 'video';
+  if (args?.poster) body.poster = String(args.poster);
+  if (args?.is_live !== undefined) body.is_live = args.is_live;
+  // Absolute ISO timestamps take precedence; the *_in_seconds convenience
+  // params are resolved to an absolute time relative to now (handy for demos so
+  // the value never goes stale).
+  if (args?.starts_at) body.starts_at = String(args.starts_at);
+  else if (Number.isFinite(Number(args?.starts_in_seconds))) {
+    body.starts_at = new Date(Date.now() + Number(args.starts_in_seconds) * 1000).toISOString();
+  }
+  if (args?.ends_at) body.ends_at = String(args.ends_at);
+  else if (Number.isFinite(Number(args?.ends_in_seconds))) {
+    body.ends_at = new Date(Date.now() + Number(args.ends_in_seconds) * 1000).toISOString();
+  }
+
+  const res = await truuzeFetch(cfg, '/chat/watch/create/', { method: 'POST', body });
+  if (!res.ok) {
+    return fail(`send_watch rejected (HTTP ${res.status})`, { server: res.data });
+  }
+  const d = res.data || {};
+  return ok({
+    delivered: true,
+    message_id: d.id,
+    title,
+    next_step:
+      'The user now sees a watch card in the chat and can tap it to play the video in-app. '
+      + 'If this was a paid service, call complete_service afterwards so payment is released.',
+  });
+}
+
 // ─── Tool definitions (LLM-facing schemas) ──────────────
 
 const definitions = [
@@ -450,6 +516,27 @@ const definitions = [
       },
     },
   },
+  {
+    name: 'send_watch',
+    description: 'Deliver an in-app "watch" card into a chat so the user can watch a video or live stream INSIDE Truuze — no external link, no redirect. The card shows a poster + play button; tapping it opens an in-app player pointed at `url`. Use this to hand over streaming access. For paid content, pass id_or_code so the tool verifies the service is paid before delivering, and set `url` to the per-buyer signed player link from your own entitlement/streaming backend (never a raw source stream). Omit id_or_code only for free or preview content.',
+    parameters: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'The chat where the watch card should appear.' },
+        url: { type: 'string', description: 'The player URL the in-app player loads — an embeddable https page (your signed per-buyer player link for paid content). Must be framing-friendly (playable in an iframe/WebView).' },
+        title: { type: 'string', description: 'Title shown on the card (e.g. "Portugal vs Spain").' },
+        kind: { type: 'string', enum: ['audio', 'video'], description: 'What the url is. "audio" for a song/track — the card plays it inline with the poster as cover art and a progress bar, no fullscreen. "video" (default) for video or a live stream — opens the in-app player.' },
+        poster: { type: 'string', description: 'Optional thumbnail image URL shown on the card. For audio this is the cover art shown while it plays.' },
+        is_live: { type: 'boolean', description: 'Optional. true shows a LIVE badge on the card.' },
+        starts_at: { type: 'string', description: 'Optional ISO 8601 datetime. If in the future, the card shows a live countdown until it starts (play locked until then).' },
+        ends_at: { type: 'string', description: 'Optional ISO 8601 datetime. If already passed, the card shows "Ended" (play locked).' },
+        starts_in_seconds: { type: 'number', description: 'Optional convenience. Seconds from now until the stream starts; resolved to an absolute starts_at. Ignored if starts_at is given.' },
+        ends_in_seconds: { type: 'number', description: 'Optional convenience. Seconds from now until the stream ends; resolved to an absolute ends_at. Ignored if ends_at is given.' },
+        id_or_code: { type: 'string', description: 'Optional. The numeric escrow_id or 6-letter reference_code of the paid service this watch is for. When set, delivery is refused unless the service is paid. Omit for free/preview content.' },
+      },
+      required: ['chat_id', 'url', 'title'],
+    },
+  },
 ];
 
 const handlers = {
@@ -459,6 +546,7 @@ const handlers = {
   cancel_service: cancelService,
   respond_to_dispute: respondToDispute,
   list_my_services: listMyServices,
+  send_watch: sendWatch,
 };
 
 export default { definitions, handlers };

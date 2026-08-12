@@ -94,6 +94,17 @@ export default function Deploy() {
   const [editPhotoPreview, setEditPhotoPreview] = useState('');
   const [editPhotoChanged, setEditPhotoChanged] = useState(false);
   const editPhotoInputRef = useRef(null);
+  // Truuze welcome-message state (new-agent form)
+  const [welcomeText, setWelcomeText] = useState('');
+  const [welcomeFiles, setWelcomeFiles] = useState([]);       // File[]
+  const [welcomeDirty, setWelcomeDirty] = useState(false);
+  const welcomeFileInputRef = useRef(null);
+  // Truuze welcome-message state (edit connected card)
+  const [editWelcomeText, setEditWelcomeText] = useState('');
+  const [editWelcomeFiles, setEditWelcomeFiles] = useState([]);       // File[]
+  const [editWelcomeExisting, setEditWelcomeExisting] = useState([]); // [{type,name}]
+  const [editWelcomeDirty, setEditWelcomeDirty] = useState(false);
+  const editWelcomeFileInputRef = useRef(null);
   // HTTP form
   const [httpPort, setHttpPort] = useState('3300');
   // Telegram form
@@ -169,6 +180,9 @@ export default function Deploy() {
     setTruuzeJobTitle(''); setTruuzeDescription('');
     setTruuzeProvider(detectedProvider || 'custom'); setTruuzeProviderCustom(''); setTruuzeSkillContent(''); setTruuzeFileName('');
     setTruuzePhoto(null); setTruuzePhotoPreview('');
+    welcomeFiles.forEach(f => f.url && URL.revokeObjectURL(f.url));
+    setWelcomeText(''); setWelcomeFiles([]); setWelcomeDirty(false);
+    if (welcomeFileInputRef.current) welcomeFileInputRef.current.value = '';
     setTruuzeUrl('https://origin.truuze.com/api/v1');
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (photoInputRef.current) photoInputRef.current.value = '';
@@ -222,6 +236,127 @@ export default function Deploy() {
     setEditPhotoChanged(true);
     if (editPhotoInputRef.current) editPhotoInputRef.current.value = '';
   };
+
+  // ─── Truuze welcome message ─────────────────────────────
+  const mediaFieldType = (file) => {
+    const t = (file.type || '').split('/')[0];
+    return (t === 'image' || t === 'video' || t === 'audio') ? t : 'file';
+  };
+  const welcomeIcon = (type) =>
+    type === 'image' ? '🖼️' : type === 'video' ? '🎞️' : type === 'audio' ? '🎵' : '📎';
+  const formatBytes = (b) => {
+    if (b == null) return '';
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Attachments are stored as objects: { file, name, size, type, url }. `url`
+  // is an object URL (images only) used for the local thumbnail preview.
+  const toAttachment = (file) => {
+    const type = mediaFieldType(file);
+    return { file, name: file.name, size: file.size, type, url: type === 'image' ? URL.createObjectURL(file) : null };
+  };
+
+  // Build multipart in Truuze's {type}_{index}_{group} convention: the text is
+  // group 1; each attachment gets its own group so it renders on its own row.
+  const buildWelcomeFormData = (text, files) => {
+    const fd = new FormData();
+    if (text && text.trim()) fd.append('text_0_1', text.trim());
+    files.forEach((item, i) => {
+      fd.append(`${item.type}_0_${i + 2}`, item.file, item.name);
+    });
+    return fd;
+  };
+
+  // Full replace: POST when there's content, DELETE (clear) when empty.
+  const saveWelcomeMessage = async (text, files) => {
+    if ((text && text.trim()) || files.length > 0) {
+      await api.post('/api/connections/truuze/welcome-message', buildWelcomeFormData(text, files));
+    } else {
+      await api.del('/api/connections/truuze/welcome-message');
+    }
+  };
+
+  const loadWelcomeMessage = async () => {
+    try {
+      const res = await api.get('/api/connections/truuze/welcome-message');
+      const contents = (res && res.welcome_message && res.welcome_message.contents) || [];
+      const texts = contents.filter(c => c.type === 'text').map(c => c.content);
+      const media = contents
+        .filter(c => c.type !== 'text')
+        .map(c => ({ type: c.type, name: c.original_name || c.type, url: c.content, size: c.file_size }));
+      setEditWelcomeText(texts.join('\n\n'));
+      setEditWelcomeExisting(media);
+    } catch {
+      setEditWelcomeText('');
+      setEditWelcomeExisting([]);
+    }
+    setEditWelcomeFiles([]);
+    setEditWelcomeDirty(false);
+  };
+
+  // All widths are capped and the row wraps so previews always stay inside the
+  // (narrow) connected-card edit form as well as the wider connect form.
+  const welcomeAttachRow = { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, width: '100%' };
+  const welcomeAttachItem = {
+    display: 'flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0, boxSizing: 'border-box',
+    background: 'rgba(127,127,127,0.10)', border: '1px solid rgba(127,127,127,0.22)', borderRadius: 8, padding: '4px 6px',
+  };
+  const welcomeAttachThumb = { width: 34, height: 34, objectFit: 'cover', borderRadius: 5, flexShrink: 0, display: 'block' };
+  const welcomeAttachName = { fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130, minWidth: 0 };
+  const welcomeAttachSize = { fontSize: 11, opacity: 0.6, flexShrink: 0 };
+  const welcomeChipBtn = { background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 0, marginLeft: 2, flexShrink: 0 };
+
+  const renderWelcomeAttachment = (item, key, onRemove) => (
+    <div key={key} style={welcomeAttachItem}>
+      {item.type === 'image' && item.url
+        ? <img src={item.url} alt={item.name} style={welcomeAttachThumb} />
+        : <span style={{ flexShrink: 0 }}>{welcomeIcon(item.type)}</span>}
+      <span style={welcomeAttachName} title={item.name}>{item.name}</span>
+      {item.size != null && item.size !== '' && <span style={welcomeAttachSize}>{formatBytes(item.size)}</span>}
+      <button type="button" style={welcomeChipBtn} title="Remove" onClick={onRemove}>×</button>
+    </div>
+  );
+
+  // Reusable welcome-message editor used in both the new-agent and edit forms.
+  const renderWelcomeEditor = ({ text, setText, files, setFiles, existing, setExisting, fileRef, setDirty }) => (
+    <div className="form-group">
+      <label>Welcome message <span style={{ fontWeight: 400, opacity: 0.7 }}>— sent automatically to users as the first message to start the chat</span></label>
+      <textarea
+        className="form-input" rows={3} value={text}
+        placeholder="e.g. Hi! I'm here to help. What are you looking for?"
+        onChange={e => { setText(e.target.value); setDirty(true); }}
+      />
+      {(((existing && existing.length) || files.length) > 0) && (
+        <div style={welcomeAttachRow}>
+          {(existing || []).map((m, i) =>
+            renderWelcomeAttachment(m, `ex-${i}`, () => { setExisting(existing.filter((_, j) => j !== i)); setDirty(true); })
+          )}
+          {files.map((f, i) =>
+            renderWelcomeAttachment(f, `f-${i}`, () => {
+              if (f.url) URL.revokeObjectURL(f.url);
+              setFiles(files.filter((_, j) => j !== i));
+              setDirty(true);
+            })
+          )}
+        </div>
+      )}
+      <input ref={fileRef} type="file" multiple style={{ display: 'none' }}
+        onChange={e => {
+          const picked = Array.from(e.target.files || []).map(toAttachment);
+          if (picked.length) { setFiles([...files, ...picked]); setDirty(true); }
+          if (fileRef.current) fileRef.current.value = '';
+        }} />
+      <button type="button" className="btn" style={{ marginTop: 8 }}
+        onClick={() => fileRef.current && fileRef.current.click()}>+ Attach files</button>
+      {existing && existing.length > 0 && (
+        <div className="form-hint" style={{ marginTop: 6 }}>
+          Saving replaces the whole welcome message — re-attach any files above you want to keep.
+        </div>
+      )}
+    </div>
+  );
 
   const connect = async (platform) => {
     setSaving(true);
@@ -317,6 +452,11 @@ export default function Deploy() {
         if (voicecallPort.trim()) body.port = parseInt(voicecallPort) || 3304;
       }
       const result = await api.post(`/api/connections/${platform}`, body);
+      // Newly registered Truuze agent — set the welcome message now that the
+      // agent key is stored server-side. Non-fatal: never block the connect.
+      if (platform === 'truuze' && welcomeDirty && (welcomeText.trim() || welcomeFiles.length > 0)) {
+        try { await saveWelcomeMessage(welcomeText, welcomeFiles); } catch (e) { /* non-fatal */ }
+      }
       if (platform === 'relay' && result?.connections) {
         const relayConn = result.connections.find(c => c.platform === 'relay');
         if (relayConn?.config) {
@@ -502,6 +642,12 @@ export default function Deploy() {
                           <label>Description</label>
                           <textarea value={editFields.agent_description || ''} onChange={e => setEditFields(f => ({ ...f, agent_description: e.target.value }))} className="form-input" rows={3} />
                         </div>
+                        {renderWelcomeEditor({
+                          text: editWelcomeText, setText: setEditWelcomeText,
+                          files: editWelcomeFiles, setFiles: setEditWelcomeFiles,
+                          existing: editWelcomeExisting, setExisting: setEditWelcomeExisting,
+                          fileRef: editWelcomeFileInputRef, setDirty: setEditWelcomeDirty,
+                        })}
                         <div className="form-group">
                           <label>Provider</label>
                           <select value={PROVIDER_OPTIONS.some(o => o.value === editFields.agent_provider) ? editFields.agent_provider : 'custom'} onChange={e => setEditFields(f => ({ ...f, agent_provider: e.target.value, _customProvider: e.target.value === 'custom' ? (f._customProvider || '') : '' }))} className="form-input">
@@ -541,6 +687,9 @@ export default function Deploy() {
                                 await api.patch('/api/connections/truuze', fd);
                               } else {
                                 await api.patch('/api/connections/truuze', fields);
+                              }
+                              if (editWelcomeDirty) {
+                                await saveWelcomeMessage(editWelcomeText, editWelcomeFiles);
                               }
                               setEditingTruuze(false);
                               load();
@@ -605,6 +754,8 @@ export default function Deploy() {
                         setEditPhoto(null);
                         setEditPhotoPreview(config.agentPhoto || '');
                         setEditPhotoChanged(false);
+                        setEditWelcomeText(''); setEditWelcomeFiles([]); setEditWelcomeExisting([]); setEditWelcomeDirty(false);
+                        loadWelcomeMessage();
                         setEditingTruuze(true);
                       }}>Edit</button>
                     )}
@@ -908,6 +1059,12 @@ export default function Deploy() {
                   <label>Description</label>
                   <textarea value={truuzeDescription} onChange={e => setTruuzeDescription(e.target.value)} className="form-input" rows={3} placeholder="What does this agent do?" />
                 </div>
+                {renderWelcomeEditor({
+                  text: welcomeText, setText: setWelcomeText,
+                  files: welcomeFiles, setFiles: setWelcomeFiles,
+                  existing: null, setExisting: () => {},
+                  fileRef: welcomeFileInputRef, setDirty: setWelcomeDirty,
+                })}
                 <div className="form-group">
                   <label>Provider</label>
                   <select value={truuzeProvider} onChange={e => { setTruuzeProvider(e.target.value); if (e.target.value !== 'custom') setTruuzeProviderCustom(''); }} className="form-input">

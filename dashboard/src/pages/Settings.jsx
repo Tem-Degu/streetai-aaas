@@ -65,6 +65,18 @@ const VOICE_PROVIDERS = [
   },
 ];
 
+// TTS providers that have per-language voice tables (mono-lingual voices), so the
+// "Match voice to the caller's language" toggle applies. Genuinely multilingual
+// providers (elevenlabs) speak every language on one voice and don't need it.
+// Keep in sync with src/engine/voice-table.js VOICE_TABLES.
+const PER_LANGUAGE_TTS_PROVIDERS = ['azure_speech'];
+
+// Azure voices that accept an mstts speaking style (the tone selector). Azure
+// styles are voice-specific; these support "customerservice". Keep in sync with
+// VOICE_STYLES in src/engine/tts-stream.js.
+const STYLE_CAPABLE_VOICES = ['en-US-AriaNeural', 'en-US-JennyNeural'];
+const TTS_STYLE_OPTIONS = ['customerservice', 'chat', 'friendly', 'cheerful', 'hopeful', 'newscast'];
+
 // Text-to-speech providers for spoken replies (Web Call). The voice list is
 // per-model. Groq's Orpheus Arabic-Saudi model requires a one-time terms
 // acceptance in the Groq console before it returns audio.
@@ -100,8 +112,29 @@ const TTS_PROVIDERS = [
     value: 'azure_speech',
     label: 'Microsoft Azure (Speech)',
     models: [
-      { value: 'arabic', label: 'Arabic (neural)', voices: ['ar-AE-FatimaNeural', 'ar-AE-HamdanNeural', 'ar-SA-ZariyahNeural', 'ar-SA-HamedNeural', 'ar-EG-SalmaNeural'] },
-      { value: 'english', label: 'English (neural)', voices: ['en-US-JennyNeural', 'en-US-AriaNeural', 'en-GB-SoniaNeural', 'en-GB-RyanNeural'] },
+      { value: 'arabic', label: 'Arabic (neural)', voices: [
+        'ar-AE-FatimaNeural', 'ar-AE-HamdanNeural',   // Emirati (UAE)
+        'ar-SA-ZariyahNeural', 'ar-SA-HamedNeural',   // Saudi
+        'ar-QA-AmalNeural', 'ar-QA-MoazNeural',       // Qatari
+        'ar-KW-NouraNeural', 'ar-KW-FahedNeural',     // Kuwaiti
+        'ar-BH-LailaNeural', 'ar-BH-AliNeural',       // Bahraini
+        'ar-EG-SalmaNeural', 'ar-EG-ShakirNeural',    // Egyptian
+        'ar-JO-SanaNeural', 'ar-JO-TaimNeural',       // Jordanian / Levantine
+      ] },
+      { value: 'english', label: 'English (neural)', voices: [
+        'en-US-AriaNeural', 'en-US-JennyNeural', 'en-US-AvaNeural',
+        'en-US-GuyNeural', 'en-US-AndrewNeural', 'en-US-BrianNeural',
+        'en-GB-SoniaNeural', 'en-GB-LibbyNeural', 'en-GB-RyanNeural',
+        'en-IN-NeerjaNeural', 'en-IN-PrabhatNeural',  // Indian English (common in the UAE)
+      ] },
+      { value: 'english_hd', label: 'English (HD — most human)', voices: [
+        'en-US-Ava:DragonHDLatestNeural', 'en-US-Andrew:DragonHDLatestNeural',
+        'en-US-Emma:DragonHDLatestNeural', 'en-US-Brian:DragonHDLatestNeural',
+      ] },
+      { value: 'hindi', label: 'Hindi (neural)', voices: ['hi-IN-SwaraNeural', 'hi-IN-AnanyaNeural', 'hi-IN-MadhurNeural', 'hi-IN-AaravNeural'] },
+      { value: 'malayalam', label: 'Malayalam (neural)', voices: ['ml-IN-SobhanaNeural', 'ml-IN-MidhunNeural'] },
+      { value: 'tagalog', label: 'Tagalog / Filipino (neural)', voices: ['fil-PH-BlessicaNeural', 'fil-PH-AngeloNeural'] },
+      { value: 'russian', label: 'Russian (neural)', voices: ['ru-RU-SvetlanaNeural', 'ru-RU-DariyaNeural', 'ru-RU-DmitryNeural'] },
     ],
   },
   {
@@ -137,6 +170,28 @@ const TTS_PROVIDERS = [
     models: [
       { value: 'azure-tts', label: 'Azure neural', voices: ['ar-AE-FatimaNeural', 'ar-AE-HamdanNeural', 'en-US-JennyNeural', 'en-US-AriaNeural'] },
       { value: 'tts-1', label: 'OpenAI', voices: ['alloy', 'nova', 'shimmer', 'echo', 'fable', 'onyx'] },
+    ],
+  },
+];
+
+// Vision providers for the "Vision" card — lets agents read images users send
+// (a palm photo, a chat screenshot). Any OpenAI-compatible or Google (Gemini)
+// vision model works; the first model listed is the default for that provider.
+const VISION_PROVIDERS = [
+  {
+    value: 'openai',
+    label: 'OpenAI',
+    models: [
+      { value: 'gpt-4o-mini', label: 'GPT-4o mini — fast & cheap (recommended)' },
+      { value: 'gpt-4o', label: 'GPT-4o — most capable' },
+    ],
+  },
+  {
+    value: 'google',
+    label: 'Google (Gemini)',
+    models: [
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — fast & cheap' },
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — most capable' },
     ],
   },
 ];
@@ -672,6 +727,14 @@ export default function Settings() {
           onSaved={loadConfig}
         />
 
+        {/* Vision — let agents read images users send */}
+        <VisionCard
+          config={config}
+          api={api}
+          configuredProviders={config?.configuredProviders || []}
+          onSaved={loadConfig}
+        />
+
         {/* Storage cleanup */}
         <StorageCleanupCard />
 
@@ -767,6 +830,8 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
   const [ttsRegion, setTtsRegion] = useState(''); // Azure region (e.g. "uaenorth")
   const [ttsRate, setTtsRate] = useState('');     // Azure SSML rate (e.g. "+6%")
   const [ttsPitch, setTtsPitch] = useState('');   // Azure SSML pitch (e.g. "+3%")
+  const [ttsPerLang, setTtsPerLang] = useState(false); // match voice to caller's language (mono-lingual providers)
+  const [ttsStyle, setTtsStyle] = useState('customerservice'); // Azure express-as speaking style (style-capable voices)
 
   // Inline API key entry (only shown when the chosen provider has no key).
   const [apiKey, setApiKey] = useState('');
@@ -798,6 +863,8 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
     setTtsRegion(t.region || '');
     setTtsRate(t.rate || '');
     setTtsPitch(t.pitch || '');
+    setTtsPerLang(!!t.perLanguage);
+    setTtsStyle(t.style || 'customerservice');
   }, [config]);
 
   const changeTtsProvider = (val) => {
@@ -860,6 +927,10 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
             ...(ttsRegion ? { region: ttsRegion } : {}),
             ...(ttsRate ? { rate: ttsRate } : {}),
             ...(ttsPitch ? { pitch: ttsPitch } : {}),
+            // Only meaningful for mono-lingual providers; omitted (false) otherwise.
+            ...(PER_LANGUAGE_TTS_PROVIDERS.includes(ttsProvider) && ttsPerLang ? { perLanguage: true } : {}),
+            // Speaking style only for style-capable voices; omitted otherwise.
+            ...(STYLE_CAPABLE_VOICES.includes(ttsVoice) && ttsStyle ? { style: ttsStyle } : {}),
             ...(config?.voice?.tts?.en ? { en: config.voice.tts.en } : {}),
           },
         },
@@ -1003,8 +1074,34 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
                     <input className="form-input" value={ttsPitch} onChange={e => setTtsPitch(e.target.value)} placeholder="e.g. +3%" />
                   </div>
                 </div>
-                <p className="form-hint">Tune how the voice sounds. Use a signed percent like <code>+6%</code> / <code>-5%</code>. A slightly higher speed and pitch usually sounds livelier and less robotic; leave blank for the default. (Listen, adjust, save — applies to new calls right away.)</p>
+                <p className="form-hint">Tune how the voice sounds. Use a signed percent like <code>+6%</code> / <code>-5%</code>. A slightly higher speed and pitch usually sounds livelier and less robotic; leave blank for a mild default. (Listen, adjust, save — applies to new calls right away.)</p>
+                {STYLE_CAPABLE_VOICES.includes(ttsVoice) && (
+                  <div className="form-group">
+                    <label>Tone</label>
+                    <select className="form-select" value={ttsStyle} onChange={e => setTtsStyle(e.target.value)}>
+                      {TTS_STYLE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <p className="form-hint">A speaking style for a warmer, less robotic delivery. Available on select English voices (Aria, Jenny). Arabic and most other voices don't support styles, so this only shows for voices that do.</p>
+                  </div>
+                )}
+                {ttsModel === 'english_hd' && (
+                  <p className="form-hint">HD voices are the most human-sounding, but they need an Azure region that supports them. If you hear nothing on a test call, pick a standard voice instead.</p>
+                )}
               </>
+            )}
+            {PER_LANGUAGE_TTS_PROVIDERS.includes(ttsProvider) && (
+              <div className="form-group">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={ttsPerLang} onChange={e => setTtsPerLang(e.target.checked)} />
+                  <span>Match voice to the caller's language</span>
+                </label>
+                <p className="form-hint">
+                  When on, the agent replies with a native voice of the <strong>same gender</strong> as the
+                  one above for each language it detects (Arabic, English, Hindi, Malayalam, Tagalog,
+                  Russian), instead of speaking every language with a single voice. Recommended when you
+                  serve multiple languages. The voice above is used as the default for anything unmapped.
+                </p>
+              </div>
             )}
             <p className="form-hint">
               {ttsProvider === 'groq'
@@ -1017,6 +1114,159 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
                       ? 'ElevenLabs voices billed against your AI/ML API (aimlapi.com) credits — no paid ElevenLabs plan needed. Voices are multilingual (they speak Arabic with a non-native accent). Needs an AI/ML API key.'
                       : 'Uses the API key configured for this provider.'}
             </p>
+          </>
+        )}
+
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {msg && (
+          <p className="form-hint" style={{ marginTop: 8, color: msg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
+            {msg}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "Vision" card. Lets an agent read images customers send (a photo, a
+ * screenshot). Pick the vision service + model, and — if no key exists for that
+ * provider yet — paste it right here. Saves to config.vision; the key goes to
+ * the shared credentials store (same place LLM keys live), so a key already
+ * configured for another use is reused. Read live by the read_image tool — no
+ * restart needed.
+ */
+function VisionCard({ config, api, configuredProviders, onSaved }) {
+  const [enabled, setEnabled] = useState(true);
+  const [provider, setProvider] = useState('openai');
+  const [model, setModel] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
+  const [keyMsg, setKeyMsg] = useState('');
+
+  const selected = VISION_PROVIDERS.find(p => p.value === provider) || VISION_PROVIDERS[0];
+  const models = selected?.models || [];
+  const defaultModel = models[0]?.value || '';
+
+  useEffect(() => {
+    const v = config?.vision || {};
+    // Default ON unless explicitly turned off — the tool degrades gracefully
+    // when no key is present anyway.
+    setEnabled(v.enabled !== false);
+    const prov = v.provider || 'openai';
+    setProvider(prov);
+    const provModels = (VISION_PROVIDERS.find(p => p.value === prov)?.models) || [];
+    setModel(v.model || provModels[0]?.value || '');
+    setApiKey('');
+    setKeyMsg('');
+  }, [config]);
+
+  const changeProvider = (val) => {
+    setProvider(val);
+    const provModels = (VISION_PROVIDERS.find(p => p.value === val)?.models) || [];
+    setModel(provModels[0]?.value || '');
+    setApiKey('');
+    setKeyMsg('');
+  };
+
+  const hasKey = configuredProviders.some(p => p.name === provider);
+
+  const saveKey = async () => {
+    if (!apiKey.trim()) return;
+    setSavingKey(true); setKeyMsg('');
+    try {
+      await api.post('/api/credentials', { provider, apiKey: apiKey.trim() });
+      setApiKey('');
+      setKeyMsg('Key saved!');
+      onSaved?.();
+    } catch (e) {
+      setKeyMsg('Error: ' + e.message);
+    }
+    setSavingKey(false);
+  };
+
+  const save = async () => {
+    setSaving(true); setMsg(''); setKeyMsg('');
+    try {
+      // If a key was typed but not separately saved, persist it with this Save.
+      if (enabled && !hasKey && apiKey.trim()) {
+        await api.post('/api/credentials', { provider, apiKey: apiKey.trim() });
+        setApiKey('');
+      }
+      await api.put('/api/config', {
+        vision: { enabled, provider, model: model || defaultModel },
+      });
+      setMsg('Saved!');
+      onSaved?.();
+      setTimeout(() => setMsg(''), 2500);
+    } catch (e) {
+      setMsg('Error: ' + e.message);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="card">
+      <div className="card-header">Vision (image understanding)</div>
+      <div className="card-body">
+        <p className="form-hint" style={{ marginTop: 0 }}>
+          Let your agent read images customers send — a photo, a screenshot — and
+          describe or transcribe them. Uses a vision model on demand (a few cents
+          per image). When off or unconfigured, the agent simply can't see images
+          and falls back gracefully.
+        </p>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 12 }}>
+          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+          <span>Let this agent read images</span>
+        </label>
+
+        {enabled && (
+          <>
+            <div className="form-group">
+              <label>Vision service</label>
+              <select className="form-select" value={provider} onChange={e => changeProvider(e.target.value)}>
+                {VISION_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Model</label>
+              <select className="form-select" value={model} onChange={e => setModel(e.target.value)}>
+                {models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
+
+            {hasKey ? (
+              <p className="form-hint" style={{ color: 'var(--green)' }}>
+                ✓ API key for “{provider}” is configured. Manage it in the <strong>Configured Providers</strong> card above.
+              </p>
+            ) : (
+              <div className="form-group">
+                <label>{selected?.label} API key</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="password"
+                    className="form-input"
+                    value={apiKey}
+                    onChange={e => setApiKey(e.target.value)}
+                    placeholder="Paste your API key"
+                    style={{ flex: 1 }}
+                  />
+                  <button className="btn" onClick={saveKey} disabled={savingKey || !apiKey.trim()}>
+                    {savingKey ? 'Saving…' : 'Save key'}
+                  </button>
+                </div>
+                {keyMsg && (
+                  <p className="form-hint" style={{ marginTop: 6, color: keyMsg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
+                    {keyMsg}
+                  </p>
+                )}
+              </div>
+            )}
           </>
         )}
 

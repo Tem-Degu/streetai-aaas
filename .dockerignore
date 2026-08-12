@@ -33,6 +33,7 @@ lifer_hospital/
 lifer2_hospital/
 local-aaas/
 kpub/
+streetai_memory/
 
 # Credentials / runtime state (never in an image)
 **/.aaas/credentials.json

@@ -5,7 +5,7 @@ import Database from 'better-sqlite3';
 const MAX_ROWS = 100;
 const dbCache = {};
 
-function getDb(paths) {
+export function getDb(paths) {
   const dbPath = path.join(paths.data, 'database.sqlite');
   if (!dbCache[dbPath]) {
     fs.mkdirSync(paths.data, { recursive: true });

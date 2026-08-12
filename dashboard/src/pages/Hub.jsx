@@ -99,6 +99,25 @@ export default function Hub() {
 
   const navigate = useNavigate();
 
+  // Search + sort (client-side). MUST stay ABOVE the loading/error early-returns
+  // below — otherwise the hook count changes between renders and React crashes.
+  const [query, setQuery] = useState('');
+  const [sortBy, setSortBy] = useState(() => localStorage.getItem('hubSort') || 'active');
+  useEffect(() => { localStorage.setItem('hubSort', sortBy); }, [sortBy]);
+
+  const visible = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+    const src = data?.workspaces || [];
+    const list = q
+      ? src.filter(w => (w.name || '').toLowerCase().includes(q) || (w.directory || '').toLowerCase().includes(q))
+      : src.slice();
+    if (sortBy === 'name') list.sort(byName);
+    else if (sortBy === 'status') list.sort((a, b) => (b.isRunning ? 1 : 0) - (a.isRunning ? 1 : 0) || byName(a, b));
+    else list.sort((a, b) => new Date(b.lastActive || 0) - new Date(a.lastActive || 0) || byName(a, b)); // 'active'
+    return list;
+  }, [data, query, sortBy]);
+
   if (loading) return <div className="page-loading">Loading...</div>;
   if (error) return <div className="empty">Error: {error}</div>;
 
@@ -241,8 +260,25 @@ export default function Hub() {
         </div>
       ) : (
         <>
+        {workspaces.length > 5 && (
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Search agents…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              style={{ flex: 1, minWidth: 180 }}
+            />
+            <select className="form-input" value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ maxWidth: 210 }}>
+              <option value="active">Recently active</option>
+              <option value="name">Name (A–Z)</option>
+              <option value="status">Status (running first)</option>
+            </select>
+          </div>
+        )}
         <div className="deploy-grid">
-          {workspaces.map(ws => (
+          {visible.map(ws => (
             <div key={ws.directory} className={`card deploy-card ${ws.isRunning ? 'deploy-active' : ''}`} onClick={() => navigate(`/ws/${ws.directory}`)} style={{ cursor: 'pointer', position: 'relative' }}>
               <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {ws.photo ? (
@@ -380,6 +416,9 @@ export default function Hub() {
             </div>
           ))}
         </div>
+        {visible.length === 0 && (
+          <p className="form-hint" style={{ marginTop: 4 }}>No agents match “{query}”.</p>
+        )}
 
         {/* Edit modal */}
         {editing && (

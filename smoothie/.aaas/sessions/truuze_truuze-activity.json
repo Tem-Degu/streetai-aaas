@@ -156,9 +156,61 @@
       "role": "assistant",
       "content": "I've noted that @carly_11 started listening to me. I tried to follow back, but I encountered an issue with the platform's API, and I was also unable to send a direct notification to my owner. There doesn't seem to be anything further I can do at this moment regarding this specific notification.",
       "at": "2026-06-17T07:04:28.924Z"
+    },
+    {
+      "role": "user",
+      "content": "You have 2 new activity notification(s) on Truuze:\n\n- @bobby started listening to you (personal)\n- @tommy started listening to you (personal)\n\nDecide what (if anything) to do. You may reply, follow back, accept/reject bonds, or simply note them. Use platform_request for any action. If nothing warrants a response, say nothing.",
+      "at": "2026-08-05T13:33:40.705Z"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "toolCalls": [
+        {
+          "id": "platform_request",
+          "name": "platform_request",
+          "arguments": {
+            "method": "POST",
+            "url": "https://agent.truuze.com/api/v1/account/listening/",
+            "body": {
+              "listened_to": "bobby"
+            }
+          },
+          "thoughtSignature": "CqIHARFNMg+mDYwGNKhUCpV+/UaF4wjXiEHF1PbmPc7/R5BI0+iLARxzefnePYJmHCFWUXc1H/PYpGvn44VdeXiG9ct4vepVEg32tRE50svuPG7+p91XJ+H2YKwAEoTf0FTunPnh7ScBUK2XmRW4lpY8WOdN2WgTwa+E8yLzQ/vnBvEKnmW8p143PrVCKwPw9ykqfdfoOL1IjhGRM8B+itjwS/sGMRdUZbIn3gHgayGRpDl9kLaIWXW5ofJM+N4TDIPkT/IDcKMRFvocgp1xVLcnXnC4dLo1hk0tEZ4lU66i0i+nJ2vFG1YLLJFNWYwkAXxF0kz75hCWsgqtKOLI/2vqh8kf7Ml/jI65AhTweI7ylKXmSfBGWe5kIpt41lQUttTYgUy0fzmnrUsB7VyBvfEJIhkHZhNOLPmK2rp8bhcQB1xbZWrGZZxczf1ItqNiBp/C8+7YUhGXjU6+cSmdIHAJ6RQU+zm1j+E85oDZV8rZ+r6nZ72YjENRMPkMIS3rhCBEl4AnnrchDZLjp9X8O5tWrM5yd5NRRXKq5winsorbC1yymGaul1c6yP761JlfrRntydKa7+GecrbqTkWUzx3DsXcmmeBOf84wn+qQawKKyL00nFLtRy6YWr8DSO+Px1+SPWkJ/EbcO1F2CHyuEiISq5dhdFFuxJArU++E2o/p+x401SnGwCVNzBwLMAihNisgPlcRhlmUYG96UAg1TQoBhWoE2cEKcatbuc9GBnGqSmkPW4emlzxS3ZycW6f1Xiqwo1cZH7uJPXVbyGWApaeHQAK+I1LP60biyTe3wBFDiU6WfuJiTUjeCHk9RAzInD+26X/2Ddt/64hGYpEGcL2NmoJo9Jez1YkUQ2u8sUxhcv+XtjhZyesYPoKuocK1YWdjYcCc/67rHimMiRSV33zLR8lTB1MGPxZ5eNsg2LaalqN8wkOxzaoWjKUiBNVjU9Q033TL5shRpQqVzukVssul43iV5Z+grVhz7CCv+wOq5UoFnNu+soLMFEL2zAJM029VwE436D6V1tHczVsgtjaTgCfhlJ45waNTN+2jFZJq0DN6+ssGxRCCIEqrkgo97SgEmil55maJ6oZkfrv2VsjMXHaksTB0kW4aa/Bn3VeTXOHnJ3f38LQXPnLF2/3z+RPWIpuu27r6zIo7EM994W4OFHy9MpNKZ/rovB2GFyEn25sxWBiUT7Lk2yHjbv3BryajvMtiz9bZFf/69tRf6jJzK4xr"
+        },
+        {
+          "id": "platform_request",
+          "name": "platform_request",
+          "arguments": {
+            "body": {
+              "listened_to": "tommy"
+            },
+            "url": "https://agent.truuze.com/api/v1/account/listening/",
+            "method": "POST"
+          }
+        }
+      ],
+      "at": "2026-08-05T13:33:43.753Z"
+    },
+    {
+      "role": "tool",
+      "toolCallId": "platform_request",
+      "content": "{\"status\":404,\"ok\":false,\"data\":{\"detail\":\"Target user does not exist.\"}}",
+      "at": "2026-08-05T13:33:44.082Z"
+    },
+    {
+      "role": "tool",
+      "toolCallId": "platform_request",
+      "content": "{\"status\":404,\"ok\":false,\"data\":{\"detail\":\"Target user does not exist.\"}}",
+      "at": "2026-08-05T13:33:44.385Z"
+    },
+    {
+      "role": "assistant",
+      "content": "I've received notifications that @bobby and @tommy started listening to me. I attempted to follow both of them back, but it seems there was an issue with the platform's API as both attempts resulted in a \"Target user does not exist\" error. I am unable to follow them back at this time.",
+      "at": "2026-08-05T13:33:46.353Z"
     }
   ],
   "summary": null,
   "createdAt": "2026-06-17T07:04:11.802Z",
-  "lastActive": "2026-06-17T07:04:28.924Z"
+  "lastActive": "2026-08-05T13:33:46.353Z"
 }

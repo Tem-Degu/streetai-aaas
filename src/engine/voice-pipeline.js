@@ -17,7 +17,8 @@ import { EnergyVAD } from './voice-vad.js';
 import { createSttStream } from './stt-stream.js';
 import { synthesizeStream } from './tts-stream.js';
 import { int16View } from './audio-utils.js';
-import { runVoiceTurn } from '../connectors/telnyx.js';
+import { runVoiceTurn, detectLang, normalizeSttLang } from '../connectors/telnyx.js';
+import { resolveVoiceForLang } from './voice-table.js';
 
 export class VoicePipeline {
   /**
@@ -27,12 +28,20 @@ export class VoicePipeline {
    * @param {()=>void} o.sendClear            Tell the transport to flush its playout buffer.
    * @param {string} o.userId      Stable per-call id (caller number / web session).
    */
-  constructor({ engine, sendMedia, sendClear, userId }) {
+  constructor({ engine, sendMedia, sendClear, userId, greetLang }) {
     this.engine = engine;
     this.sendMedia = sendMedia;
     this.sendClear = sendClear;
     this.userId = userId;
+    this.greetLang = greetLang || null;   // caller-selected opening language (optional)
     this.voice = (engine && engine.config && engine.config.voice) || {};
+
+    // Sticky reply language. Once a language is committed, we keep replying in it
+    // and only switch when the caller's utterance both resolves to a different
+    // language AND is long enough to be a real switch (not a short "ok"/"نعم").
+    // Seeded from the widget's opening language. minChars is tunable per agent.
+    this.currentLang = greetLang || null;
+    this.langMinChars = (this.voice.langStick && this.voice.langStick.minChars) || 5;
 
     this.vad = new EnergyVAD(this.voice.vad || {});
     this.thinking = false;      // true while the LLM is producing a reply
@@ -78,6 +87,14 @@ export class VoicePipeline {
     return frame.length ? Math.sqrt(sum / frame.length) : 0;
   }
 
+  // Count letters in any script — the "is this utterance substantial enough to
+  // switch languages" measure for the sticky-language guard. Excludes digits,
+  // spaces and punctuation so a short "ok" / "نعم" stays below the threshold.
+  _letters(text) {
+    const m = String(text || '').match(/\p{L}/gu);
+    return m ? m.length : 0;
+  }
+
   // Barge-in during our own speech. The bar is ADAPTIVE: barge only when the
   // caller's audio rises clearly above the current echo level (tracked from the
   // quiet frames while we speak), sustained past bargeSustainMs and after the
@@ -118,7 +135,7 @@ export class VoicePipeline {
       endpointSilenceMs: this.voice.endpointSilenceMs,
       segmentation: this.voice.segmentation,     // defaults to 'semantic' in stt-stream
       onPartial: () => {},                       // reserved (interim display)
-      onFinal: (text) => this._onTranscript(text),
+      onFinal: (text, sttLang) => this._onTranscript(text, sttLang),
       workspace: this.engine.workspace,
     });
     // Opening line: agent speaks first (isGreeting) before the caller says anything.
@@ -166,18 +183,32 @@ export class VoicePipeline {
     try { this.sendClear(); } catch { /* ignore */ } // flush the client's playout
   }
 
-  _onTranscript(text) {
+  _onTranscript(text, sttLang) {
     const t = String(text || '').trim();
     if (!t) return;
     // Defense-in-depth: ignore transcripts that land while we're thinking or
     // within the speech window (STT isn't fed then, so this should be rare).
     if (this.thinking || this._isSpeaking() || this._inSpeechWindow()) return;
-    this._respond(t, false).catch((e) => console.error('[voice] respond error:', e.message));
+    this._respond(t, false, sttLang).catch((e) => console.error('[voice] respond error:', e.message));
   }
 
-  async _respond(text, isGreeting) {
+  async _respond(text, isGreeting, sttLang) {
     const myTurn = ++this.turnId;
     this.thinking = true;
+
+    // Update the sticky reply language for this turn. Candidate = STT's own
+    // decision first (most reliable), script detection as fallback. We commit to
+    // it only if there's no language yet, it matches the current one, or the
+    // utterance is long enough to be a genuine switch — so a short "ok"/"نعم"
+    // spoken mid-conversation never flips the language.
+    if (isGreeting) {
+      if (this.greetLang) this.currentLang = this.greetLang;
+    } else {
+      const cand = normalizeSttLang(sttLang) || detectLang(text);
+      if (cand && (!this.currentLang || cand === this.currentLang || this._letters(text) >= this.langMinChars)) {
+        this.currentLang = cand;
+      }
+    }
 
     let reply;
     try {
@@ -186,6 +217,13 @@ export class VoicePipeline {
         content: text,
         language: this.voice.language || null,
         isGreeting,
+        // Caller-selected language applies to the OPENING line only; later turns
+        // omit it so the agent follows the customer's language.
+        greetLang: isGreeting ? this.greetLang : undefined,
+        // Pass the STICKY committed language (not the raw per-turn tag) so a short
+        // opposing utterance can't flip the reply. runVoiceTurn treats it as the
+        // primary signal; on the greeting we pass none and let greetLang drive.
+        sttLang: isGreeting ? undefined : (this.currentLang || undefined),
       });
     } catch (e) {
       reply = 'Sorry, could you say that again?';
@@ -199,12 +237,24 @@ export class VoicePipeline {
     this._echoFloor = 0.02;         // recalibrate the echo estimate for this reply
     this._bargeLoudSince = 0;
     const tts = this.voice.tts || {};
+    // Per-language voice: when enabled, speak this turn with a same-gender voice
+    // for the committed language on the same provider; fall back to the main
+    // voice when the provider/voice/language isn't in the table.
+    let ttsVoice = tts.voice;
+    if (tts.perLanguage && this.currentLang) {
+      const matched = resolveVoiceForLang(tts.provider || 'azure_speech', tts.voice, this.currentLang);
+      if (matched) ttsVoice = matched;
+    }
     try {
       await synthesizeStream({
         provider: tts.provider || 'azure_speech',
         model: tts.model,
-        voice: tts.voice,
+        voice: ttsVoice,
         region: tts.region || this.voice.region,
+        rate: tts.rate,
+        pitch: tts.pitch,
+        style: tts.style,
+        styleDegree: tts.styleDegree,
         text: reply,
         signal: ac.signal,
         workspace: this.engine.workspace,

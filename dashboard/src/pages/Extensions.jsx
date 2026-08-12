@@ -78,23 +78,28 @@ const OP_TEMPLATES = {
   },
 };
 
+// Coerce any stored value to a string for a form text field. Guards every
+// `.trim()` below: a registry value saved as a number/object (e.g. a numeric
+// cost or apiKey) must not reach an input as a non-string, or `.trim()` throws.
+const str = (v) => (v == null ? '' : String(v));
+
 function opFromConfig(op) {
   const a = op.async || {};
   return {
-    name: op.name || '',
-    description: op.description || '',
-    method: (op.method || 'GET').toUpperCase(),
-    path: op.path || '',
+    name: str(op.name),
+    description: str(op.description),
+    method: str(op.method || 'GET').toUpperCase(),
+    path: str(op.path),
     body: op.body ? JSON.stringify(op.body, null, 2) : '',
-    returns: op.returns || '',
+    returns: str(op.returns),
     output_type: op.output_type || 'json',
     timeout_s: op.timeout_s != null ? String(op.timeout_s) : '',
     asyncEnabled: !!op.async,
-    poll_path: a.poll_path || '',
-    ready_field: a.ready_field || 'status',
+    poll_path: str(a.poll_path),
+    ready_field: str(a.ready_field) || 'status',
     ready_values: Array.isArray(a.ready_values) ? a.ready_values.join(', ') : 'completed, succeeded, success, done',
     failure_values: Array.isArray(a.failure_values) ? a.failure_values.join(', ') : 'failed, error, cancelled',
-    result_field: a.result_field || '',
+    result_field: str(a.result_field),
     interval_s: a.interval_s != null ? String(a.interval_s) : '',
     max_wait_s: a.max_wait_s != null ? String(a.max_wait_s) : '',
     expanded: false,
@@ -139,18 +144,18 @@ function configFromOp(formOp) {
 
 function formFromExt(ext) {
   return {
-    name: ext.name || '',
+    name: str(ext.name),
     type: ext.type || 'api',
-    description: ext.description || '',
-    endpoint: ext.endpoint || '',
-    address: ext.address || '',
+    description: str(ext.description),
+    endpoint: str(ext.endpoint),
+    address: str(ext.address),
     capabilities: (ext.capabilities || []).join(', '),
-    cost_model: ext.cost_model || ext.cost_per_call ? 'per_request' : 'free',
-    cost: ext.cost || ext.cost_per_call || '',
-    notes: ext.notes || '',
+    cost_model: ext.cost_model || (ext.cost_per_call ? 'per_request' : 'free'),
+    cost: str(ext.cost || ext.cost_per_call),
+    notes: str(ext.notes),
     authType: ext.auth?.type || (ext.auth?.apiKey ? 'bearer' : 'none'),
-    authKey: ext.auth?.apiKey || '',
-    authHeader: ext.auth?.header || '',
+    authKey: str(ext.auth?.apiKey),
+    authHeader: str(ext.auth?.header),
     headers: ext.headers ? Object.entries(ext.headers).map(([k, v]) => `${k}: ${v}`).join('\n') : '',
     operations: Array.isArray(ext.operations) ? ext.operations.map(opFromConfig) : [],
   };

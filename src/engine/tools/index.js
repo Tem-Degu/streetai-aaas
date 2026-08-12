@@ -3,15 +3,20 @@ import { readMemory, saveMemory, forgetMemory } from './memory.js';
 import { callExtension } from './extensions.js';
 import { createTransaction, updateTransaction, completeTransaction, cancelTransaction, listTransactions, attachFileToTransaction } from './transactions.js';
 import { scheduleAction, removeAction, loadPending } from '../scheduler.js';
-import { readSkill, writeSkill, readSoul, writeSoul, readDataFile, writeDataFile, addDataRecord, updateDataRecord, deleteDataRecord, readExtensions, addExtension, removeExtension, importFile, applyTemplateVariables, renameDataFile } from './workspace.js';
-import { runQuery, listTables } from './database.js';
+import { readSkill, writeSkill, readSoul, writeSoul, readDataFile, writeDataFile, addDataRecord, updateDataRecord, deleteDataRecord, readExtensions, addExtension, removeExtension, importFile, applyTemplateVariables, renameDataFile, createAgentTool, listAgentTools, removeAgentTool } from './workspace.js';
+import { runQuery, listTables, getDb } from './database.js';
+import { synthesizeSpeech } from '../tts.js';
+import fs from 'fs';
+import path from 'path';
+import { pathToFileURL } from 'url';
 import { platformRequest } from './platform-request.js';
 import { webSearch, webFetch } from './web.js';
+import { readImage } from './vision.js';
 import { listConnections } from '../../auth/connections.js';
 import { loadConnectorToolModule } from '../../connectors/index.js';
 import { notifyOwner, notifyTransaction } from '../../notifications/index.js';
 import { MemoryManager } from '../memory/index.js';
-import { readText } from '../../utils/workspace.js';
+import { readText, readJson } from '../../utils/workspace.js';
 import { parseTransactionFieldsBlock, parseItemFieldsBlock, buildToolFieldSchema, parseServiceCatalog, parseCurrencyDeclaration } from './transaction-view.js';
 import { validateTransactionPayload } from './transaction-validate.js';
 
@@ -37,6 +42,10 @@ export class ToolRegistry {
     this.config = config;
     this.connectorDefinitions = [];
     this.connectorHandlers = {};
+    /** Agent tools — per-agent code tools loaded from the agent's own
+     *  workspace (see loadAgentTools). Third tier alongside base + connector. */
+    this.agentDefinitions = [];
+    this.agentHandlers = {};
     /** Per-event context, set by the engine at the start of each turn. */
     this.eventContext = null;
     /** Activity log + facts. Lightweight to construct. */
@@ -190,12 +199,140 @@ export class ToolRegistry {
   }
 
   /**
+   * Discover and load "agent tools" — per-agent code tools that live in the
+   * agent's own workspace at `<root>/tools/<name>.js` and are declared in
+   * `.aaas/config.json` under `agentTools: ["<name>", ...]`. Each module
+   * default-exports `{ definitions, handlers }` (the same contract connector
+   * tools use). Handlers are invoked as `fn(ctx, args)` where ctx carries
+   * `{ workspace, paths, config, event, db, sql }`.
+   *
+   * Third tier alongside base tools (engine) and connector tools (platform):
+   * these are owned by, and scoped to, this one agent, and run on its own
+   * SQLite. Must be called AFTER loadConnectorTools() so name collisions are
+   * detected. Idempotent: re-replaces both maps.
+   *
+   * Gated by the host env `AAAS_ALLOW_AGENT_TOOLS` (default off) because
+   * this executes agent-authored code inside the engine process — enable only
+   * on hosts running trusted/first-party agents.
+   */
+  async loadAgentTools() {
+    this.agentDefinitions = [];
+    this.agentHandlers = {};
+
+    // Read the manifest from disk (config.json) so tools authored at runtime via
+    // create_agent_tool are picked up on reload without restarting the engine.
+    const cfg = readJson(this.paths.config) || this.config || {};
+    const manifest = cfg.agentTools;
+    if (!Array.isArray(manifest) || manifest.length === 0) return;
+
+    if (!process.env.AAAS_ALLOW_AGENT_TOOLS) {
+      console.warn(`[tools] Agent tools declared (${manifest.join(', ')}) but AAAS_ALLOW_AGENT_TOOLS is not set — skipping. Enable it only on trusted hosts.`);
+      return;
+    }
+
+    // Names already owned by base + connector tools; agent tools must not collide.
+    const taken = new Set([
+      ...this._getBaseToolDefinitions().map(d => d.name),
+      ...this.connectorDefinitions.map(d => d.name),
+    ]);
+
+    const toolsDir = path.join(this.paths.root, 'tools');
+
+    for (const rawName of manifest) {
+      const name = String(rawName || '').trim();
+      if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+        console.warn(`[tools] Skipping invalid agent tool name "${rawName}".`);
+        continue;
+      }
+
+      const file = path.join(toolsDir, `${name}.js`);
+      // Defense-in-depth: never resolve outside the agent tools/ dir.
+      if (!path.resolve(file).startsWith(path.resolve(toolsDir) + path.sep)) {
+        console.warn(`[tools] Refusing to load agent tool "${name}" — path escapes tools/.`);
+        continue;
+      }
+      if (!fs.existsSync(file)) {
+        console.warn(`[tools] Agent tool "${name}" declared but ${file} not found.`);
+        continue;
+      }
+
+      let mod;
+      try {
+        // Cache-bust by mtime so a tool replaced via create_agent_tool re-imports
+        // instead of returning Node's cached module; unchanged files reuse cache.
+        const version = fs.statSync(file).mtimeMs;
+        mod = await import(pathToFileURL(file).href + `?v=${version}`);
+      } catch (err) {
+        console.warn(`[tools] Failed to import agent tool "${name}": ${err.message}`);
+        continue;
+      }
+      const def = mod.default || mod;
+      if (!def || !Array.isArray(def.definitions) || !def.handlers || typeof def.handlers !== 'object') {
+        console.warn(`[tools] Agent tool "${name}" must default-export { definitions: [], handlers: {} } — skipping.`);
+        continue;
+      }
+
+      for (const d of def.definitions) {
+        if (!d || !d.name) continue;
+        if (taken.has(d.name)) {
+          console.warn(`[tools] Agent tool "${name}" defines "${d.name}" which collides with an existing tool — skipped.`);
+          continue;
+        }
+        const fn = def.handlers[d.name];
+        if (typeof fn !== 'function') {
+          console.warn(`[tools] Agent tool "${name}" has no handler for definition "${d.name}" — skipped.`);
+          continue;
+        }
+        taken.add(d.name);
+        this.agentDefinitions.push(d);
+        this.agentHandlers[d.name] = { fn, module: name };
+      }
+    }
+
+    if (this.agentDefinitions.length > 0) {
+      console.log(`[tools] Loaded ${this.agentDefinitions.length} agent tool(s): [${this.agentDefinitions.map(d => d.name).join(', ')}]`);
+    }
+  }
+
+  /**
+   * Context object handed to agent-tool handlers. Unlike connector handlers
+   * (which live inside the engine and can import its utils), workspace modules
+   * live outside `src/`, so everything they need is passed in: the agent's
+   * paths/config, the current event, and DB access (raw better-sqlite3 handle
+   * plus a `sql()` convenience wrapping runQuery).
+   */
+  _agentToolContext() {
+    return {
+      workspace: this.workspace,
+      paths: this.paths,
+      config: this.config,
+      event: this.eventContext,
+      db: getDb(this.paths),
+      sql: (sql, params, mode) => runQuery(this.paths, { sql, params, mode }),
+      // Text-to-speech for agent tools that send voice notes. Returns
+      // { buffer, mime }. Credentials resolve from this workspace.
+      tts: (opts) => synthesizeSpeech({ ...opts, workspace: this.workspace }),
+      // Vision for agent tools that need to look at an image. `args` =
+      // { path, question }. Returns the raw tool result (JSON string with
+      // { description } or { error }). Provider/model from config.vision.
+      vision: (args) => readImage({ workspace: this.workspace, config: this.config, args }),
+      // Schedule a future turn (a nudge / follow-up). `opts` =
+      // { delayMinutes, instruction, session:{platform,user_id}, context }.
+      // Lets a tool drive follow-through in any party's own chat.
+      schedule: (opts) => scheduleAction(this.paths, opts),
+    };
+  }
+
+  /**
    * Get tool definitions in generic format for the LLM.
-   * Returns base tools merged with any connector-owned tools loaded via
-   * `loadConnectorTools()`.
+   * Returns base tools merged with connector-owned and agent-owned tools.
    */
   getToolDefinitions() {
-    return [...this._getBaseToolDefinitions(), ...this.connectorDefinitions];
+    return [
+      ...this._getBaseToolDefinitions(),
+      ...this.connectorDefinitions,
+      ...this.agentDefinitions,
+    ];
   }
 
   /**
@@ -702,6 +839,37 @@ export class ToolRegistry {
         parameters: { type: 'object', properties: {} },
       },
 
+      // ── Agent tools (admin only — author your own code tools) ──
+
+      {
+        name: 'create_agent_tool',
+        description: 'Create (or replace) an "agent tool" — a custom code tool that lives in this agent\'s own tools/ folder and runs deterministic logic (SQL, state machines) on the agent\'s SQLite database. Provide the full JavaScript ESM module `code` that `export default { definitions, handlers }` — each handler is `async (ctx, args) => <JSON string>`, where `ctx = { workspace, paths, config, event, db, sql }` (ctx.db is a better-sqlite3 handle; ctx.sql(query, params) runs a query). The module is written to tools/<name>.js and registered in .aaas/config.json, then loaded immediately. Tool names must be unique (they cannot override built-in or connector tools). Note: execution requires the host to allow agent tools (env AAAS_ALLOW_AGENT_TOOLS); if disabled, the tool is saved but will not run until the operator enables it. Owner/admin only.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Module name — letters, numbers, _ or - only. Becomes tools/<name>.js.' },
+            code: { type: 'string', description: 'Full JS ESM module source that `export default { definitions: [...], handlers: {...} }`.' },
+          },
+          required: ['name', 'code'],
+        },
+      },
+      {
+        name: 'list_agent_tools',
+        description: 'List this agent\'s registered agent tools (custom code tools): which are registered in config, whether their files exist on disk, and which are currently active in the running toolset. Owner/admin only.',
+        parameters: { type: 'object', properties: {} },
+      },
+      {
+        name: 'remove_agent_tool',
+        description: 'Remove one of this agent\'s agent tools: deletes tools/<name>.js and unregisters it from .aaas/config.json, then drops it from the live toolset. Owner/admin only.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'The agent tool module name to remove.' },
+          },
+          required: ['name'],
+        },
+      },
+
       // ── Operator notifications ──
 
       {
@@ -760,6 +928,18 @@ export class ToolRegistry {
           required: ['url'],
         },
       },
+      {
+        name: 'read_image',
+        description: 'Look at an image a user sent (a photo, a screenshot) and get a text description of what it contains — so you can "see" it. Pass the workspace-relative path from the message\'s "[Attached files: image: data/inbox/...]" note. Optionally pass `question` to focus the reading (e.g. "transcribe this chat, note who said what" or "describe the palm lines"). Returns { description }, or { error } when vision isn\'t set up — in which case, fall back gracefully (offer a non-visual option).',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Workspace-relative path to the saved image, e.g. "data/inbox/user_123_photo.jpg".' },
+            question: { type: 'string', description: 'Optional. What to focus on when reading the image.' },
+          },
+          required: ['path'],
+        },
+      },
     ];
   }
 
@@ -781,6 +961,12 @@ export class ToolRegistry {
           () => connectorEntry.fn(this.workspace, args, this.eventContext),
           name,
         );
+      }
+      // Workspace (agent-owned) tools — dispatched with the rich ctx. The tool
+      // owns its own retry/error semantics; the outer try/catch returns { error }.
+      const workspaceEntry = this.agentHandlers[name];
+      if (workspaceEntry) {
+        return await workspaceEntry.fn(this._agentToolContext(), args);
       }
       let result;
       switch (name) {
@@ -918,6 +1104,32 @@ export class ToolRegistry {
           return runQuery(this.paths, args);
         case 'list_tables':
           return listTables(this.paths);
+        case 'create_agent_tool': {
+          const r = createAgentTool(this.paths, args);
+          const parsed = JSON.parse(r);
+          if (parsed.error) return r;
+          // Hot-reload so the new tool is usable this turn (also enforces the
+          // AAAS_ALLOW_AGENT_TOOLS gate and collision-checks).
+          await this.loadAgentTools();
+          const loaded = Object.values(this.agentHandlers || {}).some(e => e.module === args.name);
+          const gateOff = !process.env.AAAS_ALLOW_AGENT_TOOLS;
+          const note = gateOff
+            ? 'Saved and registered, but agent-tool execution is disabled on this host (AAAS_ALLOW_AGENT_TOOLS is not set) — it will run once the operator enables it.'
+            : (loaded
+                ? 'Loaded and ready to use now.'
+                : 'Saved and registered, but it did not load — check that the code default-exports { definitions, handlers } and that its tool names do not collide with existing tools.');
+          return JSON.stringify({ ...parsed, loaded, note });
+        }
+        case 'list_agent_tools': {
+          const parsed = JSON.parse(listAgentTools(this.paths));
+          parsed.active = Object.keys(this.agentHandlers || {});
+          return JSON.stringify(parsed);
+        }
+        case 'remove_agent_tool': {
+          const r = removeAgentTool(this.paths, args);
+          if (!JSON.parse(r).error) await this.loadAgentTools();
+          return r;
+        }
         case 'platform_request':
           result = await this._retryNetworkTool(() => platformRequest(this.workspace, args), 'platform_request');
           console.log('[executeTool] platform_request result:', result?.slice(0, 500));
@@ -926,6 +1138,11 @@ export class ToolRegistry {
           return await this._retryNetworkTool(() => webSearch(this.config, args), 'web_search');
         case 'web_fetch':
           return await this._retryNetworkTool(() => webFetch(args), 'web_fetch');
+        case 'read_image':
+          return await this._retryNetworkTool(
+            () => readImage({ workspace: this.workspace, config: this.config, args }),
+            'read_image'
+          );
         case 'notify_owner': {
           // Capture the conversation that triggered this alert so an owner
           // reply on Telegram/WhatsApp can be routed back here.

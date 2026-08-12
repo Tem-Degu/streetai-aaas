@@ -242,18 +242,26 @@ export default class TelegramConnector extends BaseConnector {
             }
 
             // ── Default path: normal message handling ──────────────
-            await this.handleEvent({
-              platform: 'telegram',
-              userId,
-              userName,
-              type: 'message',
-              content,
-              metadata: {
-                chatId: msg.chat.id,
-                messageId: msg.message_id,
-                chatType: msg.chat.type,
-              },
-            });
+            // Show "typing…" from now until the reply is sent (handleEvent
+            // resolves after send()). Free chat action; the keep-alive is
+            // stopped in the finally, even on error.
+            const stopTyping = this._startTyping(msg.chat.id);
+            try {
+              await this.handleEvent({
+                platform: 'telegram',
+                userId,
+                userName,
+                type: 'message',
+                content,
+                metadata: {
+                  chatId: msg.chat.id,
+                  messageId: msg.message_id,
+                  chatType: msg.chat.type,
+                },
+              });
+            } finally {
+              stopTyping();
+            }
           } catch (err) {
             console.error(`[telegram] Error processing message:`, err.message);
           }
@@ -269,6 +277,27 @@ export default class TelegramConnector extends BaseConnector {
         await this._sleep(5000);
       }
     }
+  }
+
+  /**
+   * Show the "typing…" chat action and keep it alive while the agent works.
+   * Telegram's action only lasts ~5s, so it's refreshed every 4s until the
+   * returned stop() runs (after the reply is sent). Free and best-effort — each
+   * ping is fire-and-forget, and a 30s safety cap prevents a runaway timer if a
+   * stop is ever missed.
+   * @returns {() => void} stop function — always call it (e.g. in a finally).
+   */
+  _startTyping(chatId) {
+    if (!chatId) return () => {};
+    const ping = () => fetch(`${this.apiBase}/sendChatAction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
+    }).catch(() => {});
+    ping(); // show immediately
+    const interval = setInterval(ping, 4000);
+    const safety = setTimeout(() => clearInterval(interval), 30000);
+    return () => { clearInterval(interval); clearTimeout(safety); };
   }
 
   async send(event, response, result, files = []) {

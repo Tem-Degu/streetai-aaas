@@ -13,7 +13,7 @@ import path from 'path';
 import { AgentEngine } from '../engine/index.js';
 import { loadAllConnectors } from '../connectors/index.js';
 import { getProviderCredential } from '../auth/credentials.js';
-import { installGlobalErrorHandlers } from '../utils/errlog.js';
+import { installGlobalErrorHandlers, appendRotating } from '../utils/errlog.js';
 
 installGlobalErrorHandlers();
 
@@ -27,11 +27,13 @@ if (!workspace || !fs.existsSync(workspace)) {
 const pidFile = path.join(workspace, '.aaas', 'agent.pid');
 const logFile = path.join(workspace, '.aaas', 'agent.log');
 
-// Simple log function that writes to file
+// Log to file with size-bounded rotation so a long-running agent can't grow
+// agent.log without limit (caps at ~5MB, then rotates to agent.log.1).
+const LOG_MAX_BYTES = 5 * 1024 * 1024;
 function log(msg) {
   const ts = new Date().toISOString();
   const line = `[${ts}] ${msg}\n`;
-  fs.appendFileSync(logFile, line);
+  appendRotating(logFile, line, LOG_MAX_BYTES);
 }
 
 async function main() {

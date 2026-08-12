@@ -11,7 +11,10 @@ import { applyTxnButtonAction } from './transaction-actions.js';
 import { renderTransactionCard } from '../notifications/transaction-card.js';
 import { flushPendingWhatsApp, isTransactionActor } from '../notifications/index.js';
 
-const WHATSAPP_API_BASE = 'https://graph.facebook.com/v21.0';
+// v23.0+ is required for the read-receipt + typing_indicator payload; older
+// versions reject the whole request (dropping the read tick too). Newer graph
+// versions are backward-compatible for the media/text/verify calls.
+const WHATSAPP_API_BASE = 'https://graph.facebook.com/v23.0';
 const WHATSAPP_MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024; // Documents go up to 100 MB
 
 const WHATSAPP_SKILL = `---
@@ -167,6 +170,11 @@ export default class WhatsAppConnector extends BaseConnector {
             // Download media + dispatch in an async IIFE so we don't block the webhook response
             (async () => {
               try {
+                // Show read + typing immediately so the customer sees the agent
+                // is on it. This is a status update — free, NOT a charged
+                // message. Runs in parallel with the processing below and clears
+                // automatically on our reply (or after ~25s).
+                this._markReadAndTyping(message.id);
                 let content = textPart || '';
                 if (mediaItems.length > 0) {
                   const safeUser = String(userName).replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -430,6 +438,29 @@ export default class WhatsAppConnector extends BaseConnector {
     }
     const card = renderTransactionCard(res.transaction, res.event, readJson(paths.transactionView) || {});
     await this._sendOwnerRaw(fromPhone, card.whatsappText);
+  }
+
+  /**
+   * Mark an inbound message as read and show the "typing…" indicator so the
+   * customer knows the agent is preparing a reply. This is a status update, not
+   * a charged message (so it's free), and it also delivers read receipts.
+   * The indicator clears when we send our reply or after ~25s. Best-effort —
+   * never throws, never blocks message processing.
+   */
+  _markReadAndTyping(messageId) {
+    if (!messageId) return;
+    // Fire-and-forget: a free status update (read receipt + typing dots) that's
+    // non-critical — never awaited, never blocks or affects the reply.
+    fetch(`${this.apiBase}/${this.phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.accessToken}` },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: messageId,
+        typing_indicator: { type: 'text' },
+      }),
+    }).catch(() => {});
   }
 
   /**

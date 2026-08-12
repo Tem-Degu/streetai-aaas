@@ -55,12 +55,12 @@ export function globalErrorLogPath() {
   return path.join(os.homedir(), '.aaas', 'logs', 'error.log');
 }
 
-function appendRotating(file, text) {
+export function appendRotating(file, text, maxBytes = MAX_BYTES) {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     try {
       const st = fs.statSync(file);
-      if (st.size + text.length > MAX_BYTES) {
+      if (st.size + text.length > maxBytes) {
         try { fs.rmSync(file + '.1', { force: true }); } catch {}
         try { fs.renameSync(file, file + '.1'); } catch {}
       }

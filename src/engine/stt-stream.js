@@ -23,7 +23,10 @@ const PCM_RATE = 16000;
 /** Map a voice-config STT "model" to Azure language(s). 'auto' => bilingual. */
 function azureLanguages(model) {
   const m = String(model || 'auto').toLowerCase();
-  if (!m || m === 'auto') return ['ar-AE', 'en-US'];
+  // Default candidate set: base Arabic/English plus the most common Dubai caller
+  // languages. Azure continuous LID allows up to 10; keep this lean (fewer
+  // candidates = better accuracy + lower latency). Trim per agent via voice.model.
+  if (!m || m === 'auto') return ['ar-AE', 'en-US', 'hi-IN', 'ml-IN', 'fil-PH', 'ru-RU'];
   if (m === 'ar-ae' || m === 'ar' || m === 'arabic') return ['ar-AE'];
   if (m === 'en-us' || m === 'en' || m === 'english') return ['en-US'];
   return [model]; // already a BCP-47 tag
@@ -66,6 +69,11 @@ async function azureStreamStt({ model, region, endpointSilenceMs, segmentation, 
 
   let recognizer;
   if (langs.length > 1) {
+    // Continuous LID: re-identify the language on EVERY utterance (required for
+    // mid-call language switching) and allow up to 10 candidates. Without this,
+    // Azure defaults to at-start detection — the language is locked to the first
+    // utterance for the whole call, and the candidate list is capped at 4.
+    try { speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_LanguageIdMode, 'Continuous'); } catch { /* older SDK */ }
     const auto = sdk.AutoDetectSourceLanguageConfig.fromLanguages(langs);
     recognizer = sdk.SpeechRecognizer.FromConfig(speechConfig, auto, audioConfig);
   } else {
@@ -80,7 +88,19 @@ async function azureStreamStt({ model, region, endpointSilenceMs, segmentation, 
   recognizer.recognized = (_s, e) => {
     if (e?.result?.reason === sdk.ResultReason.RecognizedSpeech) {
       const t = (e.result.text || '').trim();
-      if (t && onFinal) onFinal(t);
+      if (t && onFinal) {
+        // Prefer Azure's own per-utterance language decision (it used the audio,
+        // not just the resulting script) — passed up as the primary reply-language
+        // signal. Auto-detect mode carries it on the result; single-language mode
+        // is simply the configured language.
+        let lang;
+        if (langs.length > 1) {
+          try { lang = sdk.AutoDetectSourceLanguageResult.fromResult(e.result)?.language; } catch { /* not available */ }
+        } else {
+          lang = langs[0];
+        }
+        onFinal(t, lang || undefined);
+      }
     }
   };
   recognizer.canceled = (_s, e) => {
