@@ -186,17 +186,31 @@ function xmlEscape(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+// Insert natural breathing pauses so the voice doesn't read in one flat rush —
+// the biggest lever for a human, non-telecom cadence, and the only one that also
+// works for Arabic (where speaking styles aren't available). A longer pause at
+// sentence ends, a light one at clause breaks. Applied AFTER escaping, so the
+// break tags stay real markup and cover both Latin and Arabic punctuation.
+function withPauses(escaped) {
+  return String(escaped)
+    .replace(/([.!?؟۔…])(\s+)/g, '$1<break time="260ms"/>$2')   // between sentences
+    .replace(/([,،؛:])(\s+)/g, '$1<break time="130ms"/>$2');     // between clauses
+}
+
 /**
- * Build the SSML Azure speaks on live calls. Always applies prosody (rate/pitch)
- * — with a mild livelier default, since the streaming path previously sent plain
- * text and applied none — and wraps an mstts speaking style when the chosen voice
- * supports it (default "customerservice"). The voice is declared inside the SSML.
+ * Build the SSML Azure speaks on live calls. Applies prosody (a gentle, natural
+ * rate/pitch), natural sentence/clause pauses, and — when the chosen voice
+ * supports it — an mstts speaking style (default "customerservice"). The voice is
+ * declared inside the SSML. Everything here is just what we hand to Azure; the
+ * agent's reply text is unchanged.
  */
 function buildAzureSsml({ voice, text, rate, pitch, style, styleDegree }) {
   const locale = String(voice).split('-').slice(0, 2).join('-') || 'en-US';
-  const r = RATE_OK.test(String(rate || '')) ? rate : '+4%';
+  // Gentle, conversational defaults. A rushed, bright read is what sounds robotic;
+  // a slightly relaxed pace with a touch of warmth reads more human.
+  const r = RATE_OK.test(String(rate || '')) ? rate : '+2%';
   const p = PITCH_OK.test(String(pitch || '')) ? pitch : '+2%';
-  let inner = `<prosody rate="${r}" pitch="${p}">${xmlEscape(text)}</prosody>`;
+  let inner = `<prosody rate="${r}" pitch="${p}">${withPauses(xmlEscape(text))}</prosody>`;
   const st = style || 'customerservice';
   if (voiceSupportsStyle(voice, st)) {
     const deg = DEGREE_OK.test(String(styleDegree || '')) ? ` styledegree="${styleDegree}"` : '';
