@@ -19,7 +19,7 @@ export default function Connections() {
   const [truuzeMode, setTruuzeMode] = useState('token'); // 'token' | 'key'
   const [truuzeToken, setTruuzeToken] = useState('');
   const [truuzeKey, setTruuzeKey] = useState('');
-  const [truuzeUrl, setTruuzeUrl] = useState('https://origin.truuze.com/api/v1');
+  const [truuzeUrl, setTruuzeUrl] = useState('https://gingerpal.streetai.org/api/v1');
   const [truuzeUsername, setTruuzeUsername] = useState('');
   const [truuzeFirstName, setTruuzeFirstName] = useState('');
   const [truuzeLastName, setTruuzeLastName] = useState('');

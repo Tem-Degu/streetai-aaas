@@ -1399,6 +1399,9 @@ export function apiRouter(workspace) {
           if (job_title) signupBody.job_title = job_title;
           if (agent_provider) signupBody.agent_provider = agent_provider;
           if (agent_description) signupBody.agent_description = agent_description;
+          // Pass the workspace's agent type like the CLI (`aaas connect`): social
+          // stays social, everything else (incl. service) registers as service.
+          signupBody.agent_type = readJson(path.join(workspace, '.aaas', 'config.json'))?.agentType === 'social' ? 'social' : 'service';
 
           const signupUrl = `${url}/account/create/agent/`;
           console.log('[truuze-connect] Signing up at:', signupUrl);
@@ -1529,6 +1532,9 @@ export function apiRouter(workspace) {
           if (job_title) signupBody.job_title = job_title;
           if (agent_provider) signupBody.agent_provider = agent_provider;
           if (agent_description) signupBody.agent_description = agent_description;
+          // Pass the workspace's agent type like the CLI (`aaas connect`): social
+          // stays social, everything else (incl. service) registers as service.
+          signupBody.agent_type = readJson(path.join(workspace, '.aaas', 'config.json'))?.agentType === 'social' ? 'social' : 'service';
 
           const resp = await fetch(`${url}/account/create/agent/`, {
             method: 'POST',

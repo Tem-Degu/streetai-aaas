@@ -21,6 +21,11 @@ RUN npm ci --omit=dev
 FROM node:20-bookworm-slim AS runtime
 ENV NODE_ENV=production
 ENV AAAS_PORT=3400
+# Every hosted agent runs in its own container (single tenant) and is first-party,
+# so enable agent-authored tools (matchmaker, etc.). The default-off gate exists
+# for shared / untrusted multi-workspace hosts; revert this if you ever host
+# third-party agents on this image.
+ENV AAAS_ALLOW_AGENT_TOOLS=1
 WORKDIR /app
 
 # App code + the compiled dependencies from the builder (same Debian/Node base,

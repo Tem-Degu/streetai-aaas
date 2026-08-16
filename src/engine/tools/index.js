@@ -6,6 +6,7 @@ import { scheduleAction, removeAction, loadPending } from '../scheduler.js';
 import { readSkill, writeSkill, readSoul, writeSoul, readDataFile, writeDataFile, addDataRecord, updateDataRecord, deleteDataRecord, readExtensions, addExtension, removeExtension, importFile, applyTemplateVariables, renameDataFile, createAgentTool, listAgentTools, removeAgentTool } from './workspace.js';
 import { runQuery, listTables, getDb } from './database.js';
 import { synthesizeSpeech } from '../tts.js';
+import { SessionManager } from '../sessions/index.js';
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -320,6 +321,14 @@ export class ToolRegistry {
       // { delayMinutes, instruction, session:{platform,user_id}, context }.
       // Lets a tool drive follow-through in any party's own chat.
       schedule: (opts) => scheduleAction(this.paths, opts),
+      // Append a message into another party's session so out-of-band sends (e.g.
+      // a matchmaker asking the client a question on the target's behalf) are
+      // visible in that party's next turn instead of arriving with no context.
+      // `message` = { role, content }. Best-effort; never breaks a tool call.
+      appendSession: (userId, message) => {
+        try { new SessionManager(this.workspace).addMessage('truuze', String(userId), message); }
+        catch { /* best-effort */ }
+      },
     };
   }
 

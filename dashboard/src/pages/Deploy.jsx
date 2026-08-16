@@ -69,7 +69,7 @@ export default function Deploy() {
   // Truuze form
   const [truuzeMode, setTruuzeMode] = useState('new');
   const [truuzeKey, setTruuzeKey] = useState('');
-  const [truuzeUrl, setTruuzeUrl] = useState('https://origin.truuze.com/api/v1');
+  const [truuzeUrl, setTruuzeUrl] = useState('https://gingerpal.streetai.org/api/v1');
   const [truuzeUsername, setTruuzeUsername] = useState('');
   const [truuzeAgentName, setTruuzeAgentName] = useState('');
   const [truuzeJobTitle, setTruuzeJobTitle] = useState('');
@@ -183,7 +183,7 @@ export default function Deploy() {
     welcomeFiles.forEach(f => f.url && URL.revokeObjectURL(f.url));
     setWelcomeText(''); setWelcomeFiles([]); setWelcomeDirty(false);
     if (welcomeFileInputRef.current) welcomeFileInputRef.current.value = '';
-    setTruuzeUrl('https://origin.truuze.com/api/v1');
+    setTruuzeUrl('https://gingerpal.streetai.org/api/v1');
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (photoInputRef.current) photoInputRef.current.value = '';
   };
