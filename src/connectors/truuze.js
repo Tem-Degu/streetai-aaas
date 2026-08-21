@@ -19,6 +19,14 @@ export default class TruuzeConnector extends BaseConnector {
     this.heartbeatInterval = (config.heartbeatInterval || 30) * 1000;
     this.mode = config.mode || 'auto'; // 'auto', 'websocket', 'polling'
     this.agentType = config.agentType || engine?.config?.agentType || 'service';
+    // Agent-to-agent gates. Both default ON (allow). Set either to false in the
+    // workspace config (or via the dashboard toggles) to make the agent ignore
+    // that activity from other agents — a blunt stop for runaway bot-to-bot loops
+    // until a smarter limiter exists. Toggling either restarts the connector.
+    //   allowAgentChat       → direct messages (DMs) from other agents
+    //   allowAgentEngagement → comments, mentions, reactions from other agents
+    this.allowAgentChat = (config.allowAgentChat ?? engine?.config?.allowAgentChat) !== false;
+    this.allowAgentEngagement = (config.allowAgentEngagement ?? engine?.config?.allowAgentEngagement) !== false;
     this.intervalId = null;
     this.consecutiveFailures = 0;
     this.ws = null;
@@ -354,6 +362,22 @@ export default class TruuzeConnector extends BaseConnector {
     return false;
   }
 
+  /**
+   * When agent engagement is off, drop an engagement event (comment, mention,
+   * reaction) that came from another agent: mark it read so the heartbeat stops
+   * redelivering it, and tell the caller to skip it (no LLM turn). Returns false
+   * (keep) for human actors, or whenever agent engagement is allowed. Direct
+   * messages are governed separately by allowAgentChat.
+   */
+  _gateAgentEvent(item) {
+    if (this.allowAgentEngagement) return false;
+    if (item && item.from_account_type === 'agent') {
+      this._markAsRead('event', item.id).catch(() => { /* best-effort */ });
+      return true;
+    }
+    return false;
+  }
+
   async _processUpdates(data) {
     const updates = data.updates || {};
 
@@ -382,14 +406,17 @@ export default class TruuzeConnector extends BaseConnector {
 
     for (const comment of (updates.comments || [])) {
       if (this._isProcessed('comment', comment.id)) continue;
+      if (this._gateAgentEvent(comment)) continue;
       batch.push({ kind: 'comment', category: 'event', item: comment });
     }
     for (const mention of (updates.mentions || [])) {
       if (this._isProcessed('mention', mention.id)) continue;
+      if (this._gateAgentEvent(mention)) continue;
       batch.push({ kind: 'mention', category: 'event', item: mention });
     }
     for (const reaction of (updates.reactions || [])) {
       if (this._isProcessed('reaction', reaction.id)) continue;
+      if (this._gateAgentEvent(reaction)) continue;
       batch.push({ kind: 'reaction', category: 'event', item: reaction });
     }
     for (const listener of (updates.new_listeners || [])) {
@@ -769,6 +796,17 @@ export default class TruuzeConnector extends BaseConnector {
     // redelivering, then drop. Real chat content is unaffected.
     if (msg.message_type === 'system' && /^Escrow\s+[A-Z0-9]{6}\b/.test((msg.text || '').trim())) {
       console.log('[truuze] Filtering escrow system message %s (handled by escrow poller)', msg.id);
+      this._ackMessage(msg.id, msg.chat_type);
+      return;
+    }
+
+    // Agent-to-agent chat gate. Until a smarter loop-limiter exists, ignore
+    // messages from other agents unless the owner allowed it. The owner is never
+    // gated. Ack so the server stops redelivering, then drop (no LLM turn).
+    if (!this.allowAgentChat
+        && msg.from_account_type === 'agent'
+        && !(this.ownerUsername && msg.from_username === this.ownerUsername)) {
+      console.log('[truuze] Ignoring message from agent @%s (allowAgentChat off), id %s', msg.from_username, msg.id);
       this._ackMessage(msg.id, msg.chat_type);
       return;
     }

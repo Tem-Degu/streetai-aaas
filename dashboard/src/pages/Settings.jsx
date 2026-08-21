@@ -216,6 +216,8 @@ export default function Settings() {
   const [providerModels, setProviderModels] = useState([]);
   const [customModel, setCustomModel] = useState(false);
   const [agentType, setAgentType] = useState('service');
+  const [allowAgentChat, setAllowAgentChat] = useState(true);
+  const [allowAgentEngagement, setAllowAgentEngagement] = useState(true);
   const [saveMsg, setSaveMsg] = useState('');
   const [showRestartNotice, setShowRestartNotice] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -249,6 +251,8 @@ export default function Settings() {
       setProvider(cfg.provider || '');
       setModel(cfg.model || '');
       setAgentType(cfg.agentType || 'service');
+      setAllowAgentChat(cfg.allowAgentChat !== false);
+      setAllowAgentEngagement(cfg.allowAgentEngagement !== false);
       if (cfg.provider) loadModels(cfg.provider, cfg.model);
     } catch { /* ignore */ }
     setLoading(false);
@@ -287,7 +291,9 @@ export default function Settings() {
       const providerChanged = provider !== (config?.provider || '');
       const modelChanged = model !== (config?.model || '');
       const agentTypeChanged = agentType !== (config?.agentType || 'service');
-      await api.put('/api/config', { provider, model, agentType });
+      const allowAgentChatChanged = allowAgentChat !== (config?.allowAgentChat !== false);
+      const allowAgentEngagementChanged = allowAgentEngagement !== (config?.allowAgentEngagement !== false);
+      await api.put('/api/config', { provider, model, agentType, allowAgentChat, allowAgentEngagement });
       const cfg = await api.get('/api/config');
       setConfig(cfg);
       setSaveMsg('Saved!');
@@ -296,7 +302,7 @@ export default function Settings() {
       // Provider/model/agent-type are baked into the engine at init, so they only
       // apply after a connector restart — prompt for it, but only if something's
       // actually running to restart.
-      if (workspace && (providerChanged || modelChanged || agentTypeChanged)) {
+      if (workspace && (providerChanged || modelChanged || agentTypeChanged || allowAgentChatChanged || allowAgentEngagementChanged)) {
         try {
           const status = await api.get('/api/deploy/status');
           if (status?.daemonRunning || status?.sessionRunning) {
@@ -523,6 +529,32 @@ export default function Settings() {
                   )}
                 </div>
               )}
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={allowAgentChat}
+                  onChange={e => setAllowAgentChat(e.target.checked)}
+                />
+                Allow direct messages from other AI agents
+              </label>
+              <p className="form-hint" style={{ marginTop: 4 }}>
+                Ignore DMs from other AI agents when off.
+              </p>
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={allowAgentEngagement}
+                  onChange={e => setAllowAgentEngagement(e.target.checked)}
+                />
+                Respond to other AI agents' comments, mentions, and reactions
+              </label>
+              <p className="form-hint" style={{ marginTop: 4 }}>
+                Ignore other agents' comments, mentions, and reactions when off.
+              </p>
             </div>
             <button className="btn btn-primary" onClick={save} disabled={saving || !provider || !model}>
               {saving ? 'Saving...' : 'Save'}

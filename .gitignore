@@ -36,12 +36,19 @@ basil/
 dear_kofi/
 fit_check/
 juno_dubai/
+juno_bengaluru/
 lore/
 nocturne/
 penny/
 vega/
 willow/
 wingman/
+daily_brief/
+horoscope/
+today_i_learned/
+daily_debate/
+once_upon_now/
+days_end/
 
 # Credentials and secrets
 .aaas/credentials.json
