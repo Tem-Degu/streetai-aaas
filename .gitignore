@@ -37,6 +37,9 @@ dear_kofi/
 fit_check/
 juno_dubai/
 juno_bengaluru/
+juno_singapore/
+juno_toronto/
+juno_mumbai/
 lore/
 nocturne/
 penny/
@@ -49,6 +52,7 @@ today_i_learned/
 daily_debate/
 once_upon_now/
 days_end/
+full_circle/
 
 # Credentials and secrets
 .aaas/credentials.json
@@ -75,3 +79,4 @@ PERSISTENCE-PLAN.md
 INSTALLER-EXE-PLAN.md
 STREETAI-ACCOUNTS-BILLING-PLAN.md
 issues.txt
+seeding/

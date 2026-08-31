@@ -196,6 +196,14 @@ const VISION_PROVIDERS = [
   },
 ];
 
+// Web-search providers for the `web_search` tool. The key is stored in the
+// normal credentials store under the provider name (serper / brave), exactly
+// like every other API key. Keep in sync with src/engine/tools/web.js.
+const WEB_SEARCH_PROVIDERS = [
+  { value: 'serper', label: 'Serper (serper.dev — Google results)', keyUrl: 'https://serper.dev' },
+  { value: 'brave', label: 'Brave Search API', keyUrl: 'https://brave.com/search/api/' },
+];
+
 export default function Settings() {
   const api = useApi();
   const workspace = useContext(WorkspaceContext);
@@ -767,6 +775,13 @@ export default function Settings() {
           onSaved={loadConfig}
         />
 
+        <WebSearchCard
+          config={config}
+          api={api}
+          configuredProviders={config?.configuredProviders || []}
+          onSaved={loadConfig}
+        />
+
         {/* Storage cleanup */}
         <StorageCleanupCard />
 
@@ -1300,6 +1315,126 @@ function VisionCard({ config, api, configuredProviders, onSaved }) {
               </div>
             )}
           </>
+        )}
+
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {msg && (
+          <p className="form-hint" style={{ marginTop: 8, color: msg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
+            {msg}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WebSearchCard({ config, api, configuredProviders, onSaved }) {
+  const [provider, setProvider] = useState('serper');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
+  const [keyMsg, setKeyMsg] = useState('');
+
+  const selected = WEB_SEARCH_PROVIDERS.find(p => p.value === provider) || WEB_SEARCH_PROVIDERS[0];
+
+  useEffect(() => {
+    const w = config?.web_search || {};
+    setProvider(w.provider || 'serper');
+    setApiKey('');
+    setKeyMsg('');
+  }, [config]);
+
+  const changeProvider = (val) => {
+    setProvider(val);
+    setApiKey('');
+    setKeyMsg('');
+  };
+
+  const hasKey = configuredProviders.some(p => p.name === provider);
+
+  const saveKey = async () => {
+    if (!apiKey.trim()) return;
+    setSavingKey(true); setKeyMsg('');
+    try {
+      await api.post('/api/credentials', { provider, apiKey: apiKey.trim() });
+      setApiKey('');
+      setKeyMsg('Key saved!');
+      onSaved?.();
+    } catch (e) {
+      setKeyMsg('Error: ' + e.message);
+    }
+    setSavingKey(false);
+  };
+
+  const save = async () => {
+    setSaving(true); setMsg(''); setKeyMsg('');
+    try {
+      // If a key was typed but not separately saved, persist it with this Save.
+      if (!hasKey && apiKey.trim()) {
+        await api.post('/api/credentials', { provider, apiKey: apiKey.trim() });
+        setApiKey('');
+      }
+      await api.put('/api/config', { web_search: { provider } });
+      setMsg('Saved!');
+      onSaved?.();
+      setTimeout(() => setMsg(''), 2500);
+    } catch (e) {
+      setMsg('Error: ' + e.message);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="card">
+      <div className="card-header">Web search</div>
+      <div className="card-body">
+        <p className="form-hint" style={{ marginTop: 0 }}>
+          Let your agent search the open web (the <code>web_search</code> tool). Pick a
+          search provider and add its API key. When unconfigured, web search simply
+          returns an error and the agent carries on without it.
+        </p>
+
+        <div className="form-group">
+          <label>Search provider</label>
+          <select className="form-select" value={provider} onChange={e => changeProvider(e.target.value)}>
+            {WEB_SEARCH_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+        </div>
+
+        {hasKey ? (
+          <p className="form-hint" style={{ color: 'var(--green)' }}>
+            ✓ API key for “{provider}” is configured. Manage it in the <strong>Configured Providers</strong> card above.
+          </p>
+        ) : (
+          <div className="form-group">
+            <label>{selected?.label} API key</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="password"
+                className="form-input"
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                placeholder="Paste your API key"
+                style={{ flex: 1 }}
+              />
+              <button className="btn" onClick={saveKey} disabled={savingKey || !apiKey.trim()}>
+                {savingKey ? 'Saving…' : 'Save key'}
+              </button>
+            </div>
+            {selected?.keyUrl && (
+              <p className="form-hint" style={{ marginTop: 6 }}>
+                Get a key at <a href={selected.keyUrl} target="_blank" rel="noreferrer">{selected.keyUrl}</a>.
+              </p>
+            )}
+            {keyMsg && (
+              <p className="form-hint" style={{ marginTop: 6, color: keyMsg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
+                {keyMsg}
+              </p>
+            )}
+          </div>
         )}
 
         <button className="btn btn-primary" onClick={save} disabled={saving}>

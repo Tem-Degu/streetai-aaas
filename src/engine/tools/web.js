@@ -3,22 +3,30 @@
  * Gives agents the ability to search the web and read web pages.
  */
 
+import { getProviderCredential } from '../../auth/credentials.js';
+
 const DEFAULT_USER_AGENT = 'AaaS-Agent/1.0';
 const MAX_CONTENT_LENGTH = 8000; // characters returned to LLM
 
 /**
  * Search the web using a configurable provider.
  * Supported providers: serper (default), brave.
+ *
+ * The provider is chosen on the workspace Settings page (config.web_search.provider)
+ * and the key resolves from the normal credentials store keyed by that provider
+ * name (env → per-agent → hub) — the same place every other API key lives. A
+ * legacy `config.web_search.api_key` is honored as a fallback for older setups.
  */
-export async function webSearch(config, { query, num_results = 5 }) {
+export async function webSearch(config, { query, num_results = 5 }, workspace = null) {
   if (!query) return JSON.stringify({ error: 'query is required.' });
 
   const provider = config?.web_search?.provider || 'serper';
-  const apiKey = config?.web_search?.api_key;
+  const cred = getProviderCredential(provider, workspace);
+  const apiKey = cred?.apiKey || config?.web_search?.api_key;
 
   if (!apiKey) {
     return JSON.stringify({
-      error: `Web search requires an API key. Set web_search.provider and web_search.api_key in .aaas/config.json. Supported providers: serper (serper.dev), brave (brave.com/search/api/).`,
+      error: `Web search requires an API key for "${provider}". Add it on the dashboard Settings → Web search card. Supported providers: serper (serper.dev), brave (brave.com/search/api/).`,
     });
   }
 

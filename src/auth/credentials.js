@@ -16,6 +16,8 @@ const ENV_VAR_MAP = {
   deepseek: ['DEEPSEEK_API_KEY'],
   streetai: ['STREETAI_API_KEY'],
   groq: ['GROQ_API_KEY'],
+  serper: ['SERPER_API_KEY'],
+  brave: ['BRAVE_API_KEY', 'BRAVE_SEARCH_API_KEY'],
   ollama: [], // no key needed
 };
 

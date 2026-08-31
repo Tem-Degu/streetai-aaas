@@ -1144,7 +1144,7 @@ export class ToolRegistry {
           console.log('[executeTool] platform_request result:', result?.slice(0, 500));
           return result;
         case 'web_search':
-          return await this._retryNetworkTool(() => webSearch(this.config, args), 'web_search');
+          return await this._retryNetworkTool(() => webSearch(this.config, args, this.workspace), 'web_search');
         case 'web_fetch':
           return await this._retryNetworkTool(() => webFetch(args), 'web_fetch');
         case 'read_image':
