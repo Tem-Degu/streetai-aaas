@@ -11,7 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { platformRequest } from './platform-request.js';
-import { webSearch, webFetch } from './web.js';
+import { webSearch, webFetch, imageSearch } from './web.js';
 import { readImage } from './vision.js';
 import { listConnections } from '../../auth/connections.js';
 import { loadConnectorToolModule } from '../../connectors/index.js';
@@ -938,6 +938,18 @@ export class ToolRegistry {
         },
       },
       {
+        name: 'image_search',
+        description: 'Search the web for photos matching a query and get back a list of image results — each with a direct `image_url`, a `thumbnail_url`, and the `source_page` it came from. Use this to find a picture of a person or thing (e.g. after you have confirmed who someone is: "Full Name, City, job title"). To show an image in chat, include its `image_url` in your reply text. Requires a Serper API key (Settings → Web search).',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'What to find a picture of, e.g. a person\'s name plus a distinguishing detail.' },
+            num_results: { type: 'number', description: 'How many image results to return (default 6).' },
+          },
+          required: ['query'],
+        },
+      },
+      {
         name: 'read_image',
         description: 'Look at an image a user sent (a photo, a screenshot) and get a text description of what it contains — so you can "see" it. Pass the workspace-relative path from the message\'s "[Attached files: image: data/inbox/...]" note. Optionally pass `question` to focus the reading (e.g. "transcribe this chat, note who said what" or "describe the palm lines"). Returns { description }, or { error } when vision isn\'t set up — in which case, fall back gracefully (offer a non-visual option).',
         parameters: {
@@ -1145,6 +1157,8 @@ export class ToolRegistry {
           return result;
         case 'web_search':
           return await this._retryNetworkTool(() => webSearch(this.config, args, this.workspace), 'web_search');
+        case 'image_search':
+          return await this._retryNetworkTool(() => imageSearch(this.config, args, this.workspace), 'image_search');
         case 'web_fetch':
           return await this._retryNetworkTool(() => webFetch(args), 'web_fetch');
         case 'read_image':

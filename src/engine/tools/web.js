@@ -59,6 +59,49 @@ async function searchSerper(apiKey, query, num) {
   }));
 }
 
+/**
+ * Image search — returns photo results (image URL + the page it came from) so an
+ * agent can reliably fetch and show a picture of a subject. Serper only; Brave's
+ * image API is a separate product, so brave falls back to serper if a serper key
+ * exists, else returns a clear error.
+ */
+export async function imageSearch(config, { query, num_results = 6 }, workspace = null) {
+  if (!query) return JSON.stringify({ error: 'query is required.' });
+
+  // Image search runs through Serper's /images endpoint. Resolve a serper key
+  // from the credentials store (env → per-agent → hub), same as web search.
+  const cred = getProviderCredential('serper', workspace);
+  const apiKey = cred?.apiKey || config?.web_search?.api_key;
+
+  if (!apiKey) {
+    return JSON.stringify({
+      error: `Image search requires a Serper API key. Add it on the dashboard Settings → Web search card (provider: serper).`,
+    });
+  }
+
+  try {
+    const res = await fetch('https://google.serper.dev/images', {
+      method: 'POST',
+      headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: query, num: num_results }),
+    });
+    if (!res.ok) throw new Error(`Serper image API returned ${res.status}`);
+    const data = await res.json();
+    const images = (data.images || []).slice(0, num_results).map(r => ({
+      title: r.title,
+      image_url: r.imageUrl,
+      thumbnail_url: r.thumbnailUrl,
+      source_page: r.link,
+      source: r.source,
+      width: r.imageWidth,
+      height: r.imageHeight,
+    }));
+    return JSON.stringify({ query, images });
+  } catch (err) {
+    return JSON.stringify({ error: `Image search failed: ${err.message}` });
+  }
+}
+
 async function searchBrave(apiKey, query, num) {
   const params = new URLSearchParams({ q: query, count: String(num) });
   const res = await fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
