@@ -671,7 +671,11 @@ export class AgentEngine {
     if (!args || typeof args !== 'object' || depth > 4) return args;
     const out = Array.isArray(args) ? [] : {};
     for (const [k, v] of Object.entries(args)) {
-      if (typeof v === 'string' && v.length > 200) out[k] = v.slice(0, 200) + '…[truncated]';
+      // Replace a long value with a neutral placeholder rather than a partial
+      // copy. A partial copy ("first 200 chars…[truncated]") reads like real
+      // content, and the model would later echo it verbatim into a reply. A
+      // clearly-labelled placeholder can't be mistaken for content to continue.
+      if (typeof v === 'string' && v.length > 800) out[k] = `[omitted: ${v.length}-char ${k} not kept in history]`;
       else if (v && typeof v === 'object') out[k] = this._trimArgs(v, depth + 1);
       else out[k] = v;
     }
