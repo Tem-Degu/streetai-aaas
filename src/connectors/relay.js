@@ -237,6 +237,12 @@ Bad (will NOT work):
       sendClear: () => send('voice:clear', {}),
       userId: data.userId || `voice_${callId}`,
       greetLang: data.lang || null,   // caller-selected opening language (from the widget)
+      // Outbound (agent-placed) calls carry a purpose + direction from the relay
+      // so the agent opens with an AI self-intro and can hang up when finished.
+      direction: data.direction || 'inbound',
+      purpose: data.purpose || null,
+      agentName: this.engine?.agentName || null,
+      onHangup: () => { send('voice:end', {}); this._handleVoiceStop({ callId }); },
     });
     this.voiceCalls.set(callId, { pipeline, codec });
     try {

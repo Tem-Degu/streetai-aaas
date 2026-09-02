@@ -28,12 +28,20 @@ export class VoicePipeline {
    * @param {()=>void} o.sendClear            Tell the transport to flush its playout buffer.
    * @param {string} o.userId      Stable per-call id (caller number / web session).
    */
-  constructor({ engine, sendMedia, sendClear, userId, greetLang }) {
+  constructor({ engine, sendMedia, sendClear, userId, greetLang, direction, purpose, agentName, onHangup }) {
     this.engine = engine;
     this.sendMedia = sendMedia;
     this.sendClear = sendClear;
     this.userId = userId;
     this.greetLang = greetLang || null;   // caller-selected opening language (optional)
+    // Outbound calls (the agent placed the call): open with a purposeful AI
+    // self-introduction and allow the agent to hang up when done. Inbound leaves
+    // these unset and behaves exactly as before.
+    this.direction = direction || 'inbound';
+    this.purpose = purpose || null;
+    this.agentName = agentName || (engine && engine.agentName) || null;
+    this.onHangup = typeof onHangup === 'function' ? onHangup : null;
+    this._pendingHangup = false;
     this.voice = (engine && engine.config && engine.config.voice) || {};
 
     // Sticky reply language. Once a language is committed, we keep replying in it
@@ -224,6 +232,11 @@ export class VoicePipeline {
         // opposing utterance can't flip the reply. runVoiceTurn treats it as the
         // primary signal; on the greeting we pass none and let greetLang drive.
         sttLang: isGreeting ? undefined : (this.currentLang || undefined),
+        // Outbound: replace the generic greeting with a purposeful AI intro.
+        opening: isGreeting && this.direction === 'outbound' ? this._outboundOpening() : undefined,
+        // Let the agent end an outbound call via the end_call tool. Inbound omits
+        // this, so nothing changes for calls the agent didn't place.
+        onControl: this.direction === 'outbound' ? (c) => { if (c && c.hangup) this._pendingHangup = true; } : undefined,
       });
     } catch (e) {
       reply = 'Sorry, could you say that again?';
@@ -271,6 +284,31 @@ export class VoicePipeline {
       if (!ac.signal.aborted) console.error('[voice] tts error:', e.message);
     }
     if (myTurn === this.turnId) this.ttsAbort = null;
+
+    // Agent asked to end the call this turn (outbound only): once its closing
+    // line has finished playing, hang up. Wait out the audio we just queued so
+    // the caller actually hears the sign-off before the line drops.
+    if (this._pendingHangup && myTurn === this.turnId && this.onHangup) {
+      this._pendingHangup = false;
+      const waitMs = Math.max(0, this.playEndAt - Date.now()) + 400;
+      setTimeout(() => { try { this.onHangup(); } catch { /* ignore */ } }, waitMs);
+    }
+  }
+
+  /**
+   * The opening instruction for an outbound call — the agent's first words when
+   * the callee picks up. It must introduce itself by name, make clear it's an AI
+   * agent (not a human), and state why it's calling. The agent's own persona
+   * supplies the name; we pass it explicitly too when we have it.
+   */
+  _outboundOpening() {
+    const who = this.agentName ? `You are ${this.agentName}.` : '';
+    const why = this.purpose ? ` Your reason for calling: ${this.purpose}.` : '';
+    return (
+      `You have just PLACED an outbound phone call and the person has answered. ${who} `.trim() +
+      ` This is the very first thing you say. Introduce yourself by your name and clearly state that you are an AI agent (not a human) calling on behalf of your owner.${why} ` +
+      `Be warm, natural and brief — one or two sentences — then let them respond. When your questions are answered, thank them and use the end_call tool to hang up.`
+    );
   }
 
   close() {

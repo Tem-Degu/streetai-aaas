@@ -13,13 +13,54 @@ import { pathToFileURL } from 'url';
 import { platformRequest } from './platform-request.js';
 import { webSearch, webFetch, imageSearch } from './web.js';
 import { readImage } from './vision.js';
-import { listConnections } from '../../auth/connections.js';
+import { listConnections, loadConnection } from '../../auth/connections.js';
 import { loadConnectorToolModule } from '../../connectors/index.js';
 import { notifyOwner, notifyTransaction } from '../../notifications/index.js';
 import { MemoryManager } from '../memory/index.js';
 import { readText, readJson } from '../../utils/workspace.js';
 import { parseTransactionFieldsBlock, parseItemFieldsBlock, buildToolFieldSchema, parseServiceCatalog, parseCurrencyDeclaration } from './transaction-view.js';
 import { validateTransactionPayload } from './transaction-validate.js';
+
+/**
+ * place_call handler — asks the relay to originate an outbound phone call. The
+ * relay owns the hard guardrails (deny-lists, international toggle, rate/spend
+ * caps); this only gates on the owner's Settings switch and forwards the request
+ * with the agent's own relay credentials. Returns quickly: the actual live
+ * conversation runs in the voice pipeline once the call connects.
+ */
+async function placeCall(workspace, config, args = {}) {
+  if (!config?.voice?.outbound?.enabled) {
+    return JSON.stringify({ ok: false, error: 'Outbound calling is turned off. Your owner can enable it in Settings → Outbound calling.' });
+  }
+  const to = String(args.to || '').trim();
+  const purpose = String(args.purpose || '').trim();
+  if (!to) return JSON.stringify({ ok: false, error: 'A phone number (to) is required.' });
+
+  const conn = loadConnection(workspace, 'relay');
+  if (!conn?.relayKey || !conn?.slug || !conn?.relayUrl) {
+    return JSON.stringify({ ok: false, error: 'Outbound calling needs the StreetAI relay, and this agent is not connected to it.' });
+  }
+  const base = conn.relayUrl.replace(/^ws/, 'http').replace(/\/+$/, '');
+  const out = config.voice.outbound;
+  const callerId = out.callerId || undefined;
+  // The owner's Settings toggle drives international; the server still applies
+  // its hard deny-lists and rate/spend caps on top, regardless of this.
+  const allowInternational = out.denyInternational === false;
+  try {
+    const resp = await fetch(`${base}/relay/originate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: conn.slug, relayKey: conn.relayKey, to, purpose, callerId, allowInternational }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      return JSON.stringify({ ok: false, error: data.error || `The call could not be placed (HTTP ${resp.status}).` });
+    }
+    return JSON.stringify({ ok: true, callId: data.callId, to: data.to, note: "Calling now. When they answer you'll be speaking with them live — open by introducing yourself as an AI agent." });
+  } catch (e) {
+    return JSON.stringify({ ok: false, error: 'Could not reach the calling service: ' + e.message });
+  }
+}
 
 /**
  * Tool registry. Returns tool definitions for the LLM and dispatches execution.
@@ -950,6 +991,23 @@ export class ToolRegistry {
         },
       },
       {
+        name: 'place_call',
+        description: "Place an outbound phone call to a phone number and talk live with whoever answers, on your owner's behalf — e.g. call a business to ask a question. You open by introducing yourself by name as an AI agent and stating your purpose, have a short spoken conversation, and hang up with end_call when done. Only works when the owner has enabled outbound calling in Settings. Use sparingly, for legitimate inquiries to public/business numbers; never for anything harassing or to premium/emergency numbers.",
+        parameters: {
+          type: 'object',
+          properties: {
+            to: { type: 'string', description: 'Phone number to call, ideally in +country format (e.g. "+9714XXXXXXX"). Emergency and short-code numbers are blocked; international is off unless the owner enabled it.' },
+            purpose: { type: 'string', description: 'Why you are calling — one clear sentence. It becomes your spoken opening.' },
+          },
+          required: ['to', 'purpose'],
+        },
+      },
+      {
+        name: 'end_call',
+        description: 'End the outbound phone call you are currently on. Call this once you have said your closing line and gotten what you needed — the line hangs up after your final words finish playing. Only meaningful during a live call you placed.',
+        parameters: { type: 'object', properties: {} },
+      },
+      {
         name: 'read_image',
         description: 'Look at an image a user sent (a photo, a screenshot) and get a text description of what it contains — so you can "see" it. Pass the workspace-relative path from the message\'s "[Attached files: image: data/inbox/...]" note. Optionally pass `question` to focus the reading (e.g. "transcribe this chat, note who said what" or "describe the palm lines"). Returns { description }, or { error } when vision isn\'t set up — in which case, fall back gracefully (offer a non-visual option).',
         parameters: {
@@ -1159,6 +1217,12 @@ export class ToolRegistry {
           return await this._retryNetworkTool(() => webSearch(this.config, args, this.workspace), 'web_search');
         case 'image_search':
           return await this._retryNetworkTool(() => imageSearch(this.config, args, this.workspace), 'image_search');
+        case 'place_call':
+          return await this._retryNetworkTool(() => placeCall(this.workspace, this.config, args), 'place_call');
+        case 'end_call':
+          // A marker the voice pipeline detects in toolsUsed to hang up after the
+          // agent's closing line finishes. No-op off a call.
+          return JSON.stringify({ ok: true, ending: true, note: 'The call will end after your current reply finishes playing.' });
         case 'web_fetch':
           return await this._retryNetworkTool(() => webFetch(args), 'web_fetch');
         case 'read_image':

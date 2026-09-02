@@ -4,6 +4,7 @@ import WebSocket from 'ws';
 import { BaseConnector } from './index.js';
 import { buildPlatformSkill } from './truuze-skill.js';
 import { logError } from '../utils/errlog.js';
+import { notifyOwner } from '../notifications/index.js';
 
 /**
  * Truuze connector — connects to Truuze via WebSocket for real-time events,
@@ -29,6 +30,11 @@ export default class TruuzeConnector extends BaseConnector {
     this.allowAgentEngagement = (config.allowAgentEngagement ?? engine?.config?.allowAgentEngagement) !== false;
     this.intervalId = null;
     this.consecutiveFailures = 0;
+    // Throttle for the "model unavailable" notice (e.g. provider out of funds /
+    // invalid key): one customer notice per chat and one owner alert per window,
+    // so a down model doesn't spam anyone. chat_id -> last-notified epoch ms.
+    this._unavailableNotified = new Map();
+    this._unavailableOwnerAt = 0;
     this.ws = null;
     this.pingInterval = null;
     this.reconnectAttempts = 0;
@@ -892,7 +898,62 @@ export default class TruuzeConnector extends BaseConnector {
     } catch (err) {
       console.error('[truuze] Message handler error:', err);
       this.error = `Message handler error: ${err.message}`;
+      // If the failure is the MODEL itself being unavailable (provider out of
+      // funds, invalid/expired key, or a persistent rate-limit after retries),
+      // don't leave the user staring at silence. Send a brief, throttled notice,
+      // and alert the owner once so they can fix it. Entirely best-effort — this
+      // block never rethrows and never affects the normal path above.
+      try {
+        if (this._isModelUnavailable(err) && !isSystem && msg.chat_id) {
+          const now = Date.now();
+          const WINDOW_MS = 30 * 60 * 1000; // at most one notice / owner alert per 30 min
+
+          const lastToChat = this._unavailableNotified.get(msg.chat_id) || 0;
+          if (now - lastToChat > WINDOW_MS) {
+            this._unavailableNotified.set(msg.chat_id, now);
+            const notice = this.engine?.config?.unavailable_message
+              || "Sorry — I'm a bit swamped right now and can't reply properly. I'll get back to you as soon as I can. 🙏";
+            try {
+              await this._sendMessage(msg.chat_id, notice);
+              console.log('[truuze] Sent model-unavailable notice to chat %s', msg.chat_id);
+            } catch (e) { console.error('[truuze] notice send failed:', e.message); }
+          }
+
+          if (now - this._unavailableOwnerAt > WINDOW_MS) {
+            this._unavailableOwnerAt = now;
+            try {
+              await notifyOwner(this.engine?.workspace, this.engine?.paths, {
+                title: "Your agent can't reply right now",
+                message: 'The AI model returned an error, so your agent is going quiet on GingerPal. This usually means the model provider is out of credit or the API key is invalid/expired — please top it up or update the key.\n\n'
+                  + `Details: ${String(err.message || '').slice(0, 200)}`,
+                severity: 'urgent',
+              });
+            } catch (e) { /* notifications are best-effort */ }
+          }
+        }
+      } catch (e) {
+        console.error('[truuze] model-unavailable handling failed:', e.message);
+      }
     }
+  }
+
+  /**
+   * Is this a "the model itself is unavailable" failure (as opposed to a normal
+   * bug)? Matches only on `err.message` — the same string-based approach the
+   * provider retry layer already uses (src/engine/providers/index.js) — so the
+   * retry logic is untouched. Covers auth (401), billing/quota (402/403,
+   * "insufficient balance"), missing key, and a persistent rate-limit (429) that
+   * only reaches here after the provider's 4 retries are exhausted. A plain 400
+   * (a real bug) is deliberately NOT matched.
+   */
+  _isModelUnavailable(err) {
+    const m = String((err && err.message) || '').toLowerCase();
+    return (
+      /api error 40[123]\b/.test(m) ||
+      /invalid .*api key|no api key for|unauthorized/.test(m) ||
+      /insufficient|balance|quota|exceeded|payment required|billing/.test(m) ||
+      /rate limit|too many requests|\b429\b/.test(m)
+    );
   }
 
   /**

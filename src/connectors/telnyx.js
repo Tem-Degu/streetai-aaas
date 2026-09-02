@@ -216,12 +216,14 @@ export function normalizeSttLang(tag) {
  * `config.voice.greeting` (or `config.greeting`); defaults to "Hello", which the
  * agent's own SKILL turns into its branded/localized greeting.
  */
-export async function runVoiceTurn(engine, { userId, content, language, isGreeting, greetLang, sttLang }) {
+export async function runVoiceTurn(engine, { userId, content, language, isGreeting, greetLang, sttLang, opening, onControl }) {
   try {
     let greeting = false;
     if (!String(content || '').trim() && isGreeting) {
       const cfg = engine?.config || {};
-      content = (cfg.voice && cfg.voice.greeting) || cfg.greeting || 'Hello';
+      // `opening` (an outbound-call instruction) overrides the generic greeting
+      // so the agent opens by naming itself as an AI and stating why it's calling.
+      content = opening || (cfg.voice && cfg.voice.greeting) || cfg.greeting || 'Hello';
       greeting = true;
     }
     // Resolve the reply language, best signal first:
@@ -241,6 +243,13 @@ export async function runVoiceTurn(engine, { userId, content, language, isGreeti
       content,
       metadata: { mode: 'customer', channel: 'voice', language, greeting, replyLanguage },
     });
+    // If the agent invoked end_call this turn, let the caller (the voice pipeline)
+    // hang up after it finishes speaking this reply. Telnyx passes no onControl,
+    // so its behavior is unchanged.
+    if (onControl) {
+      const used = (result.toolsUsed || []).some((t) => (typeof t === 'string' ? t : t?.name) === 'end_call');
+      if (used) onControl({ hangup: true });
+    }
     let text = result.response || '';
     const workspace = engine?.workspace;
     if (workspace && text) text = extractFiles(workspace, text).cleanText;

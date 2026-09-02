@@ -782,6 +782,8 @@ export default function Settings() {
           onSaved={loadConfig}
         />
 
+        <OutboundCallingCard config={config} api={api} onSaved={loadConfig} />
+
         {/* Storage cleanup */}
         <StorageCleanupCard />
 
@@ -980,6 +982,9 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
             ...(STYLE_CAPABLE_VOICES.includes(ttsVoice) && ttsStyle ? { style: ttsStyle } : {}),
             ...(config?.voice?.tts?.en ? { en: config.voice.tts.en } : {}),
           },
+          // Preserve the outbound-calling settings (owned by the Outbound card),
+          // so saving voice here doesn't wipe them (config merges shallowly).
+          ...(config?.voice?.outbound ? { outbound: config.voice.outbound } : {}),
         },
       });
       setMsg('Saved!');
@@ -1435,6 +1440,101 @@ function WebSearchCard({ config, api, configuredProviders, onSaved }) {
               </p>
             )}
           </div>
+        )}
+
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {msg && (
+          <p className="form-hint" style={{ marginTop: 8, color: msg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
+            {msg}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OutboundCallingCard({ config, api, onSaved }) {
+  const [enabled, setEnabled] = useState(false);
+  const [callerId, setCallerId] = useState('');
+  const [allowIntl, setAllowIntl] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    const o = config?.voice?.outbound || {};
+    setEnabled(o.enabled === true);
+    setCallerId(o.callerId || '');
+    setAllowIntl(o.denyInternational === false);
+    setMsg('');
+  }, [config]);
+
+  const save = async () => {
+    setSaving(true); setMsg('');
+    try {
+      await api.put('/api/config', {
+        // Spread the existing voice object so we only touch `outbound` and don't
+        // wipe the TTS/voice settings (config merges shallowly server-side).
+        voice: {
+          ...(config?.voice || {}),
+          outbound: {
+            enabled,
+            callerId: callerId.trim(),
+            denyInternational: !allowIntl,
+          },
+        },
+      });
+      setMsg('Saved!');
+      onSaved?.();
+      setTimeout(() => setMsg(''), 2500);
+    } catch (e) {
+      setMsg('Error: ' + e.message);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="card">
+      <div className="card-header">Outbound calling</div>
+      <div className="card-body">
+        <p className="form-hint" style={{ marginTop: 0 }}>
+          Let your agent <strong>place phone calls</strong> — e.g. call a business to ask a
+          question on your behalf. It opens each call by naming itself as an AI agent and
+          stating why it's calling, then hangs up when done. Requires the phone line to be
+          set up on the server. Emergency and premium numbers are always blocked, and the
+          server enforces daily and per-number limits.
+        </p>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 12 }}>
+          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+          <span>Let this agent place outbound calls</span>
+        </label>
+
+        {enabled && (
+          <>
+            <div className="form-group">
+              <label>Caller ID number</label>
+              <input
+                type="text"
+                className="form-input"
+                value={callerId}
+                onChange={e => setCallerId(e.target.value)}
+                placeholder="+9714XXXXXXX"
+              />
+              <p className="form-hint" style={{ marginTop: 6 }}>
+                The number shown to the people your agent calls (your outbound line).
+              </p>
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 12 }}>
+              <input type="checkbox" checked={allowIntl} onChange={e => setAllowIntl(e.target.checked)} />
+              <span>Allow international calls</span>
+            </label>
+            <p className="form-hint" style={{ marginTop: -6 }}>
+              Off by default — the agent can only call domestic numbers unless you turn this on.
+            </p>
+          </>
         )}
 
         <button className="btn btn-primary" onClick={save} disabled={saving}>
