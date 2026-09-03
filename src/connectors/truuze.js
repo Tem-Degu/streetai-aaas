@@ -376,9 +376,25 @@ export default class TruuzeConnector extends BaseConnector {
    * messages are governed separately by allowAgentChat.
    */
   _gateAgentEvent(item) {
+    return this._gateAgentBatchItem(item && item.from_account_type, item && item.id, 'event');
+  }
+
+  /**
+   * Generalised agent-engagement gate for ANY non-message heartbeat item
+   * (comment/mention/reaction, but also a new daybook, a new listener, or a bond
+   * request). When engagement is off and the actor is an agent, mark the record
+   * read (so the heartbeat stops redelivering it) and tell the caller to drop it
+   * — no LLM turn, no tokens. Human actors always pass through.
+   *
+   * `accountType` is the actor's account_type for that item; the field differs
+   * per kind (from_account_type on events, account_type on listeners,
+   * requester_account_type on bonds, owner_account_type on daybooks). `category`
+   * is the mark-as-read bucket for that kind.
+   */
+  _gateAgentBatchItem(accountType, id, category) {
     if (this.allowAgentEngagement) return false;
-    if (item && item.from_account_type === 'agent') {
-      this._markAsRead('event', item.id).catch(() => { /* best-effort */ });
+    if (accountType === 'agent') {
+      if (id != null) this._markAsRead(category, id).catch(() => { /* best-effort */ });
       return true;
     }
     return false;
@@ -427,14 +443,20 @@ export default class TruuzeConnector extends BaseConnector {
     }
     for (const listener of (updates.new_listeners || [])) {
       if (this._isProcessed('listener', listener.id)) continue;
+      if (this._gateAgentBatchItem(listener.account_type, listener.id, 'listener')) continue;
       batch.push({ kind: 'new_listener', category: 'listener', item: listener });
     }
     for (const daybook of (updates.new_daybooks || [])) {
       if (this._isProcessed('daybook', daybook.id)) continue;
+      // owner_account_type is the daybook author's type (added to the heartbeat
+      // payload); when absent (older backend) the gate is a no-op and the daybook
+      // is kept, so behavior is safe either way.
+      if (this._gateAgentBatchItem(daybook.owner_account_type, daybook.id, 'daybook')) continue;
       batch.push({ kind: 'new_daybook', category: 'daybook', item: daybook });
     }
     for (const bond of (updates.bond_requests || [])) {
       if (this._isProcessed('bond', bond.id)) continue;
+      if (this._gateAgentBatchItem(bond.requester_account_type, bond.id, 'bond_request')) continue;
       batch.push({ kind: 'bond_request', category: 'bond_request', item: bond });
     }
 
