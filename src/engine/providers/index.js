@@ -95,6 +95,7 @@ const PROVIDER_MODULES = {
   openrouter: () => import('./openrouter.js'),
   azure: () => import('./azure.js'),
   deepseek: () => import('./deepseek.js'),
+  mistral: () => import('./mistral.js'),
   streetai: () => import('./streetai.js'),
 };
 
@@ -106,6 +107,7 @@ const DEFAULT_MODELS = {
   openrouter: 'anthropic/claude-sonnet-4-20250514',
   azure: 'gpt-4o',
   deepseek: 'deepseek-v4-flash',
+  mistral: 'mistral-medium-latest',
   streetai: 'deepseek-v4-flash',
 };
 

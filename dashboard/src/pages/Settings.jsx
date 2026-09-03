@@ -15,6 +15,7 @@ const PROVIDERS = [
   { value: 'elevenlabs', label: 'ElevenLabs (TTS voices)', hasOAuth: false },
   { value: 'aimlapi', label: 'AI/ML API (TTS via aimlapi.com)', hasOAuth: false },
   { value: 'deepseek', label: 'DeepSeek', hasOAuth: false },
+  { value: 'mistral', label: 'Mistral', hasOAuth: false },
   { value: 'groq', label: 'Groq', hasOAuth: false },
 ];
 

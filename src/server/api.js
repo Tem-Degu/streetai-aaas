@@ -2474,6 +2474,11 @@ const PROVIDER_MODELS = {
     { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
     { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
   ],
+  mistral: [
+    { value: 'mistral-medium-latest', label: 'Mistral Medium 3' },
+    { value: 'mistral-large-latest', label: 'Mistral Large 3' },
+    { value: 'mistral-small-latest', label: 'Mistral Small' },
+  ],
   streetai: [
     { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
     { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
