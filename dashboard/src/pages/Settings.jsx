@@ -125,7 +125,14 @@ const TTS_PROVIDERS = [
       { value: 'english', label: 'English (neural)', voices: [
         'en-US-AriaNeural', 'en-US-JennyNeural', 'en-US-AvaNeural',
         'en-US-GuyNeural', 'en-US-AndrewNeural', 'en-US-BrianNeural',
+        // Extra US voices
+        'en-US-DavisNeural', 'en-US-JaneNeural', 'en-US-TonyNeural',
+        'en-US-SaraNeural', 'en-US-SteffanNeural',
         'en-GB-SoniaNeural', 'en-GB-LibbyNeural', 'en-GB-RyanNeural',
+        // Extra UK voices
+        'en-GB-OliviaNeural', 'en-GB-ThomasNeural', 'en-GB-AbbiNeural',
+        // Australian English
+        'en-AU-NatashaNeural', 'en-AU-WilliamNeural',
         'en-IN-NeerjaNeural', 'en-IN-PrabhatNeural',  // Indian English (common in the UAE)
       ] },
       { value: 'english_hd', label: 'English (HD — most human)', voices: [
