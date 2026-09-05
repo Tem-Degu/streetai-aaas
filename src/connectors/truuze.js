@@ -26,9 +26,15 @@ export default class TruuzeConnector extends BaseConnector {
     // that activity from other agents — a blunt stop for runaway bot-to-bot loops
     // until a smarter limiter exists. Toggling either restarts the connector.
     //   allowAgentChat       → direct messages (DMs) from other agents
-    //   allowAgentEngagement → comments, mentions, reactions from other agents
+    //   allowAgentEngagement → comments, mentions, reactions, new followers, etc. from other agents
+    //   allowHumanEngagement → the same engagement events from HUMANS (proactive
+    //                          reactions like welcoming a new follower or replying
+    //                          to a comment). Off = reactive-only: the agent still
+    //                          answers human DMs, it just stops reaching out on
+    //                          passive human activity. Handy for service agents.
     this.allowAgentChat = (config.allowAgentChat ?? engine?.config?.allowAgentChat) !== false;
     this.allowAgentEngagement = (config.allowAgentEngagement ?? engine?.config?.allowAgentEngagement) !== false;
+    this.allowHumanEngagement = (config.allowHumanEngagement ?? engine?.config?.allowHumanEngagement) !== false;
     this.intervalId = null;
     this.consecutiveFailures = 0;
     // Throttle for the "model unavailable" notice (e.g. provider out of funds /
@@ -379,35 +385,34 @@ export default class TruuzeConnector extends BaseConnector {
   }
 
   /**
-   * When agent engagement is off, drop an engagement event (comment, mention,
-   * reaction) that came from another agent: mark it read so the heartbeat stops
-   * redelivering it, and tell the caller to skip it (no LLM turn). Returns false
-   * (keep) for human actors, or whenever agent engagement is allowed. Direct
-   * messages are governed separately by allowAgentChat.
+   * Convenience wrapper for comment/mention/reaction items, whose actor is in
+   * `from_account_type` and whose mark-as-read bucket is 'event'.
    */
-  _gateAgentEvent(item) {
-    return this._gateAgentBatchItem(item && item.from_account_type, item && item.id, 'event');
+  _gateEngagementEvent(item) {
+    return this._gateEngagementItem(item && item.from_account_type, item && item.id, 'event');
   }
 
   /**
-   * Generalised agent-engagement gate for ANY non-message heartbeat item
-   * (comment/mention/reaction, but also a new daybook, a new listener, or a bond
-   * request). When engagement is off and the actor is an agent, mark the record
-   * read (so the heartbeat stops redelivering it) and tell the caller to drop it
-   * — no LLM turn, no tokens. Human actors always pass through.
+   * Drop a batch engagement item (comment, mention, reaction, new follower, bond
+   * request, new daybook) when the owner has turned engagement OFF for the
+   * actor's kind — agents via `allowAgentEngagement`, humans via
+   * `allowHumanEngagement`. Marks it read (so the heartbeat stops redelivering
+   * it) and tells the caller to skip it — no LLM turn, no tokens.
+   *
+   * Direct messages are governed separately (agent DMs by allowAgentChat; human
+   * DMs are always answered), so this never touches them.
    *
    * `accountType` is the actor's account_type for that item; the field differs
    * per kind (from_account_type on events, account_type on listeners,
-   * requester_account_type on bonds, owner_account_type on daybooks). `category`
-   * is the mark-as-read bucket for that kind.
+   * requester_account_type on bonds, owner_account_type on daybooks). An absent
+   * type is treated as human. `category` is the mark-as-read bucket.
    */
-  _gateAgentBatchItem(accountType, id, category) {
-    if (this.allowAgentEngagement) return false;
-    if (accountType === 'agent') {
-      if (id != null) this._markAsRead(category, id).catch(() => { /* best-effort */ });
-      return true;
-    }
-    return false;
+  _gateEngagementItem(accountType, id, category) {
+    const isAgent = accountType === 'agent';
+    const blocked = isAgent ? !this.allowAgentEngagement : !this.allowHumanEngagement;
+    if (!blocked) return false;
+    if (id != null) this._markAsRead(category, id).catch(() => { /* best-effort */ });
+    return true;
   }
 
   async _processUpdates(data) {
@@ -438,22 +443,22 @@ export default class TruuzeConnector extends BaseConnector {
 
     for (const comment of (updates.comments || [])) {
       if (this._isProcessed('comment', comment.id)) continue;
-      if (this._gateAgentEvent(comment)) continue;
+      if (this._gateEngagementEvent(comment)) continue;
       batch.push({ kind: 'comment', category: 'event', item: comment });
     }
     for (const mention of (updates.mentions || [])) {
       if (this._isProcessed('mention', mention.id)) continue;
-      if (this._gateAgentEvent(mention)) continue;
+      if (this._gateEngagementEvent(mention)) continue;
       batch.push({ kind: 'mention', category: 'event', item: mention });
     }
     for (const reaction of (updates.reactions || [])) {
       if (this._isProcessed('reaction', reaction.id)) continue;
-      if (this._gateAgentEvent(reaction)) continue;
+      if (this._gateEngagementEvent(reaction)) continue;
       batch.push({ kind: 'reaction', category: 'event', item: reaction });
     }
     for (const listener of (updates.new_listeners || [])) {
       if (this._isProcessed('listener', listener.id)) continue;
-      if (this._gateAgentBatchItem(listener.account_type, listener.id, 'listener')) continue;
+      if (this._gateEngagementItem(listener.account_type, listener.id, 'listener')) continue;
       batch.push({ kind: 'new_listener', category: 'listener', item: listener });
     }
     for (const daybook of (updates.new_daybooks || [])) {
@@ -461,12 +466,12 @@ export default class TruuzeConnector extends BaseConnector {
       // owner_account_type is the daybook author's type (added to the heartbeat
       // payload); when absent (older backend) the gate is a no-op and the daybook
       // is kept, so behavior is safe either way.
-      if (this._gateAgentBatchItem(daybook.owner_account_type, daybook.id, 'daybook')) continue;
+      if (this._gateEngagementItem(daybook.owner_account_type, daybook.id, 'daybook')) continue;
       batch.push({ kind: 'new_daybook', category: 'daybook', item: daybook });
     }
     for (const bond of (updates.bond_requests || [])) {
       if (this._isProcessed('bond', bond.id)) continue;
-      if (this._gateAgentBatchItem(bond.requester_account_type, bond.id, 'bond_request')) continue;
+      if (this._gateEngagementItem(bond.requester_account_type, bond.id, 'bond_request')) continue;
       batch.push({ kind: 'bond_request', category: 'bond_request', item: bond });
     }
 
