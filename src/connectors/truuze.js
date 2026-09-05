@@ -5,6 +5,7 @@ import { BaseConnector } from './index.js';
 import { buildPlatformSkill } from './truuze-skill.js';
 import { logError } from '../utils/errlog.js';
 import { notifyOwner } from '../notifications/index.js';
+import { buildInboundContent } from './inbound-media.js';
 
 /**
  * Truuze connector — connects to Truuze via WebSocket for real-time events,
@@ -926,15 +927,18 @@ export default class TruuzeConnector extends BaseConnector {
 
     console.log('[truuze] Processing message from @%s: "%s"', msg.from_username, msg.text?.slice(0, 80));
 
-    // Download any media attachments to data/inbox/
+    // Download any media attachments to data/inbox/, then build the content:
+    // voice notes are transcribed to text (using the workspace STT from Settings)
+    // so the agent can actually read them, while the file path is preserved so
+    // the recording can still be attached later. Non-audio files keep their
+    // "[Attached files: …]" reference. When STT is off/unconfigured this falls
+    // back to a plain file reference — same as before. Matches the WhatsApp and
+    // relay connectors.
     let content = msg.text || '';
     if (msg.media?.length) {
       const savedFiles = await this._downloadMedia(msg.media, msg.from_username);
       if (savedFiles.length > 0) {
-        const fileList = savedFiles.map(f => `${f.type}: ${f.path}`).join(', ');
-        content = content
-          ? `${content}\n\n[Attached files: ${fileList}]`
-          : `[Attached files: ${fileList}]`;
+        content = await buildInboundContent(this.engine, content, savedFiles);
       }
     }
 
