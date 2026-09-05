@@ -241,6 +241,15 @@ export default class TruuzeConnector extends BaseConnector {
       return;
     }
 
+    // A user answered a one-time permission request. Handled here and not via
+    // _poll: the answer only exists in this push (nothing in the heartbeat
+    // counts changes), so falling through would cost a wasted fetch and still
+    // tell the agent nothing.
+    if (source === 'permission.result') {
+      this._handlePermissionResult(data.data || {});
+      return;
+    }
+
     console.log('[truuze] WebSocket event:', source);
 
     // WebSocket push received — fetch details. Debounce to coalesce bursts.
@@ -782,6 +791,82 @@ export default class TruuzeConnector extends BaseConnector {
       console.error('[truuze] Escrow event handler error:', err);
       this.error = `Escrow event handler error: ${err.message}`;
     }
+  }
+
+  /**
+   * A user answered a permission request this agent made (see the "Write a
+   * Diary Entry FOR a User" skill). Payload: { id, status, scope, user_id,
+   * chat_id } - but the `expired` push carries only { id, status }, so treat
+   * everything else as optional.
+   *
+   * Emitted as a platform_event so the agent gets an LLM turn and can act on
+   * the grant while it is still valid (~2 minutes) instead of polling.
+   */
+  async _handlePermissionResult(payload) {
+    const id = payload.id;
+    const status = payload.status;
+    if (!id || !status) return;
+
+    // One answer per request. A duplicate group_send must not produce a
+    // second turn (and, for a grant, a second diary entry).
+    if (this._isProcessed('permission', id)) return;
+
+    const scope = payload.scope || 'the requested action';
+    const chatId = payload.chat_id ?? null;
+    const userPk = payload.user_id ?? null;
+
+    console.log('[truuze] Permission %s: %s (%s)', status, id, scope);
+
+    let content;
+    if (status === 'granted') {
+      content = `[Truuze] The user approved your one-time permission request (id ${id}, scope ${scope}). Perform the action now - for diary.create that is POST /diary/creat/on-behalf/ with permission_request_id=${id}. The approval works exactly once and expires in about two minutes, so do it in this turn. Then tell the user in chat what you saved.`;
+    } else if (status === 'denied') {
+      content = `[Truuze] The user declined your permission request (id ${id}, scope ${scope}). Do not perform the action and do not ask again unless they bring it up. Acknowledge it briefly and move on.`;
+    } else {
+      content = `[Truuze] Your permission request (id ${id}, scope ${scope}) expired before the user answered. Treat it as a no. If it still matters, ask again in conversation first.`;
+    }
+
+    const event = {
+      platform: 'truuze',
+      // Key by user_id so this lands in the same session as the customer's own
+      // messages, matching how escrow events route.
+      userId: userPk != null ? String(userPk) : 'truuze-platform',
+      userName: 'Truuze Platform',
+      type: 'platform_event',
+      content,
+      metadata: {
+        mode: 'customer',
+        is_platform_event: true,
+        category: 'permission',
+        action: status,
+        permission_request_id: id,
+        scope,
+        chat_id: chatId,
+      },
+    };
+
+    try {
+      const result = await this.engine.processEvent(event);
+      // Same rule as escrow events: if the agent already replied in chat via
+      // platform_request, don't post its response a second time.
+      if (chatId && result?.response && !this._respondedInChat(result)) {
+        await this._sendMessage(chatId, result.response);
+      }
+    } catch (err) {
+      console.error('[truuze] Permission result handler error:', err);
+      this.error = `Permission result handler error: ${err.message}`;
+    }
+  }
+
+  /** True if the agent already posted a chat message itself during this turn. */
+  _respondedInChat(result) {
+    return (result?.toolsUsed || []).some(t => {
+      if (typeof t === 'string') return false;
+      if (t.name !== 'platform_request') return false;
+      const args = t.arguments || {};
+      return (args.method || '').toUpperCase() === 'POST'
+        && (args.url || '').includes('/message/create');
+    });
   }
 
   _formatEscrowNotice(action, escrow, ref, title) {
