@@ -808,8 +808,6 @@ export default function Settings() {
 
         <PhoneNumberCard config={config} api={api} onSaved={loadConfig} />
 
-        <OutboundCallingCard config={config} api={api} onSaved={loadConfig} />
-
         {/* Storage cleanup */}
         <StorageCleanupCard />
 
@@ -1485,30 +1483,68 @@ function PhoneNumberCard({ config, api, onSaved }) {
   const [number, setNumber] = useState('');
   const [useInbound, setUseInbound] = useState(true);
   const [useOutbound, setUseOutbound] = useState(true);
+  const [allowIntl, setAllowIntl] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [showRestart, setShowRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
     const p = config?.phone;
     // Back-compat: an older config may store phone as a plain string.
-    if (typeof p === 'string') { setNumber(p); setUseInbound(true); setUseOutbound(true); }
-    else { setNumber(p?.number || ''); setUseInbound(p?.inbound !== false); setUseOutbound(p?.outbound !== false); }
+    if (typeof p === 'string') { setNumber(p); setUseInbound(true); }
+    else { setNumber(p?.number || ''); setUseInbound(p?.inbound !== false); }
+    // Outbound is the master "place calls" switch (config.voice.outbound.enabled),
+    // which also drives whether this number is used as caller ID.
+    const o = config?.voice?.outbound || {};
+    setUseOutbound(o.enabled === true);
+    setAllowIntl(o.denyInternational === false);
     setMsg('');
+    setShowRestart(false);
   }, [config]);
 
   const save = async () => {
-    setSaving(true); setMsg('');
+    setSaving(true); setMsg(''); setShowRestart(false);
     try {
       await api.put('/api/config', {
         phone: { number: number.trim(), inbound: useInbound, outbound: useOutbound },
+        // Spread the existing voice object so we only touch `outbound` and don't
+        // wipe the TTS/voice settings (config merges shallowly server-side).
+        voice: {
+          ...(config?.voice || {}),
+          outbound: {
+            ...(config?.voice?.outbound || {}),
+            enabled: useOutbound,
+            denyInternational: !allowIntl,
+          },
+        },
       });
-      setMsg('Saved. Restart connectors to apply it.');
+      setMsg('Saved!');
       onSaved?.();
-      setTimeout(() => setMsg(''), 4000);
+      setTimeout(() => setMsg(''), 2500);
+      // The phone number is init-baked (routing is synced to the relay on
+      // connect), so prompt an in-place restart if a connector is running.
+      try {
+        const status = await api.get('/api/deploy/status');
+        if (status?.daemonRunning || status?.sessionRunning) setShowRestart(true);
+      } catch { /* non-critical */ }
     } catch (e) {
       setMsg('Error: ' + e.message);
     }
     setSaving(false);
+  };
+
+  const restartConnectors = async () => {
+    setRestarting(true);
+    try {
+      await api.post('/api/deploy/restart');
+      setShowRestart(false);
+      setMsg('Connectors restarted — changes applied.');
+      setTimeout(() => setMsg(''), 2500);
+    } catch (err) {
+      setMsg('Error restarting: ' + err.message);
+    }
+    setRestarting(false);
   };
 
   return (
@@ -1516,9 +1552,9 @@ function PhoneNumberCard({ config, api, onSaved }) {
       <div className="card-header">Phone number</div>
       <div className="card-body">
         <p className="form-hint" style={{ marginTop: 0 }}>
-          A phone number for this agent. Choose what it's used for below. The number must
-          already be provisioned with your telephony provider (e.g. Telnyx) and pointed at
-          the server; this just tells StreetAI which agent it belongs to.
+          A phone number for this agent, and what it's used for. The number must already be
+          provisioned with your telephony provider (e.g. Telnyx) and pointed at the server;
+          this just tells StreetAI which agent it belongs to.
         </p>
         <div className="form-group">
           <label>Number (international format)</label>
@@ -1533,95 +1569,38 @@ function PhoneNumberCard({ config, api, onSaved }) {
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 8 }}>
           <input type="checkbox" checked={useInbound} onChange={e => setUseInbound(e.target.checked)} />
-          <span>Use for incoming calls (this agent answers calls to this number)</span>
+          <span>Answer incoming calls to this number</span>
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 12 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: useOutbound ? 8 : 12 }}>
           <input type="checkbox" checked={useOutbound} onChange={e => setUseOutbound(e.target.checked)} />
-          <span>Use for outgoing calls (shown as caller ID when this agent calls out)</span>
+          <span>Place outgoing calls from this number</span>
         </label>
 
-        <button className="btn btn-primary" onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        {msg && (
-          <p className="form-hint" style={{ marginTop: 8, color: msg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
-            {msg}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function OutboundCallingCard({ config, api, onSaved }) {
-  const [enabled, setEnabled] = useState(false);
-  const [allowIntl, setAllowIntl] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState('');
-
-  useEffect(() => {
-    const o = config?.voice?.outbound || {};
-    setEnabled(o.enabled === true);
-    setAllowIntl(o.denyInternational === false);
-    setMsg('');
-  }, [config]);
-
-  const save = async () => {
-    setSaving(true); setMsg('');
-    try {
-      await api.put('/api/config', {
-        // Spread the existing voice object so we only touch `outbound` and don't
-        // wipe the TTS/voice settings (config merges shallowly server-side).
-        voice: {
-          ...(config?.voice || {}),
-          outbound: {
-            ...(config?.voice?.outbound || {}),
-            enabled,
-            denyInternational: !allowIntl,
-          },
-        },
-      });
-      setMsg('Saved!');
-      onSaved?.();
-      setTimeout(() => setMsg(''), 2500);
-    } catch (e) {
-      setMsg('Error: ' + e.message);
-    }
-    setSaving(false);
-  };
-
-  return (
-    <div className="card">
-      <div className="card-header">Outbound calling</div>
-      <div className="card-body">
-        <p className="form-hint" style={{ marginTop: 0 }}>
-          Let your agent <strong>place phone calls</strong> — e.g. call a business to ask a
-          question on your behalf. It opens each call by naming itself as an AI agent and
-          stating why it's calling, then hangs up when done. It calls from the
-          <strong> Phone number</strong> set above. Emergency and premium numbers are always
-          blocked, and the server enforces daily and per-number limits.
-        </p>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 12 }}>
-          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
-          <span>Let this agent place outbound calls</span>
-        </label>
-
-        {enabled && (
-          <>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 12 }}>
+        {useOutbound && (
+          <div style={{ marginLeft: 26, marginBottom: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <input type="checkbox" checked={allowIntl} onChange={e => setAllowIntl(e.target.checked)} />
               <span>Allow international calls</span>
             </label>
-            <p className="form-hint" style={{ marginTop: -6 }}>
-              Off by default — the agent can only call domestic numbers unless you turn this on.
+            <p className="form-hint" style={{ marginTop: 4 }}>
+              Off by default — domestic numbers only unless you turn this on. When it calls, the
+              agent names itself as an AI agent; emergency/premium numbers and rate limits are
+              always enforced by the server.
             </p>
-          </>
+          </div>
         )}
 
         <button className="btn btn-primary" onClick={save} disabled={saving}>
           {saving ? 'Saving…' : 'Save'}
         </button>
+        {showRestart && (
+          <div className="form-hint" style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>Restart the running connectors to apply the phone-number change.</span>
+            <button className="btn btn-sm" onClick={restartConnectors} disabled={restarting}>
+              {restarting ? 'Restarting…' : 'Restart connectors'}
+            </button>
+          </div>
+        )}
         {msg && (
           <p className="form-hint" style={{ marginTop: 8, color: msg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
             {msg}
