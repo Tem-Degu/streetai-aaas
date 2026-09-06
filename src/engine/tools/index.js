@@ -42,7 +42,12 @@ async function placeCall(workspace, config, args = {}) {
   }
   const base = conn.relayUrl.replace(/^ws/, 'http').replace(/\/+$/, '');
   const out = config.voice.outbound;
-  const callerId = out.callerId || undefined;
+  // The agent phone number is the caller-ID, but only when its "use for outgoing"
+  // toggle is on. phone is { number, inbound, outbound } (older configs: string).
+  const p = config.phone;
+  const phoneNumber = typeof p === 'string' ? p : (p?.number || '');
+  const useOutbound = typeof p === 'string' ? true : (p?.outbound !== false);
+  const callerId = (useOutbound && phoneNumber) ? phoneNumber : (out.callerId || undefined);
   // The owner's Settings toggle drives international; the server still applies
   // its hard deny-lists and rate/spend caps on top, regardless of this.
   const allowInternational = out.denyInternational === false;

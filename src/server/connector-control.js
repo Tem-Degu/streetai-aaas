@@ -50,7 +50,7 @@ export async function createWorkspaceEngine(workspace) {
  * client, the base prompt), so changing them needs the engine rebuilt — i.e. a
  * connector restart. Everything else (voice, greeting, …) is read live per call.
  */
-export const RESTART_CONFIG_KEYS = ['provider', 'model', 'agentType', 'allowAgentChat', 'allowAgentEngagement', 'allowHumanEngagement'];
+export const RESTART_CONFIG_KEYS = ['provider', 'model', 'agentType', 'allowAgentChat', 'allowAgentEngagement', 'allowHumanEngagement', 'phone'];
 
 /**
  * Apply live-read config changes to the running engine in place — no rebuild.

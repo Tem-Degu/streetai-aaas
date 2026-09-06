@@ -806,6 +806,8 @@ export default function Settings() {
           onSaved={loadConfig}
         />
 
+        <PhoneNumberCard config={config} api={api} onSaved={loadConfig} />
+
         <OutboundCallingCard config={config} api={api} onSaved={loadConfig} />
 
         {/* Storage cleanup */}
@@ -1479,9 +1481,80 @@ function WebSearchCard({ config, api, configuredProviders, onSaved }) {
   );
 }
 
+function PhoneNumberCard({ config, api, onSaved }) {
+  const [number, setNumber] = useState('');
+  const [useInbound, setUseInbound] = useState(true);
+  const [useOutbound, setUseOutbound] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    const p = config?.phone;
+    // Back-compat: an older config may store phone as a plain string.
+    if (typeof p === 'string') { setNumber(p); setUseInbound(true); setUseOutbound(true); }
+    else { setNumber(p?.number || ''); setUseInbound(p?.inbound !== false); setUseOutbound(p?.outbound !== false); }
+    setMsg('');
+  }, [config]);
+
+  const save = async () => {
+    setSaving(true); setMsg('');
+    try {
+      await api.put('/api/config', {
+        phone: { number: number.trim(), inbound: useInbound, outbound: useOutbound },
+      });
+      setMsg('Saved. Restart connectors to apply it.');
+      onSaved?.();
+      setTimeout(() => setMsg(''), 4000);
+    } catch (e) {
+      setMsg('Error: ' + e.message);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="card">
+      <div className="card-header">Phone number</div>
+      <div className="card-body">
+        <p className="form-hint" style={{ marginTop: 0 }}>
+          A phone number for this agent. Choose what it's used for below. The number must
+          already be provisioned with your telephony provider (e.g. Telnyx) and pointed at
+          the server; this just tells StreetAI which agent it belongs to.
+        </p>
+        <div className="form-group">
+          <label>Number (international format)</label>
+          <input
+            type="text"
+            className="form-input"
+            value={number}
+            onChange={e => setNumber(e.target.value)}
+            placeholder="+14155551212"
+          />
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 8 }}>
+          <input type="checkbox" checked={useInbound} onChange={e => setUseInbound(e.target.checked)} />
+          <span>Use for incoming calls (this agent answers calls to this number)</span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 12 }}>
+          <input type="checkbox" checked={useOutbound} onChange={e => setUseOutbound(e.target.checked)} />
+          <span>Use for outgoing calls (shown as caller ID when this agent calls out)</span>
+        </label>
+
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {msg && (
+          <p className="form-hint" style={{ marginTop: 8, color: msg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
+            {msg}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function OutboundCallingCard({ config, api, onSaved }) {
   const [enabled, setEnabled] = useState(false);
-  const [callerId, setCallerId] = useState('');
   const [allowIntl, setAllowIntl] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -1489,7 +1562,6 @@ function OutboundCallingCard({ config, api, onSaved }) {
   useEffect(() => {
     const o = config?.voice?.outbound || {};
     setEnabled(o.enabled === true);
-    setCallerId(o.callerId || '');
     setAllowIntl(o.denyInternational === false);
     setMsg('');
   }, [config]);
@@ -1503,8 +1575,8 @@ function OutboundCallingCard({ config, api, onSaved }) {
         voice: {
           ...(config?.voice || {}),
           outbound: {
+            ...(config?.voice?.outbound || {}),
             enabled,
-            callerId: callerId.trim(),
             denyInternational: !allowIntl,
           },
         },
@@ -1525,9 +1597,9 @@ function OutboundCallingCard({ config, api, onSaved }) {
         <p className="form-hint" style={{ marginTop: 0 }}>
           Let your agent <strong>place phone calls</strong> — e.g. call a business to ask a
           question on your behalf. It opens each call by naming itself as an AI agent and
-          stating why it's calling, then hangs up when done. Requires the phone line to be
-          set up on the server. Emergency and premium numbers are always blocked, and the
-          server enforces daily and per-number limits.
+          stating why it's calling, then hangs up when done. It calls from the
+          <strong> Phone number</strong> set above. Emergency and premium numbers are always
+          blocked, and the server enforces daily and per-number limits.
         </p>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 12 }}>
@@ -1537,20 +1609,6 @@ function OutboundCallingCard({ config, api, onSaved }) {
 
         {enabled && (
           <>
-            <div className="form-group">
-              <label>Caller ID number</label>
-              <input
-                type="text"
-                className="form-input"
-                value={callerId}
-                onChange={e => setCallerId(e.target.value)}
-                placeholder="+9714XXXXXXX"
-              />
-              <p className="form-hint" style={{ marginTop: 6 }}>
-                The number shown to the people your agent calls (your outbound line).
-              </p>
-            </div>
-
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 12 }}>
               <input type="checkbox" checked={allowIntl} onChange={e => setAllowIntl(e.target.checked)} />
               <span>Allow international calls</span>

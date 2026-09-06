@@ -66,6 +66,30 @@ export default class RelayConnector extends BaseConnector {
     await this._connectWebSocket();
   }
 
+  /**
+   * Tell the relay which phone number this agent owns, so calls to that number
+   * route to this agent. Runs on every (re)connect, so changing the number in
+   * Settings + restarting connectors re-syncs it. Best-effort.
+   */
+  async _syncPhoneToRelay() {
+    try {
+      const p = this.engine?.config?.phone;
+      if (p === undefined) return; // never set → leave the registry as-is
+      // phone is { number, inbound, outbound } (older configs: a plain string).
+      const number = typeof p === 'string' ? p : (p?.number || '');
+      const useInbound = typeof p === 'string' ? true : (p?.inbound !== false);
+      // Register the number for inbound routing only when the inbound toggle is
+      // on; otherwise send '' to UNASSIGN it, so calls to it don't route here.
+      const phone = (useInbound && number) ? number : '';
+      const base = relayHttpBase(this.relayUrl);
+      await fetch(`${base}/relay/configure`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: this.slug, relayKey: this.relayKey, phone }),
+      });
+    } catch { /* best-effort; inbound routing simply won't update this run */ }
+  }
+
   _writeSkill() {
     const httpBase = relayHttpBase(this.relayUrl);
     const content = `---
@@ -180,6 +204,9 @@ Bad (will NOT work):
   async _handleMessage(data) {
     if (data.type === 'welcome') {
       console.log(`[relay] Registered as: ${data.slug} (${data.agent})`);
+      // Sync this agent's phone number to the relay registry so inbound calls to
+      // that number route here. Fire-and-forget; a failure never breaks the chat.
+      this._syncPhoneToRelay();
       return;
     }
 
