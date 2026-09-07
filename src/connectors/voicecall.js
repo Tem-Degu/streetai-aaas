@@ -112,9 +112,10 @@ export default class VoiceCallConnector extends BaseConnector {
       if (msg.event === 'start') {
         if (pipeline) return; // already started
         codec = makeVoiceCodec((msg.start && msg.start.format) || qFormat);
+        const callerNumber = (msg.start && msg.start.ani) || null;
         const userId = (msg.start && msg.start.userId)
-          || `voice_${Math.random().toString(36).slice(2, 10)}`;
-        pipeline = new VoicePipeline({ engine: this.engine, sendMedia, sendClear, userId });
+          || (callerNumber ? `tel:${callerNumber}` : `voice_${Math.random().toString(36).slice(2, 10)}`);
+        pipeline = new VoicePipeline({ engine: this.engine, sendMedia, sendClear, userId, callerNumber });
         try {
           await pipeline.start();
           if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ event: 'ready' }));

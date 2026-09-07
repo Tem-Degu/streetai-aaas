@@ -216,7 +216,7 @@ export function normalizeSttLang(tag) {
  * `config.voice.greeting` (or `config.greeting`); defaults to "Hello", which the
  * agent's own SKILL turns into its branded/localized greeting.
  */
-export async function runVoiceTurn(engine, { userId, content, language, isGreeting, greetLang, sttLang, opening, onControl }) {
+export async function runVoiceTurn(engine, { userId, content, language, isGreeting, greetLang, sttLang, opening, onControl, callerNumber }) {
   try {
     let greeting = false;
     if (!String(content || '').trim() && isGreeting) {
@@ -241,7 +241,7 @@ export async function runVoiceTurn(engine, { userId, content, language, isGreeti
       userName: userId,
       type: 'message',
       content,
-      metadata: { mode: 'customer', channel: 'voice', language, greeting, replyLanguage },
+      metadata: { mode: 'customer', channel: 'voice', language, greeting, replyLanguage, callerNumber },
     });
     // If the agent invoked end_call this turn, let the caller (the voice pipeline)
     // hang up after it finishes speaking this reply. Telnyx passes no onControl,

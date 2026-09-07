@@ -262,12 +262,17 @@ Bad (will NOT work):
       engine: this.engine,
       sendMedia,
       sendClear: () => send('voice:clear', {}),
-      userId: data.userId || `voice_${callId}`,
+      // Key the session by the caller's number when we have it, so repeat calls
+      // from the same phone continue the same session/history; else per-call.
+      userId: data.userId || (data.callerNumber ? `tel:${data.callerNumber}` : `voice_${callId}`),
       greetLang: data.lang || null,   // caller-selected opening language (from the widget)
       // Outbound (agent-placed) calls carry a purpose + direction from the relay
       // so the agent opens with an AI self-intro and can hang up when finished.
       direction: data.direction || 'inbound',
       purpose: data.purpose || null,
+      // Inbound caller's phone number (from the network) — for the agent's
+      // caller-identity tools. Empty/absent when the caller-ID is withheld.
+      callerNumber: data.callerNumber || null,
       agentName: this.engine?.agentName || null,
       onHangup: () => { send('voice:end', {}); this._handleVoiceStop({ callId }); },
     });

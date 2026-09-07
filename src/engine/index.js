@@ -352,6 +352,11 @@ export class AgentEngine {
       this.toolRegistry.setEventContext({
         platform, userId, userName, mode,
         is_owner: !!metadata?.is_owner,
+        // Voice calls expose the channel and the caller's phone number (from the
+        // network) so caller-identity tools can read them off ctx.event directly.
+        channel: metadata?.channel,
+        callerNumber: metadata?.callerNumber,
+        chat_id: metadata?.chat_id,
       });
     }
 

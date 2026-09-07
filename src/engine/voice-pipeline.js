@@ -28,11 +28,14 @@ export class VoicePipeline {
    * @param {()=>void} o.sendClear            Tell the transport to flush its playout buffer.
    * @param {string} o.userId      Stable per-call id (caller number / web session).
    */
-  constructor({ engine, sendMedia, sendClear, userId, greetLang, direction, purpose, agentName, onHangup }) {
+  constructor({ engine, sendMedia, sendClear, userId, greetLang, direction, purpose, agentName, onHangup, callerNumber }) {
     this.engine = engine;
     this.sendMedia = sendMedia;
     this.sendClear = sendClear;
     this.userId = userId;
+    // Inbound caller's phone number (digits, from the network), for the agent's
+    // caller-identity tools. Null when withheld or on outbound/browser calls.
+    this.callerNumber = callerNumber || null;
     this.greetLang = greetLang || null;   // caller-selected opening language (optional)
     // Outbound calls (the agent placed the call): open with a purposeful AI
     // self-introduction and allow the agent to hang up when done. Inbound leaves
@@ -232,6 +235,8 @@ export class VoicePipeline {
         // opposing utterance can't flip the reply. runVoiceTurn treats it as the
         // primary signal; on the greeting we pass none and let greetLang drive.
         sttLang: isGreeting ? undefined : (this.currentLang || undefined),
+        // Inbound caller's number, so the agent's identity tools can use it.
+        callerNumber: this.callerNumber || undefined,
         // Outbound: replace the generic greeting with a purposeful AI intro.
         opening: isGreeting && this.direction === 'outbound' ? this._outboundOpening() : undefined,
         // Let the agent end an outbound call via the end_call tool. Inbound omits
