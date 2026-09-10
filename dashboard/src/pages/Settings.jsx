@@ -1483,6 +1483,7 @@ function PhoneNumberCard({ config, api, onSaved }) {
   const [number, setNumber] = useState('');
   const [useInbound, setUseInbound] = useState(true);
   const [useOutbound, setUseOutbound] = useState(true);
+  const [useSms, setUseSms] = useState(false);
   const [allowIntl, setAllowIntl] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -1492,8 +1493,8 @@ function PhoneNumberCard({ config, api, onSaved }) {
   useEffect(() => {
     const p = config?.phone;
     // Back-compat: an older config may store phone as a plain string.
-    if (typeof p === 'string') { setNumber(p); setUseInbound(true); }
-    else { setNumber(p?.number || ''); setUseInbound(p?.inbound !== false); }
+    if (typeof p === 'string') { setNumber(p); setUseInbound(true); setUseSms(false); }
+    else { setNumber(p?.number || ''); setUseInbound(p?.inbound !== false); setUseSms(p?.sms === true); }
     // Outbound is the master "place calls" switch (config.voice.outbound.enabled),
     // which also drives whether this number is used as caller ID.
     const o = config?.voice?.outbound || {};
@@ -1507,7 +1508,7 @@ function PhoneNumberCard({ config, api, onSaved }) {
     setSaving(true); setMsg(''); setShowRestart(false);
     try {
       await api.put('/api/config', {
-        phone: { number: number.trim(), inbound: useInbound, outbound: useOutbound },
+        phone: { number: number.trim(), inbound: useInbound, outbound: useOutbound, sms: useSms },
         // Spread the existing voice object so we only touch `outbound` and don't
         // wipe the TTS/voice settings (config merges shallowly server-side).
         voice: {
@@ -1588,6 +1589,19 @@ function PhoneNumberCard({ config, api, onSaved }) {
               always enforced by the server.
             </p>
           </div>
+        )}
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: useSms ? 8 : 12 }}>
+          <input type="checkbox" checked={useSms} onChange={e => setUseSms(e.target.checked)} />
+          <span>Send text messages (SMS) from this number</span>
+        </label>
+
+        {useSms && (
+          <p className="form-hint" style={{ marginTop: -4, marginBottom: 12, marginLeft: 26 }}>
+            Lets the agent text people from this number (e.g. a follow-up link). The server
+            enforces rate limits and honors opt-outs. US delivery needs the number to be
+            10DLC-registered with your provider.
+          </p>
         )}
 
         <button className="btn btn-primary" onClick={save} disabled={saving}>

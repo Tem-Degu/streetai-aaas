@@ -68,6 +68,47 @@ async function placeCall(workspace, config, args = {}) {
 }
 
 /**
+ * send_sms handler — asks the relay to send a text via Telnyx. The relay holds
+ * the Telnyx API key and enforces rate/cooldown/opt-out; this just forwards the
+ * request with the agent's relay credentials. Mirrors placeCall.
+ */
+async function sendSms(workspace, config, args = {}) {
+  // Gated by the "Send text messages (SMS)" toggle on the Phone number card, and
+  // texts are sent FROM that same number. phone is { number, inbound, outbound,
+  // sms } (older configs: a plain string, treated as SMS-off).
+  const p = config.phone;
+  const number = typeof p === 'string' ? p : (p?.number || '');
+  const smsEnabled = typeof p === 'string' ? false : (p?.sms === true);
+  if (!smsEnabled) {
+    return JSON.stringify({ ok: false, error: 'Texting is off. Your owner can enable "Send text messages (SMS)" on the Phone number card in Settings.' });
+  }
+  const to = String(args.to || '').trim();
+  const text = String(args.text || '').trim();
+  if (!to) return JSON.stringify({ ok: false, error: 'A phone number (to) is required.' });
+  if (!text) return JSON.stringify({ ok: false, error: 'Message text is required.' });
+
+  const conn = loadConnection(workspace, 'relay');
+  if (!conn?.relayKey || !conn?.slug || !conn?.relayUrl) {
+    return JSON.stringify({ ok: false, error: 'Sending SMS needs the StreetAI relay, and this agent is not connected to it.' });
+  }
+  const base = conn.relayUrl.replace(/^ws/, 'http').replace(/\/+$/, '');
+  try {
+    const resp = await fetch(`${base}/relay/send-sms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: conn.slug, relayKey: conn.relayKey, to, text, from: number || undefined }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      return JSON.stringify({ ok: false, error: data.error || `The text could not be sent (HTTP ${resp.status}).` });
+    }
+    return JSON.stringify({ ok: true, id: data.id, to: data.to, note: 'Text sent.' });
+  } catch (e) {
+    return JSON.stringify({ ok: false, error: 'Could not reach the SMS service: ' + e.message });
+  }
+}
+
+/**
  * Tool registry. Returns tool definitions for the LLM and dispatches execution.
  *
  * Tools come from two layers:
@@ -210,6 +251,10 @@ export class ToolRegistry {
     const definitions = [];
     const handlers = {};
 
+    // Read from disk, like loadAgentTools does, so a dashboard toggle takes
+    // effect on reload without restarting the engine.
+    const cfg = readJson(this.paths.config) || this.config || {};
+
     const connections = listConnections(this.workspace);
     const seen = new Set();
 
@@ -227,11 +272,23 @@ export class ToolRegistry {
       if (!mod) continue;
 
       if (Array.isArray(mod.definitions)) {
-        definitions.push(...mod.definitions);
+        // A tool may declare `requiresCapability: 'flagName'`, and is then
+        // only offered when that flag is on for this workspace. An opt-in
+        // feature therefore costs nothing — no schema, no prompt tokens — for
+        // the agents that have not enabled it. Definitions without the field
+        // load exactly as before.
+        for (const def of mod.definitions) {
+          if (def.requiresCapability && !cfg[def.requiresCapability]) continue;
+          definitions.push(def);
+        }
       }
       if (mod.handlers && typeof mod.handlers === 'object') {
+        // Only register handlers whose definition survived the gate, so a
+        // disabled tool cannot be invoked even if the model guesses its name.
+        const offered = new Set(definitions.map(d => d.name));
         for (const [name, fn] of Object.entries(mod.handlers)) {
           if (typeof fn !== 'function') continue;
+          if (!offered.has(name)) continue;
           if (handlers[name]) {
             console.warn(`[tools] Duplicate connector tool "${name}" — ${platform} entry ignored`);
             continue;
@@ -1013,6 +1070,18 @@ export class ToolRegistry {
         parameters: { type: 'object', properties: {} },
       },
       {
+        name: 'send_sms',
+        description: "Send a short text message (SMS) to a phone number — e.g. to follow up after a call with a link or a reminder. Keep it brief and always say who it's from. Only for legitimate messages to people who expect them (say, someone you just spoke with); never bulk or unsolicited. The server enforces rate limits and honors opt-outs (STOP). US delivery requires the sending number to be 10DLC-registered.",
+        parameters: {
+          type: 'object',
+          properties: {
+            to: { type: 'string', description: 'Recipient phone number in +country format (e.g. "+14155551212").' },
+            text: { type: 'string', description: 'The message text. Keep it short; include who it is from and any link.' },
+          },
+          required: ['to', 'text'],
+        },
+      },
+      {
         name: 'read_image',
         description: 'Look at an image a user sent (a photo, a screenshot) and get a text description of what it contains — so you can "see" it. Pass the workspace-relative path from the message\'s "[Attached files: image: data/inbox/...]" note. Optionally pass `question` to focus the reading (e.g. "transcribe this chat, note who said what" or "describe the palm lines"). Returns { description }, or { error } when vision isn\'t set up — in which case, fall back gracefully (offer a non-visual option).',
         parameters: {
@@ -1224,6 +1293,8 @@ export class ToolRegistry {
           return await this._retryNetworkTool(() => imageSearch(this.config, args, this.workspace), 'image_search');
         case 'place_call':
           return await this._retryNetworkTool(() => placeCall(this.workspace, this.config, args), 'place_call');
+        case 'send_sms':
+          return await this._retryNetworkTool(() => sendSms(this.workspace, this.config, args), 'send_sms');
         case 'end_call':
           // A marker the voice pipeline detects in toolsUsed to hang up after the
           // agent's closing line finishes. No-op off a call.
