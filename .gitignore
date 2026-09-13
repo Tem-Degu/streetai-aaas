@@ -46,6 +46,7 @@ penny/
 vega/
 willow/
 wingman/
+smoothie/
 daily_brief/
 horoscope/
 today_i_learned/
@@ -54,6 +55,7 @@ once_upon_now/
 days_end/
 full_circle/
 gingerpal/
+gingerpal_assistance/
 
 # Credentials and secrets
 .aaas/credentials.json

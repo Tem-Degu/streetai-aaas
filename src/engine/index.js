@@ -357,6 +357,12 @@ export class AgentEngine {
         channel: metadata?.channel,
         callerNumber: metadata?.callerNumber,
         chat_id: metadata?.chat_id,
+        // Set only on a turn answering a message for someone else under a
+        // standing Truuze delegation, so tools (an owner knowledge base, the
+        // delegated reply tool) can rely on the owner without trusting an id
+        // the model typed. Undefined on every other turn.
+        delegation_owner_id: metadata?.delegation_owner_id,
+        delegation_owner_username: metadata?.delegation_owner_username,
       });
     }
 

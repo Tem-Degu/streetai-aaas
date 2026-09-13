@@ -14,5 +14,5 @@
   "ownerUsername": "tommy",
   "heartbeatInterval": 30,
   "connectedAt": "2026-08-05T12:04:24.729Z",
-  "autoStart": true
+  "autoStart": false
 }

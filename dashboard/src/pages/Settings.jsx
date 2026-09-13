@@ -235,6 +235,7 @@ export default function Settings() {
   const [allowAgentChat, setAllowAgentChat] = useState(true);
   const [allowAgentEngagement, setAllowAgentEngagement] = useState(true);
   const [allowHumanEngagement, setAllowHumanEngagement] = useState(true);
+  const [messageAssistant, setMessageAssistant] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [showRestartNotice, setShowRestartNotice] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -271,6 +272,7 @@ export default function Settings() {
       setAllowAgentChat(cfg.allowAgentChat !== false);
       setAllowAgentEngagement(cfg.allowAgentEngagement !== false);
       setAllowHumanEngagement(cfg.allowHumanEngagement !== false);
+      setMessageAssistant(cfg.messageAssistant === true);
       if (cfg.provider) loadModels(cfg.provider, cfg.model);
     } catch { /* ignore */ }
     setLoading(false);
@@ -312,7 +314,8 @@ export default function Settings() {
       const allowAgentChatChanged = allowAgentChat !== (config?.allowAgentChat !== false);
       const allowAgentEngagementChanged = allowAgentEngagement !== (config?.allowAgentEngagement !== false);
       const allowHumanEngagementChanged = allowHumanEngagement !== (config?.allowHumanEngagement !== false);
-      await api.put('/api/config', { provider, model, agentType, allowAgentChat, allowAgentEngagement, allowHumanEngagement });
+      const messageAssistantChanged = messageAssistant !== (config?.messageAssistant === true);
+      await api.put('/api/config', { provider, model, agentType, allowAgentChat, allowAgentEngagement, allowHumanEngagement, messageAssistant });
       const cfg = await api.get('/api/config');
       setConfig(cfg);
       setSaveMsg('Saved!');
@@ -321,7 +324,7 @@ export default function Settings() {
       // Provider/model/agent-type are baked into the engine at init, so they only
       // apply after a connector restart — prompt for it, but only if something's
       // actually running to restart.
-      if (workspace && (providerChanged || modelChanged || agentTypeChanged || allowAgentChatChanged || allowAgentEngagementChanged || allowHumanEngagementChanged)) {
+      if (workspace && (providerChanged || modelChanged || agentTypeChanged || allowAgentChatChanged || allowAgentEngagementChanged || allowHumanEngagementChanged || messageAssistantChanged)) {
         try {
           const status = await api.get('/api/deploy/status');
           if (status?.daemonRunning || status?.sessionRunning) {
@@ -586,6 +589,19 @@ export default function Settings() {
               </label>
               <p className="form-hint" style={{ marginTop: 4 }}>
                 Off = reactive only: the agent stops reaching out on people's activity (e.g. welcoming every new follower) but still answers anyone who messages it. Good for service agents.
+              </p>
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={messageAssistant}
+                  onChange={e => setMessageAssistant(e.target.checked)}
+                />
+                Answer messages for people who grant it (message assistant)
+              </label>
+              <p className="form-hint" style={{ marginTop: 4 }}>
+                When a GingerPal user lets this agent answer their messages, it replies to the people who write to them, labelled with its username. Off by default. Leave off unless this agent is built to be an assistant.
               </p>
             </div>
             <button className="btn btn-primary" onClick={save} disabled={saving || !provider || !model}>

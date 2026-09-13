@@ -35,6 +35,14 @@ export default class TruuzeConnector extends BaseConnector {
     this.allowAgentChat = (config.allowAgentChat ?? engine?.config?.allowAgentChat) !== false;
     this.allowAgentEngagement = (config.allowAgentEngagement ?? engine?.config?.allowAgentEngagement) !== false;
     this.allowHumanEngagement = (config.allowHumanEngagement ?? engine?.config?.allowHumanEngagement) !== false;
+    //   messageAssistant     → answer messages sent to people who granted this
+    //                          agent a standing delegation. Unlike the gates
+    //                          above it defaults OFF: it lets the agent speak
+    //                          in someone else's conversations, so it must be
+    //                          switched on deliberately.
+    this.messageAssistant = (config.messageAssistant ?? engine?.config?.messageAssistant) === true;
+    // One delegated turn at a time per chat: chat_id -> promise tail.
+    this._delegatedChains = new Map();
     this.intervalId = null;
     this.consecutiveFailures = 0;
     // Throttle for the "model unavailable" notice (e.g. provider out of funds /
@@ -257,6 +265,14 @@ export default class TruuzeConnector extends BaseConnector {
       return;
     }
 
+    // The user answered (or later changed) this agent's message delegation.
+    // Only for agents running the message assistant; for every other agent
+    // the push falls through to the usual poll, exactly as before.
+    if (source === 'delegation.result' && this.messageAssistant) {
+      this._handleDelegationResult(data.data || {});
+      return;
+    }
+
     console.log('[truuze] WebSocket event:', source);
 
     // WebSocket push received — fetch details. Debounce to coalesce bursts.
@@ -434,6 +450,12 @@ export default class TruuzeConnector extends BaseConnector {
       this._handleMessage(msg).catch((err) =>
         console.error('[truuze] message %s handler error:', msg.id, err)
       );
+    }
+
+    // Messages sent to people this agent answers for. Only when the feature is
+    // on; otherwise the key is ignored and nothing is claimed, acked or sent.
+    if (this.messageAssistant && Array.isArray(updates.delegated_messages) && updates.delegated_messages.length) {
+      this._dispatchDelegated(updates.delegated_messages);
     }
 
     // Everything else (comments, mentions, reactions, listeners, new daybooks,
@@ -873,6 +895,327 @@ export default class TruuzeConnector extends BaseConnector {
       return (args.method || '').toUpperCase() === 'POST'
         && (args.url || '').includes('/message/create');
     });
+  }
+
+  // ─── Message assistant (standing delegation) ──────────
+
+  /**
+   * Claim the heartbeat's delegated messages, ack them, and queue one turn per
+   * chat behind any turn already running there. Grouping means a customer who
+   * sends "hi" and then a question gets one answer, not two.
+   *
+   * Acked on arrival, the same moment message-ack is sent for the agent's own
+   * chats, but through the delegated ack: it moves the agent's bookmark and
+   * shows the other person typing dots, and never touches the owner's read
+   * state. As with any message, a turn that then fails is not retried; the
+   * owner still has the message in their own inbox.
+   */
+  _dispatchDelegated(items) {
+    // Turning the feature on must not answer a backlog of old conversations.
+    const STALE_MS = 24 * 60 * 60 * 1000;
+    const byChat = new Map();
+
+    for (const msg of [...items].sort((a, b) => a.id - b.id)) {
+      if (!msg || msg.id == null || msg.chat_id == null || !msg.delegated_for) continue;
+      if (this._isProcessed('delegated', msg.id)) continue;
+
+      const created = Date.parse(msg.created_at || '');
+      if (Number.isFinite(created) && Date.now() - created > STALE_MS) {
+        console.log('[truuze] Delegated message %s is older than 24h, not answering', msg.id);
+        this._ackDelegated(msg.chat_id, msg.id, false);
+        continue;
+      }
+      // Same bot-to-bot rule as direct messages: no loophole through delegation.
+      if (!this.allowAgentChat && msg.from_account_type === 'agent') {
+        console.log('[truuze] Ignoring delegated message from agent @%s (allowAgentChat off)', msg.from_username);
+        this._ackDelegated(msg.chat_id, msg.id, false);
+        continue;
+      }
+
+      if (!byChat.has(msg.chat_id)) byChat.set(msg.chat_id, []);
+      byChat.get(msg.chat_id).push(msg);
+    }
+
+    for (const [chatId, msgs] of byChat) {
+      // A thread of mode commands only gets no reply, so it shows no dots.
+      const replying = msgs.some((m) => m.media?.length || !this._isModeCommand(m.text));
+      this._ackDelegated(chatId, msgs[msgs.length - 1].id, replying);
+
+      const previous = this._delegatedChains.get(chatId) || Promise.resolve();
+      const next = previous
+        .then(() => this._handleDelegatedMessages(msgs))
+        .catch((err) => console.error('[truuze] delegated chat %s handler error:', chatId, err))
+        .finally(() => {
+          if (this._delegatedChains.get(chatId) === next) this._delegatedChains.delete(chatId);
+        });
+      this._delegatedChains.set(chatId, next);
+    }
+  }
+
+  /**
+   * `/admin` and `/customer` switch session modes and start owner
+   * verification. They belong in the owner's own chat with the agent, not in
+   * a conversation a customer can type into.
+   */
+  _isModeCommand(text) {
+    const lowered = String(text || '').trim().toLowerCase();
+    return lowered === '/admin' || lowered === '/customer';
+  }
+
+  /**
+   * One LLM turn answering a customer on the owner's behalf.
+   *
+   * Session: `del_<owner_id>_<customer_id>`. Its own history, separate from
+   * that customer's direct chats with the agent and from the owner's own chat,
+   * so nothing said to one person leaks into another conversation. Nothing the
+   * owner teaches the agent crosses over automatically either — that is for an
+   * owner knowledge-base tool, which can key on ctx.event.delegation_owner_id.
+   */
+  async _handleDelegatedMessages(msgs) {
+    const last = msgs[msgs.length - 1];
+    const owner = last.delegated_for || {};
+    const chatId = last.chat_id;
+    const customerKey = last.from_user_id ?? last.from_username;
+    if (owner.id == null || customerKey == null) return;
+
+    const ownerHandle = owner.username ? `@${owner.username}` : 'the account holder';
+    const customerHandle = last.from_username ? `@${last.from_username}` : 'the other person';
+    const sessionUserId = `del_${owner.id}_${customerKey}`;
+
+    // Same inbound handling as direct messages: download media, transcribe
+    // voice notes when STT is configured.
+    const parts = [];
+    for (const msg of msgs) {
+      let text = msg.text || '';
+      if (msg.media?.length) {
+        const saved = await this._downloadMedia(msg.media, msg.from_username);
+        if (saved.length > 0) text = await buildInboundContent(this.engine, text, saved);
+      }
+      const trimmed = String(text || '').trim();
+      if (this._isModeCommand(trimmed)) continue;
+      if (trimmed) parts.push(trimmed);
+    }
+    if (parts.length === 0) return;
+
+    // First contact only: catch up on what was said before the agent started
+    // answering here. After that the session is the memory.
+    let earlier = '';
+    const known = this.engine?.sessionManager?.getSession('truuze', sessionUserId)?.messages?.length || 0;
+    if (known === 0) {
+      earlier = await this._delegatedThreadPrimer(chatId, new Set(msgs.map((m) => m.id)));
+    }
+
+    const lines = [
+      `[Delegated message] You are answering on behalf of ${ownerHandle}, as their assistant. ${customerHandle} wrote to ${ownerHandle}:`,
+      '',
+      parts.join('\n'),
+      '',
+    ];
+    if (earlier) lines.push('Earlier in this conversation:', earlier, '');
+    lines.push(
+      `Your reply is posted in ${ownerHandle}'s conversation with ${customerHandle} and labelled with your username. ` +
+      `Write as ${ownerHandle}'s assistant; never claim to be ${ownerHandle}. ` +
+      `Only state what ${ownerHandle} has told you (hours, prices, availability). If you do not know, say you will check with them. ` +
+      `You can send at most 3 messages before ${customerHandle} replies. ` +
+      'Reply with plain text. If nothing needs a reply, respond with nothing.'
+    );
+
+    const event = {
+      platform: 'truuze',
+      userId: sessionUserId,
+      userName: last.from_name || last.from_username || 'Customer',
+      type: 'message',
+      content: lines.join('\n'),
+      metadata: {
+        // Explicit on purpose: with no mode the engine falls back to admin,
+        // and admin tools must never be reachable from someone else's customer.
+        mode: 'customer',
+        is_owner: false,
+        is_delegated: 'yes',
+        delegation_id: last.delegation_id,
+        delegation_owner_id: owner.id,
+        delegation_owner_username: owner.username,
+        customer_username: last.from_username,
+        chat_id: chatId,
+        message_id: last.id,
+      },
+    };
+
+    console.log('[truuze] Delegated: answering %s for %s in chat %s', customerHandle, ownerHandle, chatId);
+
+    let result;
+    try {
+      result = await this.engine.processEvent(event);
+    } catch (err) {
+      // No "I'm unavailable" notice here: in this chat it would be posted in
+      // the owner's name. The owner still sees the unanswered message.
+      console.error('[truuze] Delegated turn failed for chat %s: %s', chatId, err.message);
+      this.error = `Delegated message handler error: ${err.message}`;
+      return;
+    }
+
+    const reply = String(result?.response || '').trim();
+    if (!reply || result?.paused || this._repliedForUser(result)) return;
+    await this._replyForUser(chatId, reply);
+  }
+
+  /**
+   * Mark a delegated conversation picked up to a message, so the heartbeat
+   * stops offering it. `replying` shows the other person typing dots; pass
+   * false for messages deliberately left unanswered. Never message-ack for
+   * these: that marks the owner's message seen. Fire-and-forget: if the
+   * request is lost, the local claim still covers this process.
+   */
+  _ackDelegated(chatId, upToId, replying = true) {
+    if (chatId == null || upToId == null) return;
+    this._fetch('/account/agent/delegated-ack/', {
+      method: 'PATCH',
+      body: JSON.stringify({ chat_id: chatId, up_to_message_id: upToId, replying }),
+    }).then((res) => {
+      if (!res.ok && res.status !== 204) {
+        console.warn('[truuze] delegated-ack failed for chat %s: HTTP %d', chatId, res.status);
+      }
+    }).catch((err) => {
+      console.warn('[truuze] delegated-ack error for chat %s: %s', chatId, err.message);
+    });
+  }
+
+  /** Recent thread lines for a first delegated turn, minus the ones being answered. */
+  async _delegatedThreadPrimer(chatId, answering) {
+    try {
+      const res = await this._fetch(`/chat/agent/thread/${chatId}/`);
+      if (!res.ok) return '';
+      const data = await res.json();
+      const ownerName = data?.owner?.username ? `@${data.owner.username}` : 'Owner';
+      return (data?.messages || [])
+        .filter((m) => m && m.text && !answering.has(m.id))
+        .map((m) => {
+          const who = m.by_agent ? 'You (assistant)' : m.from_owner ? ownerName : `@${m.username || 'them'}`;
+          return `${who}: ${String(m.text).slice(0, 500)}`;
+        })
+        .join('\n');
+    } catch {
+      return '';
+    }
+  }
+
+  /** True if the agent already sent its reply itself during this turn. */
+  _repliedForUser(result) {
+    return (result?.toolsUsed || []).some((t) => {
+      if (typeof t === 'string') return t === 'reply_for_user';
+      if (t.name === 'reply_for_user') return true;
+      if (t.name !== 'platform_request') return false;
+      const args = t.arguments || {};
+      return (args.method || '').toUpperCase() === 'POST'
+        && (args.url || '').includes('/chat/agent/reply-on-behalf');
+    });
+  }
+
+  /**
+   * Post a reply through the delegated endpoint. The normal send path posts as
+   * the agent, which cannot work in a chat the agent is not part of.
+   *
+   * A 403 or 409 is the user's decision (paused, revoked, muted, handling it
+   * themselves, a cap, or the other person's turn), so it is logged and never
+   * retried. Only network errors and 5xx are retried.
+   *
+   * Returns 'sent', 'refused' (the user's decision) or 'failed' (never landed).
+   */
+  async _replyForUser(chatId, text) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await this._fetch('/chat/agent/reply-on-behalf/', {
+          method: 'POST',
+          body: JSON.stringify({ chat_id: chatId, text }),
+        });
+        if (res.ok) {
+          console.log('[truuze] Delegated reply sent to chat %s', chatId);
+          return 'sent';
+        }
+        if (res.status < 500) {
+          let detail = '';
+          try { detail = (await res.json())?.detail || ''; } catch { /* no body */ }
+          console.log('[truuze] Delegated reply refused for chat %s: HTTP %d %s', chatId, res.status, detail);
+          return 'refused';
+        }
+        console.warn(`[truuze] Delegated reply attempt ${attempt}/3 failed: HTTP ${res.status}`);
+      } catch (err) {
+        console.warn(`[truuze] Delegated reply attempt ${attempt}/3 failed: ${err.message}`);
+      }
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 2000));
+    }
+    console.error('[truuze] Failed to send delegated reply to chat %s after 3 attempts', chatId);
+    return 'failed';
+  }
+
+  /**
+   * The user answered this agent's delegation request, or later changed it.
+   * Handled like `permission.result`: a platform_event in the agent's own
+   * chat with that user, so the agent can acknowledge it there.
+   *
+   * paused / resumed get no turn. They are the user adjusting a setting, and a
+   * chat message each time would be noise. A replaced delegation gets a turn,
+   * so the agent knows, but nothing is posted: the user picked another
+   * assistant and does not need to hear from this one about it.
+   *
+   * Payload: the delegation (id, status, outcome, user, chat_id, ...) plus
+   * `action` and `acted_at`.
+   */
+  async _handleDelegationResult(payload) {
+    const id = payload.id;
+    const action = payload.action;
+    if (!id || !action) return;
+
+    // One turn per change. acted_at separates a real second change (pause
+    // today, pause again next week) from a duplicate push of the same one.
+    if (this._isProcessed('delegation', `${id}:${action}:${payload.acted_at || ''}`)) return;
+    this._persistProcessedIds();
+
+    const user = payload.user || {};
+    const who = user.username ? `@${user.username}` : 'The user';
+    console.log('[truuze] Delegation %s: %s (%s)', action, id, who);
+
+    let content;
+    if (action === 'granted') {
+      content = `[Truuze] ${who} allowed you to answer the messages people send them (delegation ${id}). From now on those messages reach you as delegated messages, and your replies appear in their conversations labelled with your username. Thank them briefly, and mention they can pause or turn this off any time under Menu > Message Assistants.`;
+    } else if (action === 'denied') {
+      content = `[Truuze] ${who} declined your request to answer their messages (delegation ${id}). Do not ask again unless they bring it up. Acknowledge it briefly and move on.`;
+    } else if (action === 'revoked') {
+      content = `[Truuze] ${who} turned off your permission to answer their messages (delegation ${id}). Stop answering for them. Acknowledge it briefly if it fits, and do not ask them to reconsider.`;
+    } else if (action === 'replaced') {
+      content = `[Truuze] ${who} chose a different assistant to answer their messages, so your permission ended (delegation ${id}). Stop answering for them. Do not message them about it.`;
+    } else {
+      return; // paused, resumed
+    }
+
+    const chatId = payload.chat_id ?? null;
+    const event = {
+      platform: 'truuze',
+      // Same session as the user's own messages to the agent, matching how
+      // permission results route.
+      userId: user.id != null ? String(user.id) : 'truuze-platform',
+      userName: 'Truuze Platform',
+      type: 'platform_event',
+      content,
+      metadata: {
+        mode: 'customer',
+        is_platform_event: true,
+        category: 'delegation',
+        action,
+        delegation_id: id,
+        chat_id: chatId,
+      },
+    };
+
+    try {
+      const result = await this.engine.processEvent(event);
+      if (action !== 'replaced' && chatId && result?.response && !this._respondedInChat(result)) {
+        await this._sendMessage(chatId, result.response);
+      }
+    } catch (err) {
+      console.error('[truuze] Delegation result handler error:', err);
+      this.error = `Delegation result handler error: ${err.message}`;
+    }
   }
 
   _formatEscrowNotice(action, escrow, ref, title) {

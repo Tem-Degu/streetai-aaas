@@ -278,7 +278,15 @@ export class ToolRegistry {
         // the agents that have not enabled it. Definitions without the field
         // load exactly as before.
         for (const def of mod.definitions) {
-          if (def.requiresCapability && !cfg[def.requiresCapability]) continue;
+          if (def.requiresCapability) {
+            if (!cfg[def.requiresCapability]) continue;
+            // Strip the marker before the definition reaches a provider. Most
+            // translate only name/description/parameters, but the default
+            // branch of translateToolsForProvider passes tools through as-is.
+            const { requiresCapability, ...exposed } = def;
+            definitions.push(exposed);
+            continue;
+          }
           definitions.push(def);
         }
       }

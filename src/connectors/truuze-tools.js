@@ -443,6 +443,128 @@ async function sendWatch(workspace, args) {
 
 // ─── Tool definitions (LLM-facing schemas) ──────────────
 
+// ─── Message assistant (standing delegation) ───────────
+//
+// Offered only when the workspace enables `messageAssistant` (see
+// `requiresCapability` in src/engine/tools/index.js). The server enforces every
+// rule; these handlers turn its refusals into plain instructions so the model
+// stops instead of retrying.
+
+function summarizeDelegation(d) {
+  if (!d || typeof d !== 'object') return null;
+  return {
+    id: d.id,
+    status: d.status,
+    outcome: d.outcome,
+    is_live: d.is_live,
+    chat_id: d.chat_id,
+    user_id: d.user?.id,
+    username: d.user?.username,
+    granted_at: d.granted_at,
+    max_consecutive_replies: d.max_consecutive_replies,
+  };
+}
+
+function detailOf(res, fallback) {
+  const d = res?.data;
+  if (d && typeof d === 'object') return d.detail || d.error || fallback;
+  if (typeof d === 'string' && d && d.length < 300) return d;
+  return fallback;
+}
+
+async function requestDelegation(workspace, args, eventCtx) {
+  // A delegated turn is someone else's customer, not the person to ask.
+  if (eventCtx?.delegation_owner_id) {
+    return fail('You are answering a delegated message. Ask for delegation in your own conversation with the person, not here.');
+  }
+
+  // Asking from the conversation you are in is the normal case: the person's
+  // app shows the approval popup right there. user_id is only for asking
+  // someone you have no conversation with.
+  const chatId = args?.chat_id ?? eventCtx?.chat_id ?? null;
+  const rawUserId = args?.user_id;
+  const userId = rawUserId != null && rawUserId !== '' ? Number(rawUserId) : null;
+  if (chatId == null && !(Number.isFinite(userId) && userId > 0)) {
+    return fail('chat_id is required — your conversation with the person you are asking (or user_id if you have none)');
+  }
+
+  let cfg;
+  try { cfg = loadTruuzeConfig(workspace); }
+  catch (err) { return fail(err.message); }
+
+  let res;
+  try {
+    res = await truuzeFetch(cfg, '/account/agent/delegation/request/', {
+      method: 'POST',
+      body: chatId != null ? { chat_id: chatId } : { user_id: userId },
+    });
+  } catch (err) {
+    return fail(`Could not reach Truuze: ${err.message}`);
+  }
+
+  if (res.ok) {
+    return ok({
+      delegation: summarizeDelegation(res.data),
+      next_step: 'Nothing is granted yet. They get a popup in your conversation and can also decide under Menu > Message Assistants. You will be told the answer as a [Truuze] event; you can also check with list_delegations.',
+    });
+  }
+  return fail(detailOf(res, `Could not request a delegation (HTTP ${res.status})`), { status: res.status });
+}
+
+async function replyForUser(workspace, args, eventCtx) {
+  const chatId = args?.chat_id;
+  const text = String(args?.text ?? '').trim();
+  if (!chatId) return fail('chat_id is required');
+  if (!text) return fail('text is required');
+
+  // Only while answering a delegated message, and only in that conversation.
+  // The server enforces the grant, but this keeps a customer in some other
+  // chat from steering the agent into writing somewhere else.
+  if (!eventCtx?.delegation_owner_id) {
+    return fail('reply_for_user only works while you are answering a delegated message.');
+  }
+  if (eventCtx.chat_id != null && String(eventCtx.chat_id) !== String(chatId)) {
+    return fail('You can only reply in the conversation you are currently answering.', { chat_id: eventCtx.chat_id });
+  }
+
+  let cfg;
+  try { cfg = loadTruuzeConfig(workspace); }
+  catch (err) { return fail(err.message); }
+
+  let res;
+  try {
+    res = await truuzeFetch(cfg, '/chat/agent/reply-on-behalf/', {
+      method: 'POST',
+      body: { chat_id: chatId, text },
+    });
+  } catch (err) {
+    return fail(`Could not reach Truuze: ${err.message}`);
+  }
+
+  if (res.ok) return ok({ sent: true, message_id: res.data?.id ?? null });
+  if (res.status === 403 || res.status === 409) {
+    return fail(detailOf(res, 'Reply refused'), {
+      stop: true,
+      next_step: 'Do not retry and do not reword it. The person has paused or ended this, is handling the conversation themselves, a limit is reached, or it is the other person\'s turn to speak.',
+    });
+  }
+  return fail(detailOf(res, `Reply failed (HTTP ${res.status})`), { status: res.status });
+}
+
+async function listDelegations(workspace) {
+  let cfg;
+  try { cfg = loadTruuzeConfig(workspace); }
+  catch (err) { return fail(err.message); }
+
+  let res;
+  try { res = await truuzeFetch(cfg, '/account/agent/delegations/'); }
+  catch (err) { return fail(`Could not reach Truuze: ${err.message}`); }
+
+  if (!res.ok) return fail(detailOf(res, `Could not list delegations (HTTP ${res.status})`), { status: res.status });
+  const items = Array.isArray(res.data) ? res.data : [];
+  return ok({ count: items.length, delegations: items.map(summarizeDelegation) });
+}
+
 const definitions = [
   {
     name: 'create_service',
@@ -537,6 +659,37 @@ const definitions = [
       required: ['chat_id', 'url', 'title'],
     },
   },
+  {
+    name: 'request_delegation',
+    requiresCapability: 'messageAssistant',
+    description: 'Ask a person for standing permission to answer the messages other people send them, as their assistant. Use it when they ask you to handle their messages, from your conversation with them. Nothing is granted by this call: they get an approval popup in that conversation and can also decide under Menu > Message Assistants. You are told the answer as a [Truuze] event. A person has one assistant at a time, so approving you ends any other. They must already be listening to you.',
+    parameters: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'Optional. Your conversation with the person. Defaults to the conversation you are in.' },
+        user_id: { type: 'number', description: 'Optional. Only if you have no conversation with them: their numeric Truuze id.' },
+      },
+    },
+  },
+  {
+    name: 'reply_for_user',
+    requiresCapability: 'messageAssistant',
+    description: 'Send a reply in a conversation you are answering on someone\'s behalf. Only works during a delegated message turn, in that conversation. Normally you do not need it: your plain-text reply is sent for you. Use it to send more than one message (at most 3 before the other person replies). If it comes back with stop: true, stop. It is the person\'s decision, not an error to retry.',
+    parameters: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'The conversation you are answering (chat_id from the delegated message).' },
+        text: { type: 'string', description: 'The message text. Plain text only.' },
+      },
+      required: ['chat_id', 'text'],
+    },
+  },
+  {
+    name: 'list_delegations',
+    requiresCapability: 'messageAssistant',
+    description: 'List the people whose messages you may answer, with the status of each (pending, active, paused). Use it to check whether a request you made was granted.',
+    parameters: { type: 'object', properties: {} },
+  },
 ];
 
 const handlers = {
@@ -547,6 +700,9 @@ const handlers = {
   respond_to_dispute: respondToDispute,
   list_my_services: listMyServices,
   send_watch: sendWatch,
+  request_delegation: requestDelegation,
+  reply_for_user: replyForUser,
+  list_delegations: listDelegations,
 };
 
 export default { definitions, handlers };
