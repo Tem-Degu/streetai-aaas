@@ -276,7 +276,18 @@ Bad (will NOT work):
       agentName: this.engine?.agentName || null,
       onHangup: () => { send('voice:end', {}); this._handleVoiceStop({ callId }); },
     });
-    this.voiceCalls.set(callId, { pipeline, codec });
+    // Keep enough on the entry to meter the call for usage billing when it ends:
+    // when it began, which way it went, and the other party's number (for an
+    // outbound call the relay sends the callee's number as callerNumber, so this
+    // is the owner we phoned). See _recordCallUsage.
+    this.voiceCalls.set(callId, {
+      pipeline,
+      codec,
+      startedAt: Date.now(),
+      direction: data.direction || 'inbound',
+      number: data.callerNumber || null,
+      recorded: false,
+    });
     try {
       await pipeline.start();
     } catch (err) {
@@ -299,6 +310,7 @@ Bad (will NOT work):
   _handleVoiceStop(data) {
     const entry = this.voiceCalls.get(data.callId);
     if (entry) {
+      this._recordCallUsage(data.callId, entry);
       try { entry.pipeline.close(); } catch { /* ignore */ }
       this.voiceCalls.delete(data.callId);
     }
@@ -306,10 +318,42 @@ Bad (will NOT work):
 
   /** Close all active relay voice calls (on disconnect). */
   _closeVoiceCalls() {
-    for (const entry of this.voiceCalls.values()) {
+    for (const [callId, entry] of this.voiceCalls) {
+      this._recordCallUsage(callId, entry);
       try { entry.pipeline.close(); } catch { /* ignore */ }
     }
     this.voiceCalls.clear();
+  }
+
+  /**
+   * Append one line to the workspace's call-usage feed when a call ends, so
+   * per-agent usage billing can charge for talk time. Measures pipeline-open
+   * duration (voice:start → teardown) — a fair proxy for talk time, and it
+   * needs no relay-server change. Fires on any teardown path (agent hangup,
+   * network hangup, or a WS drop via _closeVoiceCalls); the `recorded` flag
+   * makes it write exactly once per call.
+   *
+   * Best-effort and fully isolated: any failure here must never disturb a live
+   * call or its teardown, so everything is wrapped and swallowed.
+   */
+  _recordCallUsage(callId, entry) {
+    if (!entry || entry.recorded) return;
+    entry.recorded = true;
+    try {
+      const workspace = this.engine?.workspace;
+      if (!workspace || !entry.startedAt) return;
+      const seconds = Math.max(0, Math.round((Date.now() - entry.startedAt) / 1000));
+      const line = JSON.stringify({
+        callId,
+        seconds,
+        direction: entry.direction || 'inbound',
+        number: entry.number || null,
+        at: new Date().toISOString(),
+      }) + '\n';
+      const dir = path.join(workspace, '.aaas');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.appendFileSync(path.join(dir, 'call-usage.jsonl'), line);
+    } catch { /* never let metering affect a call */ }
   }
 
   // ─── Web Call voice handling ─────────────────────────────────

@@ -357,6 +357,10 @@ export class AgentEngine {
         channel: metadata?.channel,
         callerNumber: metadata?.callerNumber,
         chat_id: metadata?.chat_id,
+        // A web link that opens the owner's conversation with this customer,
+        // set on delegated turns. Tools put it in owner alerts sent outside
+        // GingerPal (e.g. Telegram) so the owner can open the thread in one tap.
+        chat_url: metadata?.chat_url,
         // Set only on a turn answering a message for someone else under a
         // standing Truuze delegation, so tools (an owner knowledge base, the
         // delegated reply tool) can rely on the owner without trusting an id

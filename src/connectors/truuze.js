@@ -1037,6 +1037,9 @@ export default class TruuzeConnector extends BaseConnector {
         delegation_owner_username: owner.username,
         customer_username: last.from_username,
         chat_id: chatId,
+        // Web link that opens this conversation for the owner, for alerts sent
+        // outside Truuze. Undefined on older backends, and then not printed.
+        chat_url: last.chat_url,
         message_id: last.id,
       },
     };
@@ -1054,9 +1057,41 @@ export default class TruuzeConnector extends BaseConnector {
       return;
     }
 
+    // Meter the tokens this delegated turn spent, keyed to the owner, so
+    // per-agent usage billing can charge for it. Tokens are spent whether or
+    // not a reply goes out, so record before the reply gate below.
+    this._recordTokenUsage(owner.id, result?.tokensUsed, last.from_username);
+
     const reply = String(result?.response || '').trim();
     if (!reply || result?.paused || this._repliedForUser(result)) return;
     await this._replyForUser(chatId, reply);
+  }
+
+  /**
+   * Append one line to the workspace token-usage feed for a delegated turn, so
+   * per-agent usage billing can charge the owner for the LLM work done on their
+   * behalf. Keyed by owner id (the person being billed), not the customer.
+   *
+   * Best-effort and fully isolated: a metering failure must never disturb the
+   * conversation, so everything is wrapped and swallowed. Zero-token turns
+   * (e.g. nothing to answer) are skipped.
+   */
+  _recordTokenUsage(ownerId, tokens, customer) {
+    const t = Number(tokens) || 0;
+    if (ownerId == null || t <= 0) return;
+    try {
+      const workspace = this.engine?.workspace;
+      if (!workspace) return;
+      const line = JSON.stringify({
+        owner_id: String(ownerId),
+        tokens: t,
+        customer: customer || null,
+        at: new Date().toISOString(),
+      }) + '\n';
+      const dir = path.join(workspace, '.aaas');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.appendFileSync(path.join(dir, 'token-usage.jsonl'), line);
+    } catch { /* never let metering affect a conversation */ }
   }
 
   /**

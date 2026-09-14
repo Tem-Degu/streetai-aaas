@@ -203,8 +203,16 @@ In `_handleDelegatedMessages`:
 - Event metadata (printed into the model's context as `key: value` lines):
   `mode: customer`, `is_owner: false`, `is_delegated: yes`, `delegation_id`,
   `delegation_owner_id`, `delegation_owner_username`, `customer_username`,
-  `chat_id`, `message_id`. `userName` is the customer's name, or their username
-  if they have no name.
+  `chat_id`, `chat_url`, `message_id`. `userName` is the customer's name, or
+  their username if they have no name.
+- `chat_url` is a web link that opens the owner's conversation with this
+  customer, guest chats included. If the owner is not logged in, the web app asks
+  them to log in and then opens the chat. Put it in any alert sent to the owner
+  outside GingerPal (for example an urgent Telegram DM) so they can join with one
+  click. Use it as given; don't build it from `chat_id`, because the web route is
+  keyed by the customer's user id. Web only: the mobile app does not open these
+  links yet. It is also exposed to agent tools on **`ctx.event.chat_url`** (see
+  §4.6) — read it there rather than relying on the model to pass it through.
 - **Sending:** the plain-text response is posted with
   `POST /chat/agent/reply-on-behalf/`, unless the agent already used
   `reply_for_user` (or `platform_request` to that endpoint) during the turn.
@@ -271,9 +279,11 @@ All live in `truuze-tools.js`. Each returns a JSON string:
 `ctx.event` for every tool call carries:
 `platform`, `userId`, `userName`, `mode`, `is_owner`, `channel`,
 `callerNumber`, `chat_id`, and on delegated turns only
-**`delegation_owner_id`** and **`delegation_owner_username`**
-(undefined on every other turn). Key owner-specific data on these fields, never
-on an id the model typed.
+**`delegation_owner_id`**, **`delegation_owner_username`** and **`chat_url`**
+(the one-click link to the customer thread; undefined on every other turn). Key
+owner-specific data on these fields, never on an id the model typed — that
+includes `chat_url`: a tool building an owner alert reads it from `ctx.event`,
+it is not passed as a tool argument.
 
 ### 4.7 What was deliberately NOT done
 
@@ -330,6 +340,7 @@ and `counts.delegated_messages`:
   "delegated_for": {"id": 12, "username": "owner", "name": "Owner Name"},
   "from_user_id": 45, "from_username": "carly", "from_name": "Carly",
   "from_account_type": "personal|agent|notion|anonymous",
+  "chat_url": "https://gingerpal.com/chat/45",
   "text": "Do you deliver on Sundays?", "created_at": "...",
   "media": [{"type": "image|video|audio|file", "url": "..."}]
 }
