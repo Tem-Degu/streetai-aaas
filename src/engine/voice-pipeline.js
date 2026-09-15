@@ -47,6 +47,15 @@ export class VoicePipeline {
     this._pendingHangup = false;
     this.voice = (engine && engine.config && engine.config.voice) || {};
 
+    // Outbound-call opening: on a call we placed, a real caller waits for the
+    // callee to say "hello" and then speaks. So we DON'T open immediately —
+    // `_opened` gates the intro, and `_openTimer` is the silence fallback that
+    // opens anyway if the line stays quiet. Inbound is unaffected (agent greets
+    // first, as before). Tunable via voice.outbound.greetWaitMs.
+    this._opened = false;
+    this._openTimer = null;
+    this.outboundOpenWaitMs = (this.voice.outbound && this.voice.outbound.greetWaitMs) || 4000;
+
     // Sticky reply language. Once a language is committed, we keep replying in it
     // and only switch when the caller's utterance both resolves to a different
     // language AND is long enough to be a real switch (not a short "ok"/"نعم").
@@ -149,8 +158,24 @@ export class VoicePipeline {
       onFinal: (text, sttLang) => this._onTranscript(text, sttLang),
       workspace: this.engine.workspace,
     });
-    // Opening line: agent speaks first (isGreeting) before the caller says anything.
-    await this._respond('', true);
+    if (this.direction === 'outbound') {
+      // We placed this call: wait for the callee to speak first (their "hello"),
+      // like a real caller would, then open with the intro (see _onTranscript).
+      // If the line stays silent, open anyway after a short delay so it never
+      // stalls. This avoids the double-open / re-greet when the callee's "hello"
+      // collides with an immediate agent opening.
+      this._openTimer = setTimeout(() => {
+        this._openTimer = null;
+        if (this._opened) return;
+        this._opened = true;
+        this._respond('', true).catch((e) => console.error('[voice] open error:', e.message));
+      }, this.outboundOpenWaitMs);
+    } else {
+      // Inbound: the agent greets first (isGreeting) before the caller speaks —
+      // exactly as before.
+      this._opened = true;
+      await this._respond('', true);
+    }
   }
 
   /** Inbound audio frame: PCM16 mono 16 kHz Buffer. */
@@ -200,6 +225,16 @@ export class VoicePipeline {
     // Defense-in-depth: ignore transcripts that land while we're thinking or
     // within the speech window (STT isn't fed then, so this should be rare).
     if (this.thinking || this._isSpeaking() || this._inSpeechWindow()) return;
+    // Outbound and not opened yet: this is the callee's first words (their
+    // "hello") — our cue to OPEN with the intro, not to treat it as a normal
+    // turn. Cancel the silence fallback and give the greeting (its content is
+    // seeded from the outbound opening; their "hello" carries no info to keep).
+    if (this.direction === 'outbound' && !this._opened) {
+      this._opened = true;
+      if (this._openTimer) { clearTimeout(this._openTimer); this._openTimer = null; }
+      this._respond('', true, sttLang).catch((e) => console.error('[voice] open error:', e.message));
+      return;
+    }
     this._respond(t, false, sttLang).catch((e) => console.error('[voice] respond error:', e.message));
   }
 
@@ -317,6 +352,7 @@ export class VoicePipeline {
   }
 
   close() {
+    if (this._openTimer) { try { clearTimeout(this._openTimer); } catch { /* ignore */ } this._openTimer = null; }
     try { this.stt && this.stt.close(); } catch { /* ignore */ }
     if (this.ttsAbort) { try { this.ttsAbort.abort(); } catch { /* ignore */ } }
     this.stt = null;

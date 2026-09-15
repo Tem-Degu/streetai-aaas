@@ -258,13 +258,14 @@ Bad (will NOT work):
           try { out = bufToBase64(codec.encodeOut(base64ToBuf(payload))); } catch { /* send as-is */ }
           send('voice:media', { payload: out });
         };
+    // Key the session by the caller's number when we have it, so repeat calls
+    // from the same phone continue the same session/history; else per-call.
+    const sessionUserId = data.userId || (data.callerNumber ? `tel:${data.callerNumber}` : `voice_${callId}`);
     const pipeline = new VoicePipeline({
       engine: this.engine,
       sendMedia,
       sendClear: () => send('voice:clear', {}),
-      // Key the session by the caller's number when we have it, so repeat calls
-      // from the same phone continue the same session/history; else per-call.
-      userId: data.userId || (data.callerNumber ? `tel:${data.callerNumber}` : `voice_${callId}`),
+      userId: sessionUserId,
       greetLang: data.lang || null,   // caller-selected opening language (from the widget)
       // Outbound (agent-placed) calls carry a purpose + direction from the relay
       // so the agent opens with an AI self-intro and can hang up when finished.
@@ -276,16 +277,29 @@ Bad (will NOT work):
       agentName: this.engine?.agentName || null,
       onHangup: () => { send('voice:end', {}); this._handleVoiceStop({ callId }); },
     });
-    // Keep enough on the entry to meter the call for usage billing when it ends:
-    // when it began, which way it went, and the other party's number (for an
-    // outbound call the relay sends the callee's number as callerNumber, so this
-    // is the owner we phoned). See _recordCallUsage.
+
+    // A caller (e.g. the assistant's escalation flow) may have left a pending-call
+    // record for this callId: full background to run the call on, and what to do
+    // when it ends. Inject the background into the session BEFORE the greeting so
+    // every turn has it; stash `on_end` to fire a follow-up turn at hangup.
+    const pending = this._consumePendingCall(callId);
+    if (pending?.context) {
+      try { this.engine?.sessionManager?.addMessage('telnyx', sessionUserId, { role: 'user', content: String(pending.context) }); }
+      catch (e) { console.warn('[relay] call context inject failed:', e.message); }
+    }
+
+    // Keep enough on the entry to meter the call for usage billing when it ends
+    // (started-at, direction, and the other party's number — for an outbound call
+    // the relay sends the callee's number as callerNumber, so this is the owner we
+    // phoned; see _recordCallUsage), plus the session id and any post-call action.
     this.voiceCalls.set(callId, {
       pipeline,
       codec,
       startedAt: Date.now(),
       direction: data.direction || 'inbound',
       number: data.callerNumber || null,
+      userId: sessionUserId,
+      onEnd: pending?.on_end || null,
       recorded: false,
     });
     try {
@@ -311,9 +325,64 @@ Bad (will NOT work):
     const entry = this.voiceCalls.get(data.callId);
     if (entry) {
       this._recordCallUsage(data.callId, entry);
+      const onEnd = entry.onEnd; const userId = entry.userId;
       try { entry.pipeline.close(); } catch { /* ignore */ }
       this.voiceCalls.delete(data.callId);
+      if (onEnd && userId) this._firePostCall(userId, onEnd);
     }
+  }
+
+  /**
+   * Read (and remove) a pending-call record left for `callId` by whoever placed
+   * the call. Shape: `{ context, on_end, expires }`. Never throws.
+   */
+  _consumePendingCall(callId) {
+    try {
+      const fp = path.join(this.engine?.workspace || '', '.aaas', 'pending-calls.json');
+      if (!this.engine?.workspace || !fs.existsSync(fp)) return null;
+      const map = JSON.parse(fs.readFileSync(fp, 'utf-8')) || {};
+      const rec = map[String(callId)] || null;
+      // Drop this one and any expired siblings, then rewrite.
+      const now = Date.now();
+      delete map[String(callId)];
+      for (const k of Object.keys(map)) { if (map[k]?.expires && map[k].expires < now) delete map[k]; }
+      try { fs.writeFileSync(fp, JSON.stringify(map)); } catch { /* read-only fs, fine */ }
+      if (rec?.expires && rec.expires < now) return null;
+      return rec;
+    } catch { return null; }
+  }
+
+  /**
+   * Hand the just-ended call to the agent as a text turn, so it can act on the
+   * outcome (the reliable place to make tool calls — not mid-voice-call). The
+   * turn lands in `on_end.user_id`'s session with the call transcript plus the
+   * caller's `note`. Fire-and-forget and fully isolated.
+   */
+  _firePostCall(sessionUserId, onEnd) {
+    try {
+      const session = this.engine?.sessionManager?.getSession('telnyx', sessionUserId);
+      const transcript = (session?.messages || [])
+        .filter((m) => m && m.content && m.role !== 'system')
+        .slice(-20)
+        .map((m) => `${m.role === 'assistant' ? 'You' : 'Them'}: ${String(m.content).slice(0, 500)}`)
+        .join('\n');
+      const content = [
+        '[An escalation call you placed just ended. Here is the call:]',
+        transcript || '(no transcript captured)',
+        '',
+        String(onEnd.note || 'Decide whether any action is needed.'),
+      ].join('\n');
+      this.engine.processEvent({
+        platform: onEnd.platform || 'truuze',
+        userId: String(onEnd.user_id),
+        userName: 'Owner',
+        type: 'call_ended',
+        content,
+        // The delegation owner is usually not the agent's sponsor, so their own
+        // context runs in customer mode (admin tools must not be reachable here).
+        metadata: { is_call_ended: true, mode: 'customer' },
+      }).catch((e) => console.warn('[relay] post-call turn failed:', e.message));
+    } catch (e) { console.warn('[relay] post-call turn error:', e.message); }
   }
 
   /** Close all active relay voice calls (on disconnect). */
