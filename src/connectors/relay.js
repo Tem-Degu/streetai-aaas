@@ -261,12 +261,21 @@ Bad (will NOT work):
     // Key the session by the caller's number when we have it, so repeat calls
     // from the same phone continue the same session/history; else per-call.
     const sessionUserId = data.userId || (data.callerNumber ? `tel:${data.callerNumber}` : `voice_${callId}`);
+
+    // A caller (e.g. the assistant's escalation flow) may have left a pending-call
+    // record for this callId: the language to speak, full background to run the
+    // call on, and what to do when it ends. Consume it first so its `lang` can
+    // seed the opening language (greetLang → the pipeline's per-turn language lock).
+    const pending = this._consumePendingCall(callId);
+
     const pipeline = new VoicePipeline({
       engine: this.engine,
       sendMedia,
       sendClear: () => send('voice:clear', {}),
       userId: sessionUserId,
-      greetLang: data.lang || null,   // caller-selected opening language (from the widget)
+      // Opening language: a pending-call record (outbound, agent-placed) can pin it
+      // per call (e.g. the owner's chosen call language); else the widget's ?lang.
+      greetLang: pending?.lang || data.lang || null,
       // Outbound (agent-placed) calls carry a purpose + direction from the relay
       // so the agent opens with an AI self-intro and can hang up when finished.
       direction: data.direction || 'inbound',
@@ -278,11 +287,8 @@ Bad (will NOT work):
       onHangup: () => { send('voice:end', {}); this._handleVoiceStop({ callId }); },
     });
 
-    // A caller (e.g. the assistant's escalation flow) may have left a pending-call
-    // record for this callId: full background to run the call on, and what to do
-    // when it ends. Inject the background into the session BEFORE the greeting so
-    // every turn has it; stash `on_end` to fire a follow-up turn at hangup.
-    const pending = this._consumePendingCall(callId);
+    // Inject the background into the session BEFORE the greeting so every turn has
+    // it; `on_end` is stashed on the entry below to fire a follow-up turn at hangup.
     if (pending?.context) {
       try { this.engine?.sessionManager?.addMessage('telnyx', sessionUserId, { role: 'user', content: String(pending.context) }); }
       catch (e) { console.warn('[relay] call context inject failed:', e.message); }
