@@ -10,6 +10,7 @@ import { compressSession } from './sessions/compress.js';
 import { MemoryManager } from './memory/index.js';
 import { readJson, writeJson } from '../utils/workspace.js';
 import { buildBasePrompt } from './base-prompt.js';
+import { isLeanVoiceCall, LEAN_VOICE_CALL_TOOLS } from './voice-profile.js';
 import { saveTransactionView } from './tools/workspace.js';
 import { maybeSeedTransactionFields } from './tools/transaction-view-seed.js';
 import { loadPending, removeAction } from './scheduler.js';
@@ -347,6 +348,12 @@ export class AgentEngine {
     // doesn't drift across long-lived engine instances.
     this.basePrompt = buildBasePrompt(this.paths, { mode, now: new Date(), platform, channel: metadata?.channel });
 
+    // Lean phone-call turn? Then drop the SKILL and all-but-`end_call` from this
+    // turn too (base-prompt already trimmed the framework). The agent only talks
+    // on a call; it acts in the post-call text turn, which keeps everything.
+    // See voice-profile.js — one predicate shared across all three seams.
+    const leanVoice = isLeanVoiceCall({ channel: metadata?.channel, config: this.config });
+
     // Expose the current event to tools so notify_owner can capture context.
     if (this.toolRegistry?.setEventContext) {
       this.toolRegistry.setEventContext({
@@ -380,8 +387,8 @@ export class AgentEngine {
     // 6. Assemble context (previousMessages = full history BEFORE this message)
     const { messages } = this.contextAssembler.assemble({
       basePrompt: this.basePrompt,
-      skill: this.skill,
-      platformSkill,
+      skill: leanVoice ? '' : this.skill,
+      platformSkill: leanVoice ? '' : platformSkill,
       soul: this.soul,
       sessionMessages: previousMessages,
       sessionSummary,
@@ -420,6 +427,11 @@ export class AgentEngine {
     let tools = this.toolRegistry.getToolDefinitions();
     if (mode !== 'admin') {
       tools = tools.filter(t => !ADMIN_ONLY_TOOLS.includes(t.name));
+    }
+    // On a lean phone-call turn, expose only `end_call` — the agent talks and
+    // hangs up; it makes no other tool calls here (see voice-profile.js).
+    if (leanVoice) {
+      tools = tools.filter(t => LEAN_VOICE_CALL_TOOLS.includes(t.name || t.function?.name));
     }
 
     // Debug: append tools info

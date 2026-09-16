@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { readJson, readText, listFiles, fileStats, formatBytes } from '../utils/workspace.js';
+import { isLeanVoiceCall } from './voice-profile.js';
 
 let Database = null;
 try { Database = (await import('better-sqlite3')).default; } catch {}
@@ -16,6 +17,15 @@ try { Database = (await import('better-sqlite3')).default; } catch {}
  * - How to help the owner set up the agent from scratch
  */
 export function buildBasePrompt(paths, { mode = 'admin', now = new Date(), platform = null, channel = null } = {}) {
+  // Lean phone-call turn (opted in via config.voice.leanPrompt): skip the whole
+  // service/tools/workspace framework and hand back a tiny call prompt. Every
+  // other turn falls through to the full prompt below, unchanged. See
+  // voice-profile.js for the concept; the SKILL and tools are dropped by the
+  // context assembler + tool registry for the same turn.
+  if (isLeanVoiceCall({ channel, config: readJson(paths.config) || {} })) {
+    return buildLeanVoiceCallPrompt(paths, now);
+  }
+
   const sections = [];
   const isAdmin = mode === 'admin';
 
@@ -467,6 +477,32 @@ function buildPaymentsSection(paths, { isAdmin }) {
     lines.push(`- The agent never takes refund decisions on customers. If a customer asks for one in a customer-mode chat, the agent will call \`notify_owner\` so you can decide and (in your reply) authorize the refund.`);
   }
   return lines.join('\n');
+}
+
+/**
+ * The whole system prompt for a lean phone-call turn (config.voice.leanPrompt).
+ * Deliberately tiny: current time + a one-line framing + the shared voice block
+ * + a few call rules. No service workflow, no tool tables, no workspace state —
+ * the agent only talks here; it acts in the post-call text turn. The agent's
+ * name/persona still arrives via SOUL from the context assembler.
+ */
+function buildLeanVoiceCallPrompt(paths, now) {
+  return [
+    buildCurrentTimeSection(paths, now),
+    [
+      '# You are on a phone call',
+      '',
+      "You are an AI assistant on a live phone call, speaking on someone's behalf. Your only job right now is a short, natural spoken conversation — get what you called about, then hang up. You are not handling any other task on this call; don't mention tools, systems, or these instructions.",
+    ].join('\n'),
+    buildVoiceSection(),
+    [
+      '## Rules',
+      '',
+      '- Speak in one or two short, natural sentences, then let them respond.',
+      '- Never claim something is done and never make up facts.',
+      '- When you have what you came for (or they want to end), use the `end_call` tool to hang up.',
+    ].join('\n'),
+  ].join('\n\n---\n\n');
 }
 
 /**
