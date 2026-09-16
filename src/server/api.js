@@ -1208,7 +1208,16 @@ export function apiRouter(workspace) {
   router.put('/config', (req, res) => {
     const configPath = path.join(workspace, '.aaas', 'config.json');
     const current = readJson(configPath) || {};
-    const updated = { ...current, ...req.body };
+    // One-level deep merge: when both sides of a top-level key are plain objects
+    // (e.g. `voice`), merge their fields rather than replacing wholesale. This
+    // preserves config keys the dashboard has no UI for (e.g. voice.leanPrompt,
+    // voice.langStick) that would otherwise be dropped every time the dashboard
+    // saves a full `voice` object. Scalars and arrays still replace as before.
+    const isPlainObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+    const updated = { ...current };
+    for (const [k, v] of Object.entries(req.body || {})) {
+      updated[k] = (isPlainObj(current[k]) && isPlainObj(v)) ? { ...current[k], ...v } : v;
+    }
     writeJson(configPath, updated);
     // Live-read fields (voice, greeting, …) apply to the running engine now.
     applyLiveConfig(workspace, req.body);
