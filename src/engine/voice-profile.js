@@ -27,8 +27,13 @@ export function isLeanVoiceCall({ channel, config } = {}) {
 }
 
 /**
- * The only tools a lean call needs — just how to hang up. The context assembler
- * filters the turn's tool set down to this list so a small model can't wander
- * into a tool it shouldn't touch mid-call.
+ * The tools a lean call may use. `end_call` hangs up. `forward_call` hands the
+ * live caller to a person (warm transfer — see CALL_FORWARDING_PLAN.md Part II);
+ * `connect_now` is used only on the short "brief" leg the agent places to the
+ * owner during a transfer, to signal "bridge the caller in now." All three are
+ * inert unless the relevant call state exists, so adding them here never changes
+ * a normal call — the model simply has them available when relevant. The context
+ * assembler filters the turn's tool set down to this list so a small model can't
+ * wander into a tool it shouldn't touch mid-call.
  */
-export const LEAN_VOICE_CALL_TOOLS = ['end_call'];
+export const LEAN_VOICE_CALL_TOOLS = ['end_call', 'forward_call', 'connect_now'];

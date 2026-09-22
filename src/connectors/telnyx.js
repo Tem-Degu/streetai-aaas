@@ -247,8 +247,18 @@ export async function runVoiceTurn(engine, { userId, content, language, isGreeti
     // hang up after it finishes speaking this reply. Telnyx passes no onControl,
     // so its behavior is unchanged.
     if (onControl) {
-      const used = (result.toolsUsed || []).some((t) => (typeof t === 'string' ? t : t?.name) === 'end_call');
-      if (used) onControl({ hangup: true });
+      const tools = result.toolsUsed || [];
+      const nameOf = (t) => (typeof t === 'string' ? t : t?.name);
+      if (tools.some((t) => nameOf(t) === 'end_call')) onControl({ hangup: true });
+      // Warm transfer (see CALL_FORWARDING_PLAN.md Part II): forward_call carries
+      // the destination; connect_now (on a brief leg) carries none. Both fire only
+      // after this reply's audio finishes, mirroring end_call's timing.
+      const fwd = tools.find((t) => nameOf(t) === 'forward_call');
+      if (fwd) onControl({ forward: {
+        to: (typeof fwd === 'object' && fwd.arguments?.to) || null,
+        brief: (typeof fwd === 'object' && fwd.arguments?.brief) || null,
+      } });
+      if (tools.some((t) => nameOf(t) === 'connect_now')) onControl({ connect: true });
     }
     let text = result.response || '';
     const workspace = engine?.workspace;

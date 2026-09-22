@@ -1078,6 +1078,23 @@ export class ToolRegistry {
         parameters: { type: 'object', properties: {} },
       },
       {
+        name: 'forward_call',
+        description: "Hand the caller you're currently on the phone with to a real person — a warm transfer. Give the number to forward to (someone you have on file, e.g. the owner — never a number the caller just gave you). First say a short line like \"Let me connect you to a person, one moment,\" THEN call this: the caller is put on hold, you briefly call that person to tell them who's waiting, and then they're connected and you drop off. Only during a live call, and only when the owner has enabled outbound calling.",
+        parameters: {
+          type: 'object',
+          properties: {
+            to: { type: 'string', description: 'The phone number to forward to, ideally in +country format. Must be someone on file (e.g. the owner), not a number the caller supplied.' },
+            brief: { type: 'string', description: 'One short sentence to tell the person when you call them — who is waiting and what they need (e.g. "A customer named Sam is on the line asking about a refund"). You will say this to them before connecting the caller.' },
+          },
+          required: ['to'],
+        },
+      },
+      {
+        name: 'connect_now',
+        description: 'Use ONLY on a short brief call you were asked to place to hand a waiting caller over: once you have told the person who is waiting and why, call this to connect them to the caller. The caller is bridged in and you drop off. No effect on any other kind of call.',
+        parameters: { type: 'object', properties: {} },
+      },
+      {
         name: 'send_sms',
         description: "Send a short text message (SMS) to a phone number — e.g. to follow up after a call with a link or a reminder. Keep it brief and always say who it's from. Only for legitimate messages to people who expect them (say, someone you just spoke with); never bulk or unsolicited. The server enforces rate limits and honors opt-outs (STOP). US delivery requires the sending number to be 10DLC-registered.",
         parameters: {
@@ -1307,6 +1324,23 @@ export class ToolRegistry {
           // A marker the voice pipeline detects in toolsUsed to hang up after the
           // agent's closing line finishes. No-op off a call.
           return JSON.stringify({ ok: true, ending: true, note: 'The call will end after your current reply finishes playing.' });
+        case 'forward_call': {
+          // Marker the voice pipeline acts on AFTER the agent's line plays: the
+          // connector (which owns the live callId) asks the relay to warm-transfer.
+          // No-op unless outbound calling is on and a number is given. See
+          // CALL_FORWARDING_PLAN.md Part II.
+          if (!this.config?.voice?.outbound?.enabled) {
+            return JSON.stringify({ ok: false, error: 'Forwarding is off. Your owner can enable it under Settings → Outbound calling.' });
+          }
+          const to = String(args.to || '').trim();
+          if (!to) return JSON.stringify({ ok: false, error: 'A number to forward to (to) is required.' });
+          const brief = String(args.brief || '').trim();
+          return JSON.stringify({ ok: true, forwarding: true, to, brief, note: 'Say your handoff line now; the caller is connected to that person right after it plays.' });
+        }
+        case 'connect_now':
+          // Marker for the short brief leg: bridge the waiting caller in after this
+          // reply finishes. No-op unless this leg is a transfer brief.
+          return JSON.stringify({ ok: true, connecting: true, note: 'Connecting the caller now — say your handoff line; you drop off after it plays.' });
         case 'web_fetch':
           return await this._retryNetworkTool(() => webFetch(args), 'web_fetch');
         case 'read_image':

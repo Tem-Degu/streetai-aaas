@@ -28,7 +28,7 @@ export class VoicePipeline {
    * @param {()=>void} o.sendClear            Tell the transport to flush its playout buffer.
    * @param {string} o.userId      Stable per-call id (caller number / web session).
    */
-  constructor({ engine, sendMedia, sendClear, userId, greetLang, direction, purpose, agentName, onHangup, callerNumber }) {
+  constructor({ engine, sendMedia, sendClear, userId, greetLang, direction, purpose, agentName, onHangup, onForward, onConnect, callerNumber, resumeNote }) {
     this.engine = engine;
     this.sendMedia = sendMedia;
     this.sendClear = sendClear;
@@ -45,6 +45,18 @@ export class VoicePipeline {
     this.agentName = agentName || (engine && engine.agentName) || null;
     this.onHangup = typeof onHangup === 'function' ? onHangup : null;
     this._pendingHangup = false;
+    // Warm-transfer callbacks (optional; see CALL_FORWARDING_PLAN.md Part II).
+    // onForward(to): hand this caller to a person. onConnect(): bridge a waiting
+    // caller in (used on the short brief leg). Both fire after the current reply's
+    // audio finishes — same timing as onHangup. Unset on connectors that don't
+    // wire them (e.g. on-prem voicecall.js), so those paths are unaffected.
+    this.onForward = typeof onForward === 'function' ? onForward : null;
+    this.onConnect = typeof onConnect === 'function' ? onConnect : null;
+    this._pendingForward = null;  // { to } when set
+    this._pendingConnect = false;
+    // When set, the opening turn speaks this instruction instead of a greeting —
+    // used to apologize when a caller is handed back after a failed transfer.
+    this.resumeNote = resumeNote || null;
     this.voice = (engine && engine.config && engine.config.voice) || {};
 
     // Outbound-call opening: on a call we placed, a real caller waits for the
@@ -272,11 +284,24 @@ export class VoicePipeline {
         sttLang: isGreeting ? undefined : (this.currentLang || undefined),
         // Inbound caller's number, so the agent's identity tools can use it.
         callerNumber: this.callerNumber || undefined,
-        // Outbound: replace the generic greeting with a purposeful AI intro.
-        opening: isGreeting && this.direction === 'outbound' ? this._outboundOpening() : undefined,
-        // Let the agent end an outbound call via the end_call tool. Inbound omits
-        // this, so nothing changes for calls the agent didn't place.
-        onControl: this.direction === 'outbound' ? (c) => { if (c && c.hangup) this._pendingHangup = true; } : undefined,
+        // Opening line: outbound → purposeful AI intro; a resume (caller handed
+        // back after a failed transfer) → the apology instruction; else the
+        // normal greeting. resumeNote is one-shot so later turns are unaffected.
+        opening: isGreeting
+          ? (this.direction === 'outbound' ? this._outboundOpening()
+             : (this.resumeNote || undefined))
+          : undefined,
+        // Control signals from tool calls. `hangup` (end_call) stays outbound-only,
+        // so calls the agent didn't place are unchanged. `forward`/`connect` (warm
+        // transfer) are honored whenever their callback is wired — the pipeline
+        // acts only if onForward/onConnect were provided, so this is inert
+        // otherwise. See CALL_FORWARDING_PLAN.md Part II.
+        onControl: (c) => {
+          if (!c) return;
+          if (c.hangup && this.direction === 'outbound') this._pendingHangup = true;
+          if (c.forward && this.onForward) this._pendingForward = c.forward; // { to }
+          if (c.connect && this.onConnect) this._pendingConnect = true;
+        },
       });
     } catch (e) {
       reply = 'Sorry, could you say that again?';
@@ -332,6 +357,21 @@ export class VoicePipeline {
       this._pendingHangup = false;
       const waitMs = Math.max(0, this.playEndAt - Date.now()) + 400;
       setTimeout(() => { try { this.onHangup(); } catch { /* ignore */ } }, waitMs);
+    }
+
+    // Warm transfer (see CALL_FORWARDING_PLAN.md Part II): same "let the line
+    // finish speaking, then act" timing as hangup. forward = hand this caller to a
+    // person; connect = (on a brief leg) bridge the waiting caller in.
+    if (this._pendingForward && myTurn === this.turnId && this.onForward) {
+      const { to, brief } = this._pendingForward;
+      this._pendingForward = null;
+      const waitMs = Math.max(0, this.playEndAt - Date.now()) + 400;
+      setTimeout(() => { try { this.onForward(to, brief); } catch { /* ignore */ } }, waitMs);
+    }
+    if (this._pendingConnect && myTurn === this.turnId && this.onConnect) {
+      this._pendingConnect = false;
+      const waitMs = Math.max(0, this.playEndAt - Date.now()) + 400;
+      setTimeout(() => { try { this.onConnect(); } catch { /* ignore */ } }, waitMs);
     }
   }
 

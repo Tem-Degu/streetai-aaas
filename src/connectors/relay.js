@@ -284,7 +284,19 @@ Bad (will NOT work):
       // caller-identity tools. Empty/absent when the caller-ID is withheld.
       callerNumber: data.callerNumber || null,
       agentName: this.engine?.agentName || null,
+      // Return-to-AI after a failed transfer: the caller is back on the line and
+      // the person could not be reached. Open with an apology + offer to help,
+      // rather than a fresh greeting (their session/history is still here).
+      resumeNote: data.resume
+        ? "You just tried to connect this caller to the person they needed, but that person didn't answer, so the caller is back with you. Briefly apologize that you couldn't reach them, then offer to help — take a message, answer what you can, or try again later. Do not greet them as if it's a new call."
+        : null,
       onHangup: () => { send('voice:end', {}); this._handleVoiceStop({ callId }); },
+      // Warm transfer (CALL_FORWARDING_PLAN.md Part II). These fire only after the
+      // agent's spoken line finishes (pipeline timing). The relay server owns the
+      // ARI choreography; we just hand it this call's id + the target. The agent
+      // leg is NOT torn down here — the relay drops it once the caller is bridged.
+      onForward: (to, brief) => { this._postRelay('/relay/forward', { callId, to, brief }); },
+      onConnect: () => { this._postRelay('/relay/connect', { callId }); },
     });
 
     // Inject the background into the session BEFORE the greeting so every turn has
@@ -336,6 +348,23 @@ Bad (will NOT work):
       this.voiceCalls.delete(data.callId);
       if (onEnd && userId) this._firePostCall(userId, onEnd);
     }
+  }
+
+  /**
+   * Fire-and-forget POST to the relay server with this agent's credentials.
+   * Used by warm transfer (onForward/onConnect) to hand the ARI choreography to
+   * the server. Never throws; failures leave the caller on the line with the AI.
+   */
+  _postRelay(routePath, body) {
+    try {
+      const base = relayHttpBase(this.relayUrl);
+      fetch(`${base}${routePath}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: this.slug, relayKey: this.relayKey, ...body }),
+      }).then((r) => { if (!r.ok) console.warn(`[relay] ${routePath} -> HTTP ${r.status}`); })
+        .catch((e) => console.warn(`[relay] ${routePath} failed:`, e.message));
+    } catch (e) { console.warn(`[relay] ${routePath} error:`, e.message); }
   }
 
   /**
