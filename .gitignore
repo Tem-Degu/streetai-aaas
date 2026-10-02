@@ -84,3 +84,9 @@ STREETAI-ACCOUNTS-BILLING-PLAN.md
 MESSAGE_ASSISTANT.md
 issues.txt
 seeding/
+
+# Pinewraps WhatsApp agent demo (client data)
+pinewraps_demo/
+
+# Sliders voice-ordering demo (client data)
+sliders_demo/
