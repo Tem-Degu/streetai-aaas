@@ -910,6 +910,8 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
   const [segmentation, setSegmentation] = useState('semantic'); // Azure turn detection (live Voice Call)
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [showRestart, setShowRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   // Web Call (spoken replies via TTS).
   const [webcallEnabled, setWebcallEnabled] = useState(false);
@@ -954,6 +956,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
     setTtsPitch(t.pitch || '');
     setTtsPerLang(!!t.perLanguage);
     setTtsStyle(t.style || 'customerservice');
+    setShowRestart(false);
   }, [config]);
 
   const changeTtsProvider = (val) => {
@@ -996,7 +999,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
   };
 
   const save = async () => {
-    setSaving(true); setMsg(''); setKeyMsg('');
+    setSaving(true); setMsg(''); setKeyMsg(''); setShowRestart(false);
     try {
       // If the user typed a key but didn't click "Save key", persist it as
       // part of this Save so a single click does everything.
@@ -1030,10 +1033,29 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
       setMsg('Saved!');
       onSaved?.();
       setTimeout(() => setMsg(''), 2500);
+      // Voice/TTS config is read when the engine starts, so it applies after a
+      // connector restart — prompt for it, but only if something's running.
+      try {
+        const status = await api.get('/api/deploy/status');
+        if (status?.daemonRunning || status?.sessionRunning) setShowRestart(true);
+      } catch { /* non-critical */ }
     } catch (e) {
       setMsg('Error: ' + e.message);
     }
     setSaving(false);
+  };
+
+  const restartConnectors = async () => {
+    setRestarting(true);
+    try {
+      await api.post('/api/deploy/restart');
+      setShowRestart(false);
+      setMsg('Connectors restarted — changes applied.');
+      setTimeout(() => setMsg(''), 2500);
+    } catch (err) {
+      setMsg('Error restarting: ' + err.message);
+    }
+    setRestarting(false);
   };
 
   return (
@@ -1166,7 +1188,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
                     <input className="form-input" value={ttsPitch} onChange={e => setTtsPitch(e.target.value)} placeholder="e.g. +3%" />
                   </div>
                 </div>
-                <p className="form-hint">Tune how the voice sounds. Use a signed percent like <code>+6%</code> / <code>-5%</code>. A slightly higher speed and pitch usually sounds livelier and less robotic; leave blank for a mild default. (Listen, adjust, save — applies to new calls right away.)</p>
+                <p className="form-hint">Tune how the voice sounds. Use a signed percent like <code>+6%</code> / <code>-5%</code>. A slightly higher speed and pitch usually sounds livelier and less robotic; leave blank for a mild default. (Adjust and save, then restart connectors to apply.)</p>
                 {STYLE_CAPABLE_VOICES.includes(ttsVoice) && (
                   <div className="form-group">
                     <label>Tone</label>
@@ -1216,6 +1238,14 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
           <p className="form-hint" style={{ marginTop: 8, color: msg.startsWith('Error') ? 'var(--text-error)' : 'var(--green)' }}>
             {msg}
           </p>
+        )}
+        {showRestart && (
+          <div className="deploy-banner" style={{ marginTop: 12, marginBottom: 0, justifyContent: 'space-between' }}>
+            <span>Your running connectors are still using the previous voice. Restart them to apply the change.</span>
+            <button className="btn btn-sm" onClick={restartConnectors} disabled={restarting}>
+              {restarting ? 'Restarting…' : 'Restart connectors'}
+            </button>
+          </div>
         )}
       </div>
     </div>

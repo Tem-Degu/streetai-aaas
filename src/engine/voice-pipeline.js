@@ -315,13 +315,20 @@ export class VoicePipeline {
     this._echoFloor = 0.02;         // recalibrate the echo estimate for this reply
     this._bargeLoudSince = 0;
     const tts = this.voice.tts || {};
-    // Per-language voice: when enabled, speak this turn with a same-gender voice
-    // for the committed language on the same provider; fall back to the main
-    // voice when the provider/voice/language isn't in the table.
+    // Per-language voice: when enabled, speak this turn in a voice for the
+    // committed language. An explicit per-language pin (tts.voices[lang], e.g.
+    // { ar: "ar-BH-LailaNeural" }) wins; otherwise fall back to a same-gender
+    // voice from the table, then to the main voice when nothing matches.
+    // Purely additive: with no `tts.voices` map, behaviour is exactly as before.
     let ttsVoice = tts.voice;
     if (tts.perLanguage && this.currentLang) {
-      const matched = resolveVoiceForLang(tts.provider || 'azure_speech', tts.voice, this.currentLang);
-      if (matched) ttsVoice = matched;
+      const pinned = tts.voices && tts.voices[this.currentLang];
+      if (pinned) {
+        ttsVoice = pinned;
+      } else {
+        const matched = resolveVoiceForLang(tts.provider || 'azure_speech', tts.voice, this.currentLang);
+        if (matched) ttsVoice = matched;
+      }
     }
     try {
       await synthesizeStream({
