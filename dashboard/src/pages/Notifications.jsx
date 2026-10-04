@@ -23,7 +23,38 @@ function mergeConfig(loaded) {
       smtp: { ...EMPTY.email.smtp, ...(loaded?.email?.smtp || {}) },
     },
     transaction_alerts: { ...EMPTY.transaction_alerts, ...(loaded?.transaction_alerts || {}) },
+    // Preserved as-is across per-channel saves. `routes` is edited by the
+    // Routes section below; `route_field` (which transaction column supplies
+    // the route) is a workspace-level setting with no UI — kept so a save here
+    // never drops it.
+    routes: (loaded && typeof loaded.routes === 'object' && loaded.routes) ? loaded.routes : {},
+    ...(loaded?.route_field ? { route_field: loaded.route_field } : {}),
   };
+}
+
+// The Routes map {name: {telegram,whatsapp,email}} is edited as an ordered
+// array of rows; convert both ways. Channel values are kept as plain strings
+// (Telegram may be a comma-separated list — the backend splits it).
+function routesObjToArr(obj) {
+  return Object.entries(obj || {}).map(([name, v]) => ({
+    name,
+    telegram: Array.isArray(v?.telegram) ? v.telegram.join(', ') : (v?.telegram || ''),
+    whatsapp: Array.isArray(v?.whatsapp) ? v.whatsapp.join(', ') : (v?.whatsapp || ''),
+    email: Array.isArray(v?.email) ? v.email.join(', ') : (v?.email || ''),
+  }));
+}
+function routesArrToObj(arr) {
+  const o = {};
+  for (const r of arr || []) {
+    const name = (r.name || '').trim();
+    if (!name) continue;
+    const entry = {};
+    if ((r.telegram || '').trim()) entry.telegram = r.telegram.trim();
+    if ((r.whatsapp || '').trim()) entry.whatsapp = r.whatsapp.trim();
+    if ((r.email || '').trim()) entry.email = r.email.trim();
+    o[name] = entry;
+  }
+  return o;
 }
 
 // What counts as "this channel has the required fields to be useful."
@@ -83,6 +114,13 @@ export default function Notifications() {
   // Manual expand/collapse, fully decoupled from the enabled toggle.
   // Defaults: configured channels start collapsed, unconfigured start expanded.
   const [expanded, setExpanded] = useState({});
+  // Routes: edited as an ordered array; compared to the saved snapshot for dirty.
+  const [routes, setRoutes] = useState([]);
+  const [routesSaved, setRoutesSaved] = useState([]);
+  const [savingRoutes, setSavingRoutes] = useState(false);
+  const [removeRouteConfirm, setRemoveRouteConfirm] = useState(null); // index pending removal
+  const [testingRoute, setTestingRoute] = useState(null);     // route name currently testing
+  const [routeTestResult, setRouteTestResult] = useState(null); // { name, ok, msg }
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +132,9 @@ export default function Notifications() {
       const merged = mergeConfig(cfg);
       setForm(merged);
       setSaved(merged);
+      const routeRows = routesObjToArr(merged.routes);
+      setRoutes(routeRows);
+      setRoutesSaved(routeRows);
       setConnections(Array.isArray(conns) ? conns : []);
       // First-load expansion: anything already saved+complete starts collapsed,
       // anything not yet set up starts open so the user has somewhere to type.
@@ -208,6 +249,65 @@ export default function Notifications() {
       setTestResult({ channel, ok: false, msg: err.message });
     }
     setTesting(null);
+  }
+
+  // ── Routes editing ──
+  const routesDirty = JSON.stringify(routes) !== JSON.stringify(routesSaved);
+  function addRoute() {
+    setRoutes(rs => [...rs, { name: '', telegram: '', whatsapp: '', email: '' }]);
+  }
+  function setRouteField(idx, key, val) {
+    setRoutes(rs => rs.map((r, i) => (i === idx ? { ...r, [key]: val } : r)));
+  }
+  function removeRoute(idx) {
+    setRoutes(rs => rs.filter((_, i) => i !== idx));
+  }
+  async function saveRoutes() {
+    // Guard: names must be non-empty and unique (they're the routing keys).
+    const names = routes.map(r => (r.name || '').trim()).filter(Boolean);
+    if (new Set(names).size !== names.length) {
+      alert('Route names must be unique.');
+      return false;
+    }
+    setSavingRoutes(true);
+    try {
+      const payload = { ...saved, routes: routesArrToObj(routes) };
+      await put('/api/notifications', payload);
+      setSaved(payload);
+      setRoutesSaved(routes);
+      setSavingRoutes(false);
+      return true;
+    } catch (err) {
+      alert('Failed to save routes: ' + err.message);
+      setSavingRoutes(false);
+      return false;
+    }
+  }
+
+  // Send a test to every destination the route defines. Save pending edits
+  // first so the backend tests exactly what's on screen.
+  async function handleTestRoute(i) {
+    const name = (routes[i]?.name || '').trim();
+    if (!name) { alert('Give the route a name first.'); return; }
+    if (routesDirty) { const ok = await saveRoutes(); if (!ok) return; }
+    setTestingRoute(name);
+    setRouteTestResult(null);
+    try {
+      const result = await post('/api/notifications/test', { route: name });
+      let msg;
+      if (result.ok) {
+        const n = result.sent?.length || 0;
+        msg = `Sent to ${n} destination${n === 1 ? '' : 's'}.`;
+      } else {
+        const okCount = result.sent?.length || 0;
+        const first = result.failed?.[0]?.error || result.error || 'Failed.';
+        msg = `${okCount ? `${okCount} sent · ` : ''}${result.failed?.length || 0} failed: ${first}`;
+      }
+      setRouteTestResult({ name, ok: !!result.ok, msg });
+    } catch (err) {
+      setRouteTestResult({ name, ok: false, msg: err.message });
+    }
+    setTestingRoute(null);
   }
 
   if (loading) return <div className="loading">Loading notifications</div>;
@@ -364,10 +464,147 @@ export default function Notifications() {
           </div>
         </ChannelCard>
 
+        {/* ── Routes (optional) ── */}
+        <div className="card" style={{ padding: '14px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
+                Routes <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>(optional)</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.6 }}>
+                Named destinations your agent can send to instead of the defaults above — for example one per branch or team. Fill only the channels you want for each route. Telegram and Email accept several entries separated by commas. A notification with no route (or an unknown one) uses the defaults.
+              </div>
+            </div>
+            <button
+              onClick={addRoute}
+              style={{
+                padding: '6px 12px', borderRadius: 6, border: '1px solid var(--accent)',
+                background: 'rgba(33,96,100,0.10)', color: 'var(--accent)',
+                fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              + Add route
+            </button>
+          </div>
+
+          {routes.length > 0 && (
+            <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {routes.map((r, i) => (
+                <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                    <div style={{ flex: 1 }}>
+                      <Field
+                        label="Route name"
+                        value={r.name}
+                        onChange={(v) => setRouteField(i, 'name', v)}
+                        placeholder="e.g. seef"
+                      />
+                    </div>
+                    <button
+                      onClick={() => handleTestRoute(i)}
+                      disabled={testingRoute !== null || !(r.name || '').trim()}
+                      title={!(r.name || '').trim() ? 'Name the route first' : 'Send a test to this route'}
+                      style={{
+                        padding: '6px 12px', borderRadius: 6,
+                        border: '1px solid var(--accent)',
+                        background: 'rgba(33,96,100,0.10)', color: 'var(--accent)',
+                        fontWeight: 600, fontSize: 13, height: 36,
+                        cursor: (testingRoute !== null || !(r.name || '').trim()) ? 'not-allowed' : 'pointer',
+                        opacity: (testingRoute !== null || !(r.name || '').trim()) ? 0.5 : 1,
+                        display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <span style={{ fontSize: 14, lineHeight: 1 }}>✈</span>
+                      {testingRoute === (r.name || '').trim() ? 'Sending…' : 'Send test'}
+                    </button>
+                    <button
+                      onClick={() => setRemoveRouteConfirm(i)}
+                      style={{
+                        padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)',
+                        background: 'transparent', color: 'var(--text-secondary)',
+                        fontWeight: 600, fontSize: 13, cursor: 'pointer', height: 36,
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="form-grid" style={{ marginTop: 8 }}>
+                    <Field
+                      label="TELEGRAM CHAT ID OR USERNAME"
+                      value={r.telegram}
+                      onChange={(v) => setRouteField(i, 'telegram', v)}
+                      placeholder="-100123… or @name"
+                    />
+                    <Field
+                      label="WhatsApp phone"
+                      value={r.whatsapp}
+                      onChange={(v) => setRouteField(i, 'whatsapp', v)}
+                      placeholder="+9731234567"
+                    />
+                  </div>
+                  <div className="form-grid" style={{ marginTop: 8 }}>
+                    <Field
+                      label="Email"
+                      value={r.email}
+                      onChange={(v) => setRouteField(i, 'email', v)}
+                      placeholder="kitchen@example.com"
+                    />
+                  </div>
+                  {routeTestResult && routeTestResult.name === (r.name || '').trim() && (
+                    <div style={{
+                      marginTop: 10, padding: '8px 12px', borderRadius: 6,
+                      background: routeTestResult.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                      border: `1px solid ${routeTestResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                      fontSize: 12, color: routeTestResult.ok ? 'var(--green)' : 'var(--red)',
+                      wordBreak: 'break-word',
+                    }}>
+                      {routeTestResult.ok ? '✓ ' : '✗ '}{routeTestResult.msg}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {routesDirty && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
+              <button
+                onClick={saveRoutes}
+                disabled={savingRoutes}
+                style={{
+                  padding: '6px 14px', borderRadius: 6, border: '1px solid var(--border)',
+                  background: 'var(--accent)', color: '#fff', fontWeight: 600, fontSize: 13,
+                  cursor: savingRoutes ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {savingRoutes ? 'Saving…' : 'Save routes'}
+              </button>
+              <span style={{ fontSize: 12, color: '#b45309' }}>You have unsaved route changes.</span>
+            </div>
+          )}
+        </div>
+
         <div style={{ marginTop: 20, padding: '12px 14px', background: 'var(--bg-secondary)', borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
           <strong style={{ color: 'var(--text)' }}>How the agent uses these.</strong> The agent reaches out on its own when something needs your attention: a customer disputes a delivery, an external API is failing repeatedly, or a request looks unusual. It also sends an alert if it genuinely doesn't know how to handle a situation. Routine successes don't trigger alerts. You can use <code style={{ background: 'var(--bg-card)', padding: '0 4px', borderRadius: 3 }}>{'{{ENV_VAR}}'}</code> in any field above to keep secrets out of the config file.
         </div>
       </div>
+
+      {removeRouteConfirm !== null && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setRemoveRouteConfirm(null)}>
+          <div className="card" style={{ maxWidth: 420, width: '90%' }} onClick={(e) => e.stopPropagation()}>
+            <div className="card-header">Remove route?</div>
+            <div className="card-body">
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text)' }}>
+                Remove the route <strong>{(routes[removeRouteConfirm]?.name || '').trim() || 'this route'}</strong>? Notifications tagged with it will fall back to the default channels. Save to apply.
+              </p>
+              <div className="form-actions" style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-danger" onClick={() => { removeRoute(removeRouteConfirm); setRemoveRouteConfirm(null); }}>Remove</button>
+                <button className="btn" onClick={() => setRemoveRouteConfirm(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

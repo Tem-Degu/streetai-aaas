@@ -836,13 +836,19 @@ export function apiRouter(workspace) {
   });
 
   router.post('/notifications/test', async (req, res) => {
-    const { channel } = req.body || {};
-    if (!['telegram', 'whatsapp', 'email'].includes(channel)) {
-      return res.status(400).json({ error: 'channel must be one of: telegram, whatsapp, email' });
-    }
+    const { channel, route } = req.body || {};
     try {
-      const { testChannel } = await import('../notifications/index.js');
-      const result = await testChannel(workspace, paths, channel);
+      const mod = await import('../notifications/index.js');
+      // Route test: send to every destination the named route defines.
+      if (route) {
+        const result = await mod.testRoute(workspace, paths, route);
+        return res.json(result); // { ok, sent, failed }
+      }
+      // Default per-channel test.
+      if (!['telegram', 'whatsapp', 'email'].includes(channel)) {
+        return res.status(400).json({ error: 'channel must be one of: telegram, whatsapp, email' });
+      }
+      const result = await mod.testChannel(workspace, paths, channel);
       res.json({ ok: true, ...result });
     } catch (err) {
       res.status(400).json({ ok: false, error: err.message });

@@ -74,6 +74,60 @@ function buildText({ title, message, severity }) {
   return `${sev}${title || message || ''}`.trim();
 }
 
+// ─── Notification routes ────────────────────────────────────────
+//
+// A "route" is an optional, named bundle of destinations that OVERRIDES the
+// default channels for a single notification — e.g. one route per branch or
+// team. Config shape (`.aaas/notifications.json`):
+//
+//   routes: {
+//     seef:    { telegram: "-100aaa" },
+//     juffair: { telegram: ["-100bbb", "-100ccc"], email: "juffair@x" }
+//   }
+//
+// Each channel value may be a single id/address, a comma-separated string, or
+// an array (fan-out). A route is generic: any agent can define routes and steer
+// a notification to one. No route (or an unknown name) → the default channels,
+// exactly as before. This is fully additive — absent `routes` changes nothing.
+
+// Split a route channel value (string, comma-list, or array) into a clean list.
+export function asList(v) {
+  if (v == null) return [];
+  if (Array.isArray(v)) return v.map(x => String(x).trim()).filter(Boolean);
+  return String(v).split(',').map(s => s.trim()).filter(Boolean);
+}
+
+// Resolve a route NAME against config.routes into explicit per-channel targets,
+// or null when no route applies (→ caller falls back to default channels).
+export function resolveRoute(config, routeName) {
+  const name = routeName == null ? '' : String(routeName).trim();
+  if (!name) return null;
+  const entry = config?.routes?.[name];
+  if (!entry || typeof entry !== 'object') return null;
+  return {
+    name,
+    telegram: asList(entry.telegram),
+    whatsapp: asList(entry.whatsapp),
+    email: asList(entry.email),
+  };
+}
+
+// Determine the route name for a transaction: an explicit `notify_route` the
+// agent set wins; otherwise, when the workspace names a `route_field` (e.g.
+// "branch"), use that column's value off the transaction row. This lets an
+// agent derive routing deterministically from data it already records, with no
+// extra value to pass or remember.
+export function routeNameForTxn(config, txn) {
+  if (txn && txn.notify_route != null && String(txn.notify_route).trim() !== '') {
+    return String(txn.notify_route);
+  }
+  const field = config?.route_field;
+  if (field && txn && txn[field] != null && String(txn[field]).trim() !== '') {
+    return String(txn[field]);
+  }
+  return null;
+}
+
 // ─── Senders ───────────────────────────────────────────────────
 
 /**
@@ -315,10 +369,21 @@ export async function notifyOwner(workspace, paths, payload, context) {
   const text = buildText(payload);
   if (!text) return { sent: [], failed: [{ channel: 'all', error: 'Empty notification.' }] };
 
+  // Optional route override: the agent may direct this alert to a named route
+  // (payload.notify_route) or it may ride on the triggering context. No route →
+  // the default channels, unchanged.
+  const route = resolveRoute(config, payload?.notify_route || context?.notify_route);
+
   const tasks = [];
-  if (config.telegram?.enabled) tasks.push(sendTelegram(workspace, config.telegram, payload));
-  if (config.whatsapp?.enabled) tasks.push(sendWhatsapp(workspace, config.whatsapp, payload));
-  if (config.email?.enabled) tasks.push(sendEmail(config.email, payload));
+  if (route) {
+    if (config.telegram?.enabled) for (const chat_id of route.telegram) tasks.push(sendTelegram(workspace, { chat_id }, payload));
+    if (config.whatsapp?.enabled) for (const phone of route.whatsapp) tasks.push(sendWhatsapp(workspace, { phone }, payload));
+    if (config.email?.enabled) for (const to of route.email) tasks.push(sendEmail({ ...config.email, to }, payload));
+  } else {
+    if (config.telegram?.enabled) tasks.push(sendTelegram(workspace, config.telegram, payload));
+    if (config.whatsapp?.enabled) tasks.push(sendWhatsapp(workspace, config.whatsapp, payload));
+    if (config.email?.enabled) tasks.push(sendEmail(config.email, payload));
+  }
 
   if (tasks.length === 0) {
     return { sent: [], failed: [{ channel: 'none', error: 'No notification channels are enabled. Configure them in the dashboard Notifications tab.' }] };
@@ -372,6 +437,38 @@ export async function testChannel(workspace, paths, channel, payload) {
   if (channel === 'whatsapp') return await sendWhatsapp(workspace, ownerCfg, msg);
   if (channel === 'email') return await sendEmail(ownerCfg, msg);
   throw new Error(`Unknown channel "${channel}".`);
+}
+
+/**
+ * Send a test message to every target defined on a named route, across all the
+ * channels that route specifies. Lets the operator verify each route's chat IDs
+ * / numbers / emails at setup — routing failures are otherwise silent. Sends
+ * regardless of a channel's global on/off flag (the point is to prove the
+ * destination is reachable), but still needs the channel's connection/SMTP.
+ * Returns { ok, sent, failed } so the caller can report which targets worked.
+ */
+export async function testRoute(workspace, paths, routeName, payload) {
+  const config = loadNotificationsConfig(paths);
+  const route = resolveRoute(config, routeName);
+  if (!route) throw new Error(`No route named "${routeName}". Save the route first, then test it.`);
+  const msg = payload || {
+    title: `Test · route "${route.name}"`,
+    message: `If you received this, the "${route.name}" route is wired correctly.`,
+  };
+
+  const tasks = [];
+  for (const chat_id of route.telegram) tasks.push(sendTelegram(workspace, { chat_id }, msg).then(r => ({ ...r, target: chat_id })));
+  for (const phone of route.whatsapp) tasks.push(sendWhatsapp(workspace, { phone }, msg).then(r => ({ ...r, target: phone })));
+  for (const to of route.email) tasks.push(sendEmail({ ...config.email, to }, msg).then(r => ({ ...r, target: to })));
+  if (tasks.length === 0) throw new Error(`Route "${route.name}" has no destinations. Add a Telegram ID, WhatsApp number, or email.`);
+
+  const results = await Promise.allSettled(tasks);
+  const sent = [], failed = [];
+  for (const r of results) {
+    if (r.status === 'fulfilled') sent.push(r.value);
+    else failed.push({ channel: r.reason?.channel || 'unknown', error: r.reason?.message || String(r.reason) });
+  }
+  return { ok: failed.length === 0, sent, failed };
 }
 
 // ─── Transaction alerts ─────────────────────────────────────────
@@ -534,44 +631,63 @@ export async function notifyTransaction(workspace, paths, txn, event) {
   const TERMINAL = new Set(['completed', 'cancelled']);
   const link = TERMINAL.has(txn.status) ? null : buildCustomerLink(workspace, txn);
 
-  if (config.telegram?.enabled && config.telegram?.chat_id) {
+  // Route override: when the transaction names a route (explicit `notify_route`
+  // or the configured `route_field` column), send to that route's per-channel
+  // targets instead of the defaults. No route → the default single destination
+  // per channel, exactly as before.
+  const route = resolveRoute(config, routeNameForTxn(config, txn));
+  const tgTargets = route ? route.telegram : (config.telegram?.chat_id ? [config.telegram.chat_id] : []);
+  const waTargets = route ? route.whatsapp : (config.whatsapp?.phone ? [config.whatsapp.phone] : []);
+  const emTargets = route ? route.email : (config.email?.to ? [config.email.to] : []);
+
+  if (config.telegram?.enabled && tgTargets.length) {
     try {
-      // Replace this transaction's previous card so only one current card
-      // exists — the fresh one reflects the new state (and drops the buttons
-      // once terminal). 'created' has no predecessor to remove.
-      const prev = getCardRef(paths, txn.id)?.telegram;
-      if (prev && event !== 'created') {
-        await deleteTelegramMessage(workspace, prev.chat_id, prev.message_id);
+      // Replace this transaction's previous card(s) so only the current card
+      // exists per target — the fresh one reflects the new state (and drops the
+      // buttons once terminal). 'created' has no predecessor to remove. A route
+      // may fan out to several chats, so refs are kept as a list.
+      const prevRef = getCardRef(paths, txn.id)?.telegram;
+      const prevList = Array.isArray(prevRef) ? prevRef : (prevRef ? [prevRef] : []);
+      if (prevList.length && event !== 'created') {
+        for (const p of prevList) await deleteTelegramMessage(workspace, p.chat_id, p.message_id);
       }
       const tgButtons = link
         ? [...card.buttons, { title: link.label, url: link.url }]
         : card.buttons;
-      const res = await sendTelegram(workspace, config.telegram, {
-        text: card.telegramHtml, parse_mode: 'HTML', buttons: tgButtons,
-      });
-      if (res?.channel_message_id) {
-        setCardRef(paths, txn.id, { telegram: { chat_id: res.sent_to, message_id: res.channel_message_id } });
+      const newRefs = [];
+      for (const chat_id of tgTargets) {
+        try {
+          const res = await sendTelegram(workspace, { chat_id }, {
+            text: card.telegramHtml, parse_mode: 'HTML', buttons: tgButtons,
+          });
+          if (res?.channel_message_id) newRefs.push({ chat_id: res.sent_to, message_id: res.channel_message_id });
+        } catch (e) { console.warn(`[txn-alert] telegram failed (${chat_id}): ${e.message}`); }
       }
+      if (newRefs.length) setCardRef(paths, txn.id, { telegram: newRefs });
     } catch (e) { console.warn(`[txn-alert] telegram failed: ${e.message}`); }
   }
 
-  if (config.whatsapp?.enabled && config.whatsapp?.phone) {
+  if (config.whatsapp?.enabled && waTargets.length) {
     // Link as the last line of the body, just above the reply buttons
     // (Complete/Cancel), which WhatsApp pins to the bottom of the message.
     const waText = link ? `${card.whatsappText}\n\n${link.label}: ${link.url}` : card.whatsappText;
-    try {
-      await sendWhatsapp(workspace, config.whatsapp, { text: waText, buttons: card.buttons });
-    } catch (e) {
-      // Likely a closed 24h window (or transient) — queue for replay on the
-      // owner's next inbound message, which reopens the window.
-      enqueuePendingWhatsApp(paths, { text: waText, buttons: card.buttons });
+    for (const phone of waTargets) {
+      try {
+        await sendWhatsapp(workspace, { phone }, { text: waText, buttons: card.buttons });
+      } catch (e) {
+        // Likely a closed 24h window (or transient) — queue for replay on the
+        // owner's next inbound message, which reopens the window.
+        enqueuePendingWhatsApp(paths, { text: waText, buttons: card.buttons, to: phone });
+      }
     }
   }
 
-  if (config.email?.enabled && config.email?.to) {
-    try {
-      await sendEmail(config.email, { title: `Transaction #${txn.id}`, message: card.plainText });
-    } catch (e) { console.warn(`[txn-alert] email failed: ${e.message}`); }
+  if (config.email?.enabled && emTargets.length) {
+    for (const to of emTargets) {
+      try {
+        await sendEmail({ ...config.email, to }, { title: `Transaction #${txn.id}`, message: card.plainText });
+      } catch (e) { console.warn(`[txn-alert] email failed (${to}): ${e.message}`); }
+    }
   }
 }
 
@@ -594,7 +710,10 @@ export async function flushPendingWhatsApp(workspace, paths) {
   const remaining = [];
   for (const item of list) {
     try {
-      await sendWhatsapp(workspace, config.whatsapp, { text: item.text, buttons: item.buttons });
+      // Replay to the original target when the queued card was routed to a
+      // specific number; otherwise the default WhatsApp recipient.
+      const ownerCfg = item.to ? { phone: item.to } : config.whatsapp;
+      await sendWhatsapp(workspace, ownerCfg, { text: item.text, buttons: item.buttons });
     } catch {
       remaining.push(item); // still failing — keep for next time
     }

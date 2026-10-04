@@ -616,6 +616,7 @@ export class ToolRegistry {
             cost: { type: 'number', description: 'Service cost. Plain number, no currency symbol. Use at most two decimal places (e.g. 24.50, not 24.5000001).' },
             currency: { type: 'string', description: 'Currency symbol or code (e.g. $, €, TK). Defaults to $ if not specified.' },
             details: { type: 'object', description: 'Additional transaction details that are not declared as top-level fields above.' },
+            notify_route: { type: 'string', description: 'Optional. Name of a route from your Notifications settings to send this order\'s alert to instead of the default channels (e.g. a branch or team). Leave unset unless you have a specific reason — most agents never set this.' },
             ...txnFields.properties,
           },
           // Dedupe: a declared field marked `required` in SKILL.md (e.g. `service`)
@@ -1001,6 +1002,7 @@ export class ToolRegistry {
             title: { type: 'string', description: 'One-line headline (e.g., "Dispute on transaction #abc123").' },
             message: { type: 'string', description: 'Plain-text body. Include the relevant transaction ID, customer name or username, and a clear ask.' },
             severity: { type: 'string', enum: ['info', 'warning', 'urgent'], description: 'Urgency hint shown as a tag in the alert. Default: info.' },
+            notify_route: { type: 'string', description: 'Optional. Name of a route from your Notifications settings to direct this alert to instead of the default channels. Leave unset unless you have a specific reason.' },
           },
           required: ['title', 'message'],
         },

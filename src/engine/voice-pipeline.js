@@ -340,6 +340,8 @@ export class VoicePipeline {
         pitch: tts.pitch,
         style: tts.style,
         styleDegree: tts.styleDegree,
+        speed: tts.speed,
+        instructions: tts.instructions,
         text: reply,
         signal: ac.signal,
         workspace: this.engine.workspace,

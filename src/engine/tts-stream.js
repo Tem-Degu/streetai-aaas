@@ -22,13 +22,13 @@ import { getProviderCredential } from '../auth/credentials.js';
 const OUT_RATE = 16000;
 const ELEVEN_DEFAULT_VOICE = '21m00Tcm4TlvDq8ikWAM'; // "Rachel"
 
-export async function synthesizeStream({ provider = 'azure_speech', model, voice, region, text, onAudio, signal, workspace, rate, pitch, style, styleDegree } = {}) {
+export async function synthesizeStream({ provider = 'azure_speech', model, voice, region, text, onAudio, signal, workspace, rate, pitch, style, styleDegree, speed, instructions } = {}) {
   const clean = String(text || '').trim();
   if (!clean) return;
   switch (provider) {
     case 'azure_speech': return azureTtsStream({ region, voice, text: clean, rate, pitch, style, styleDegree, onAudio, signal, workspace });
     case 'elevenlabs':   return elevenTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
-    case 'openai':       return openaiTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
+    case 'openai':       return openaiTtsStream({ model, voice, text: clean, speed, instructions, onAudio, signal, workspace });
     case 'groq':         return groqTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
     case 'aimlapi':      return aimlapiTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
     case 'streetai':     return streetaiTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
@@ -280,13 +280,23 @@ async function elevenTtsStream({ model, voice, text, onAudio, signal, workspace 
 }
 
 // OpenAI streams raw pcm (24 kHz, no header) → resample 24k→16k.
-async function openaiTtsStream({ model, voice, text, onAudio, signal, workspace }) {
+async function openaiTtsStream({ model, voice, text, speed, instructions, onAudio, signal, workspace }) {
   const cred = getProviderCredential('openai', workspace);
   if (!cred?.apiKey) throw new Error('No "openai" API key.');
+  const body = { model: model || 'tts-1', input: text, voice: voice || 'alloy', response_format: 'pcm' };
+  // Optional pace/tone controls, each applied ONLY when configured (so the
+  // default request is unchanged). `speed` (0.25–4.0) is honoured by tts-1 /
+  // tts-1-hd; `instructions` (free text) steers tone and pace on
+  // gpt-4o-mini-tts. Set whichever matches the chosen model.
+  if (speed != null && speed !== '') {
+    const s = Number(speed);
+    if (Number.isFinite(s)) body.speed = Math.min(4, Math.max(0.25, s));
+  }
+  if (instructions && String(instructions).trim()) body.instructions = String(instructions).trim();
   const res = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST', signal,
     headers: { Authorization: `Bearer ${cred.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: model || 'tts-1', input: text, voice: voice || 'alloy', response_format: 'pcm' }),
+    body: JSON.stringify(body),
   });
   if (!res.ok || !res.body) throw await httpErr('OpenAI', res);
   await streamBodyToPcm16(res, { isWav: false, srcRate: 24000, onAudio, signal });
