@@ -17,6 +17,7 @@ const PROVIDERS = [
   { value: 'deepseek', label: 'DeepSeek', hasOAuth: false },
   { value: 'mistral', label: 'Mistral', hasOAuth: false },
   { value: 'groq', label: 'Groq', hasOAuth: false },
+  { value: 'munsit', label: 'Munsit (Arabic TTS + STT)', hasOAuth: false },
 ];
 
 // Speech-to-text providers offered for the "Voice messages" card. Any
@@ -71,6 +72,15 @@ const VOICE_PROVIDERS = [
 // providers (elevenlabs) speak every language on one voice and don't need it.
 // Keep in sync with src/engine/voice-table.js VOICE_TABLES.
 const PER_LANGUAGE_TTS_PROVIDERS = ['azure_speech'];
+
+// Providers whose voices are opaque IDs: show the curated dropdown but also let
+// the user paste any voice ID (via a "custom voice ID" toggle). ElevenLabs is a
+// special case handled as pure free-text below.
+const OPAQUE_VOICE_PROVIDERS = ['munsit'];
+
+// A TTS voice entry may be a plain string (value === label) or { value, label }.
+const voiceVal = (v) => (typeof v === 'string' ? v : v?.value || '');
+const voiceLabel = (v) => (typeof v === 'string' ? v : v?.label || v?.value || '');
 
 // Azure voices that accept an mstts speaking style (the tone selector). Azure
 // styles are voice-specific; these support "customerservice". Keep in sync with
@@ -143,6 +153,30 @@ const TTS_PROVIDERS = [
       { value: 'malayalam', label: 'Malayalam (neural)', voices: ['ml-IN-SobhanaNeural', 'ml-IN-MidhunNeural'] },
       { value: 'tagalog', label: 'Tagalog / Filipino (neural)', voices: ['fil-PH-BlessicaNeural', 'fil-PH-AngeloNeural'] },
       { value: 'russian', label: 'Russian (neural)', voices: ['ru-RU-SvetlanaNeural', 'ru-RU-DariyaNeural', 'ru-RU-DmitryNeural'] },
+    ],
+  },
+  {
+    // Munsit (Faseeh) — Arabic TTS with real Gulf dialects (incl. Bahraini) and
+    // bilingual Arabic/English voices. Voices are opaque IDs, so we offer a
+    // curated shortlist (label -> voice_id) plus a free-text custom voice ID.
+    value: 'munsit',
+    label: 'Munsit (Arabic + English, dialects)',
+    models: [
+      {
+        value: 'faseeh-v1-preview',
+        label: 'Faseeh v1',
+        voices: [
+          { value: '5SpH0tPzBh9HJcduKfx4vKNK', label: 'Bayan — Bahraini (F) · AR+EN' },
+          { value: '7BIXV410GvJLSnxEBNc7iFsf', label: 'Adel — Bahraini (M) · AR+EN' },
+          { value: 'CkVaSJuhmITJuf2155xka02r', label: 'Latifa — Emirati (F) · AR+EN' },
+          { value: 'PCtWbxjoNTpVQ6gIPaVZ2Hqm', label: 'Majed — Emirati (M) · AR+EN' },
+          { value: 'F8dxBoTJwDiCkTxdif3N882y', label: 'Salim — Kuwaiti (M) · AR+EN' },
+          { value: 'xUzPiWoU1l97DgHnkLP5mNKk', label: 'Salim — Qatari (M) · AR+EN' },
+          { value: 'SyU41Fvh3zAI9ZRf81uuTYQ4', label: 'Imad — Omani (M) · AR+EN' },
+          { value: 'IPK8qQ3F5NMiQLWFz1a83TG3', label: 'Maha — Najdi/Saudi (F) · AR+EN' },
+          { value: 'OUOdy43qiHKwzVLRScXFnUe8', label: 'Arwa — MSA/Fusha (F) · AR+EN' },
+        ],
+      },
     ],
   },
   {
@@ -918,6 +952,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
   const [ttsProvider, setTtsProvider] = useState('groq');
   const [ttsModel, setTtsModel] = useState('');
   const [ttsVoice, setTtsVoice] = useState('');
+  const [customTtsVoice, setCustomTtsVoice] = useState(false);
   const [ttsRegion, setTtsRegion] = useState(''); // Azure region (e.g. "uaenorth")
   const [ttsRate, setTtsRate] = useState('');     // Azure SSML rate (e.g. "+6%")
   const [ttsPitch, setTtsPitch] = useState('');   // Azure SSML pitch (e.g. "+3%")
@@ -950,7 +985,14 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
     const tModel = t.model || tModels[0]?.value || '';
     setTtsModel(tModel);
     const tVoices = (tModels.find(m => m.value === tModel)?.voices) || [];
-    setTtsVoice(t.voice || tVoices[0] || '');
+    const savedVoice = t.voice || voiceVal(tVoices[0]) || '';
+    setTtsVoice(savedVoice);
+    // A saved voice that isn't in the curated list means a pasted custom ID —
+    // open the custom field so it shows (only matters for opaque-ID providers).
+    setCustomTtsVoice(
+      OPAQUE_VOICE_PROVIDERS.includes(tProv) &&
+      !!savedVoice && !tVoices.some(v => voiceVal(v) === savedVoice)
+    );
     setTtsRegion(t.region || '');
     setTtsRate(t.rate || '');
     setTtsPitch(t.pitch || '');
@@ -964,12 +1006,14 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
     const tModels = (TTS_PROVIDERS.find(p => p.value === val)?.models) || [];
     const m = tModels[0]?.value || '';
     setTtsModel(m);
-    setTtsVoice((tModels[0]?.voices || [])[0] || '');
+    setTtsVoice(voiceVal((tModels[0]?.voices || [])[0]) || '');
+    setCustomTtsVoice(false);
   };
   const changeTtsModel = (val) => {
     setTtsModel(val);
     const tModels = (TTS_PROVIDERS.find(p => p.value === ttsProvider)?.models) || [];
-    setTtsVoice((tModels.find(m => m.value === val)?.voices || [])[0] || '');
+    setTtsVoice(voiceVal((tModels.find(m => m.value === val)?.voices || [])[0]) || '');
+    setCustomTtsVoice(false);
   };
   const ttsModels = (TTS_PROVIDERS.find(p => p.value === ttsProvider)?.models) || [];
   const ttsVoices = (ttsModels.find(m => m.value === ttsModel)?.voices) || [];
@@ -1165,9 +1209,36 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
               <label>Voice</label>
               {ttsProvider === 'elevenlabs' ? (
                 <input className="form-input" value={ttsVoice} onChange={e => setTtsVoice(e.target.value)} placeholder="ElevenLabs voice ID (from your Voice Library)" />
+              ) : OPAQUE_VOICE_PROVIDERS.includes(ttsProvider) ? (
+                // Curated dropdown with friendly labels, plus a toggle to paste any voice ID.
+                customTtsVoice ? (
+                  <>
+                    <input
+                      className="form-input"
+                      value={ttsVoice}
+                      onChange={e => setTtsVoice(e.target.value)}
+                      placeholder="Paste a Munsit voice_id"
+                    />
+                    <button
+                      className="btn-link"
+                      onClick={() => { setCustomTtsVoice(false); setTtsVoice(voiceVal(ttsVoices[0]) || ''); }}
+                    >
+                      Choose from the list
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <select className="form-select" value={ttsVoice} onChange={e => setTtsVoice(e.target.value)}>
+                      {ttsVoices.map(v => <option key={voiceVal(v)} value={voiceVal(v)}>{voiceLabel(v)}</option>)}
+                    </select>
+                    <button className="btn-link" onClick={() => { setCustomTtsVoice(true); setTtsVoice(''); }}>
+                      Use a custom voice ID
+                    </button>
+                  </>
+                )
               ) : (
                 <select className="form-select" value={ttsVoice} onChange={e => setTtsVoice(e.target.value)}>
-                  {ttsVoices.map(v => <option key={v} value={v}>{v}</option>)}
+                  {ttsVoices.map(v => <option key={voiceVal(v)} value={voiceVal(v)}>{voiceLabel(v)}</option>)}
                 </select>
               )}
             </div>

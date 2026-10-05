@@ -30,6 +30,7 @@ export async function synthesizeStream({ provider = 'azure_speech', model, voice
     case 'elevenlabs':   return elevenTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
     case 'openai':       return openaiTtsStream({ model, voice, text: clean, speed, instructions, onAudio, signal, workspace });
     case 'groq':         return groqTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
+    case 'munsit':       return munsitTtsStream({ model, voice, text: clean, speed, onAudio, signal, workspace });
     case 'aimlapi':      return aimlapiTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
     case 'streetai':     return streetaiTtsStream({ model, voice, text: clean, onAudio, signal, workspace });
     default:
@@ -318,6 +319,30 @@ async function groqTtsStream({ model, voice, text, onAudio, signal, workspace })
   });
   if (!res.ok || !res.body) throw await httpErr('Groq', res);
   await streamBodyToPcm16(res, { isWav: true, onAudio, signal }); // rate from the WAV header
+}
+
+// Munsit (Faseeh) — Arabic TTS with real Gulf dialects (incl. Bahraini) and
+// bilingual Arabic/English voices. `streaming: true` returns raw PCM16 mono at
+// the requested sample_rate (we ask for 16 kHz → pass-through, no resample).
+// The model is the URL path segment; `voice` is Munsit's voice_id. `speed` is
+// optional. Auth is a per-account API key sent as `x-api-key`.
+async function munsitTtsStream({ model, voice, text, speed, onAudio, signal, workspace }) {
+  const cred = getProviderCredential('munsit', workspace);
+  if (!cred?.apiKey) throw new Error('No "munsit" API key. Add it in Settings -> Add API Key.');
+  if (!voice) throw new Error('Munsit requires a voice_id. Pick a voice in Settings -> Voice.');
+  const modelId = model || 'faseeh-v1-preview';
+  const body = { voice_id: voice, text, sample_rate: 16000, streaming: true };
+  if (speed != null && speed !== '') {
+    const s = Number(speed);
+    if (Number.isFinite(s)) body.speed = s;
+  }
+  const res = await fetch(`https://api.munsit.com/api/v1/text-to-speech/${encodeURIComponent(modelId)}`, {
+    method: 'POST', signal,
+    headers: { 'x-api-key': cred.apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) throw await httpErr('Munsit', res);
+  await streamBodyToPcm16(res, { isWav: false, srcRate: 16000, onAudio, signal });
 }
 
 // AIMLAPI can emit pcm_16000 directly. With stream:true it returns a raw body;
