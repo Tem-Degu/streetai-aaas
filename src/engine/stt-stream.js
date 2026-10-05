@@ -29,6 +29,7 @@ function azureLanguages(model) {
   if (!m || m === 'auto') return ['ar-AE', 'en-US', 'hi-IN', 'ml-IN', 'fil-PH', 'ru-RU'];
   if (m === 'ar-ae' || m === 'ar' || m === 'arabic') return ['ar-AE'];
   if (m === 'en-us' || m === 'en' || m === 'english') return ['en-US'];
+  if (m === 'hi-in' || m === 'hi' || m === 'hindi') return ['hi-IN'];
   return [model]; // already a BCP-47 tag
 }
 

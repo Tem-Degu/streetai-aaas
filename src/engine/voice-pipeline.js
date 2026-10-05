@@ -160,9 +160,16 @@ export class VoicePipeline {
 
   async start() {
     const sttProvider = this.voice.provider || 'azure_speech';
+    // Language lock: when the agent is configured with `voice.lockLanguage` and
+    // the caller explicitly picked a language on the widget (greetLang), force
+    // single-language recognition on Azure — no continuous language-ID, so it
+    // can't mis-detect an English turn as Tagalog/Arabic mid-call. Only applies
+    // to Azure (its `model` is a language tag); other STT providers keep their
+    // configured model. No lock / no selection → unchanged auto behavior.
+    const lockToSelected = !!this.voice.lockLanguage && !!this.greetLang && sttProvider === 'azure_speech';
     this.stt = await createSttStream({
       provider: sttProvider,
-      model: this.voice.model,
+      model: lockToSelected ? this.greetLang : this.voice.model,
       region: this.voice.region || (this.voice.tts && this.voice.tts.region),
       endpointSilenceMs: this.voice.endpointSilenceMs,
       segmentation: this.voice.segmentation,     // defaults to 'semantic' in stt-stream
@@ -261,6 +268,11 @@ export class VoicePipeline {
     // spoken mid-conversation never flips the language.
     if (isGreeting) {
       if (this.greetLang) this.currentLang = this.greetLang;
+    } else if (this.voice.lockLanguage && this.greetLang) {
+      // Caller explicitly chose a language and the agent locks it: keep that
+      // language for every turn, so an STT mis-detection can never flip the
+      // reply language mid-conversation.
+      this.currentLang = this.greetLang;
     } else {
       const cand = normalizeSttLang(sttLang) || detectLang(text);
       if (cand && (!this.currentLang || cand === this.currentLang || this._letters(text) >= this.langMinChars)) {
