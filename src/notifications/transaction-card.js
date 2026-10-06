@@ -148,11 +148,19 @@ export function renderTransactionCard(txn, event, viewConfig) {
   // Body lines
   const lines = []; // { label, value }
   let customer;
+  const uidStr = txn.user_id != null ? String(txn.user_id).trim() : '';
   for (const k of CUSTOMER_KEYS) {
     const v = txn[k];
-    if (v != null && typeof v !== 'object' && String(v).trim() !== '') { customer = String(v).trim(); break; }
+    if (v == null || typeof v === 'object') continue;
+    const s = String(v).trim();
+    // Skip empties and any value that is just the opaque session id (e.g. a
+    // web `user_id` that `user_name` defaulted to) — fall through to a real
+    // name like customer_name so the card still shows who ordered.
+    if (s === '' || s === uidStr) continue;
+    customer = s;
+    break;
   }
-  if (customer && customer !== txn.user_id) lines.push({ label: 'Customer', value: customer });
+  if (customer) lines.push({ label: 'Customer', value: customer });
   const customerNorm = customer ? customer.toLowerCase() : null;
 
   for (const key of cardFields(viewConfig)) {
