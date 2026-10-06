@@ -1175,6 +1175,14 @@ export class ToolRegistry {
           const argsWithDefaults = {
             ...args,
             session_platform: args.session_platform || this.eventContext?.platform || null,
+            // Tie the order to the caller's stable session identity so later
+            // lookups ("this customer's last order") and the customer-reply link
+            // are reliable. In customer mode the session id is the source of truth
+            // (the agent's typed user_id is a guess); admin-created rows keep the
+            // agent's value. Reuses the existing user_id field — no new field.
+            user_id: (this.eventContext?.mode !== 'admin' && this.eventContext?.userId)
+              ? this.eventContext.userId
+              : args.user_id,
             currency: args.currency || currencyDecl?.default || args.currency,
           };
           const r = createTransaction(this.paths, argsWithDefaults);
