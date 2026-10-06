@@ -957,6 +957,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
   const [ttsRate, setTtsRate] = useState('');     // Azure SSML rate (e.g. "+6%")
   const [ttsPitch, setTtsPitch] = useState('');   // Azure SSML pitch (e.g. "+3%")
   const [ttsPerLang, setTtsPerLang] = useState(false); // match voice to caller's language (mono-lingual providers)
+  const [lockLanguage, setLockLanguage] = useState(false); // lock the whole call to the caller's selected language
   const [ttsStyle, setTtsStyle] = useState('customerservice'); // Azure express-as speaking style (style-capable voices)
 
   // Inline API key entry (only shown when the chosen provider has no key).
@@ -976,6 +977,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
     const provModels = (VOICE_PROVIDERS.find(p => p.value === prov)?.models) || [];
     setModel(v.model || provModels[0]?.value || '');
     setSegmentation(v.segmentation || 'semantic');
+    setLockLanguage(!!v.lockLanguage);
 
     const t = v.tts || {};
     setWebcallEnabled(!!v.webcall_enabled);
@@ -1055,6 +1057,7 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
         voice: {
           enabled, provider, model: model || defaultModel,
           segmentation,
+          lockLanguage,
           webcall_enabled: webcallEnabled,
           // Preserve an optional second-language (e.g. English) fallback voice
           // configured outside this form, so saving the main voice doesn't wipe it.
@@ -1274,6 +1277,15 @@ function VoiceMessagesCard({ config, api, configuredProviders, onSaved }) {
                 )}
               </>
             )}
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={lockLanguage} onChange={e => setLockLanguage(e.target.checked)} />
+                <span>Lock to the caller's selected language</span>
+              </label>
+              <p className="form-hint">
+                When the caller picks a language on the call page, keep the whole call in that language (no mid-call switching). Prevents the agent drifting to another language. Leave off to auto-detect per utterance.
+              </p>
+            </div>
             {PER_LANGUAGE_TTS_PROVIDERS.includes(ttsProvider) && (
               <div className="form-group">
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
